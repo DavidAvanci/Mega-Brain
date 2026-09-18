@@ -6,3 +6,4 @@ src-tauri/target
 spikes/
 .playwright-cli
 mega-brain-files/
+*.tsbuildinfo
