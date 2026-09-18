@@ -3,8 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { JIRA_KEY_PATTERN } from '../jira/service'
-import { claimNextCardFolder, formatCardId } from './card-id'
-import { createCard } from './service'
+import { claimNextCardFolder, createCard, formatCardId } from './card-folder'
 
 const tempRoot = () => mkdtempSync(join(tmpdir(), 'mega-brain-card-id-'))
 

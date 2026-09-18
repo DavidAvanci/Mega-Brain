@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { loadMegaBrainConfig } from '../server/config.ts'
-import { createCard } from '../server/workspace/service.ts'
+import { createCard } from '../server/workspace/card-folder.ts'
 import { loadEnv, MEGA_ROOT } from './lib/env.ts'
 
 const { values } = parseArgs({
