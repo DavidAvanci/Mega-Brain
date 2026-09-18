@@ -1,0 +1,8 @@
+node_modules
+dist
+.env.local
+.env.*.local
+src-tauri/target
+spikes/
+.playwright-cli
+mega-brain-files/
