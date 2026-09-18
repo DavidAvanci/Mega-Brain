@@ -1,0 +1,34 @@
+[[permission]]
+identifier = "allow-backend-config"
+description = "Allows the WebView to read the authenticated loopback backend configuration."
+commands.allow = ["backend_config"]
+
+[[permission]]
+identifier = "allow-list-wsl-distributions"
+description = "Allows the WebView to list installed WSL distribution names during explicit setup."
+commands.allow = ["list_wsl_distributions"]
+
+[[permission]]
+identifier = "allow-select-wsl-distribution"
+description = "Allows the WebView to persist one detected WSL distribution for this app."
+commands.allow = ["select_wsl_distribution"]
+
+[[permission]]
+identifier = "allow-set-wsl-workspace-dir"
+description = "Allows the WebView to store one validated absolute WSL workspace path."
+commands.allow = ["set_wsl_workspace_dir"]
+
+[[permission]]
+identifier = "allow-normalize-wsl-directory"
+description = "Allows the WebView to normalize one directory returned by the native picker for the selected WSL distribution."
+commands.allow = ["normalize_wsl_directory"]
+
+[[permission]]
+identifier = "allow-open-diagnostics-folder"
+description = "Allows the WebView to open the app-owned diagnostics folder; it accepts no path."
+commands.allow = ["open_diagnostics_folder"]
+
+[[permission]]
+identifier = "allow-window-controls"
+description = "Allows the main WebView to minimize, maximize or close only its own window."
+commands.allow = ["minimize_main_window", "toggle_maximize_main_window", "close_main_window"]

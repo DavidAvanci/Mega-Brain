@@ -1,0 +1,451 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/jetbrains-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-mono);
+    --font-mono: 'JetBrains Mono Variable', monospace;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.52 0.105 223.128);
+    --primary-foreground: oklch(0.984 0.019 200.873);
+    --secondary: oklch(0.967 0.001 286.375);
+    --secondary-foreground: oklch(0.21 0.006 285.885);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.865 0.127 207.078);
+    --chart-2: oklch(0.715 0.143 215.221);
+    --chart-3: oklch(0.609 0.126 221.723);
+    --chart-4: oklch(0.52 0.105 223.128);
+    --chart-5: oklch(0.45 0.085 224.283);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.609 0.126 221.723);
+    --sidebar-primary-foreground: oklch(0.984 0.019 200.873);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.45 0.085 224.283);
+    --primary-foreground: oklch(0.984 0.019 200.873);
+    --secondary: oklch(0.274 0.006 286.033);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.865 0.127 207.078);
+    --chart-2: oklch(0.715 0.143 215.221);
+    --chart-3: oklch(0.609 0.126 221.723);
+    --chart-4: oklch(0.52 0.105 223.128);
+    --chart-5: oklch(0.45 0.085 224.283);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.715 0.143 215.221);
+    --sidebar-primary-foreground: oklch(0.302 0.056 229.695);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-muted-foreground) 35%, transparent) transparent;
+    }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+    }
+  *::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-muted-foreground) 30%, transparent);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+    }
+  *:hover::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--color-muted-foreground) 50%, transparent);
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-mono;
+    }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+    }
+}
+
+.drag-scrolling {
+  cursor: grabbing;
+  user-select: none;
+}
+
+@media (min-width: 768px) {
+  .kanban-canvas--board {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .kanban-canvas--board::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}
+
+.kanban-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
+}
+
+@media (max-width: 767px) {
+  .kanban-canvas {
+    cursor: default !important;
+  }
+
+  .kanban-group + .kanban-group {
+    margin-top: 1.25rem;
+  }
+}
+
+@media (pointer: coarse) {
+  .kanban-card button,
+  .kanban-card select {
+    min-height: 2.5rem;
+  }
+}
+
+.mention {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+.markdown {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown p {
+  margin: 6px 0;
+}
+
+.markdown a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+
+.dark .markdown a {
+  color: var(--color-chart-2);
+}
+
+.markdown strong {
+  color: var(--color-foreground);
+  font-weight: 600;
+}
+
+.markdown h1 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+  margin: 0 0 8px;
+}
+
+.markdown h2 {
+  position: sticky;
+  top: -16px;
+  z-index: 1;
+  margin: 22px 0 8px;
+  padding: 8px 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--color-popover);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.markdown h1 + .meta + h2,
+.markdown h1 + h2 {
+  margin-top: 8px;
+}
+
+.markdown h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 16px 0 4px;
+}
+
+.markdown h4 {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 12px 0 4px;
+  color: var(--color-muted-foreground);
+}
+
+.markdown .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+
+.markdown .meta > div {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.markdown .meta dt {
+  color: var(--color-muted-foreground);
+}
+
+.markdown .meta dd {
+  font-weight: 500;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+
+.markdown ul {
+  list-style: disc;
+}
+
+.markdown ol {
+  list-style: decimal;
+}
+
+.markdown li {
+  margin: 3px 0;
+}
+
+.markdown li > p {
+  margin: 0;
+}
+
+.markdown li::marker {
+  color: var(--color-muted-foreground);
+}
+
+.markdown blockquote {
+  margin: 8px 0;
+  padding: 2px 12px;
+  border-left: 2px solid color-mix(in srgb, var(--color-primary) 50%, transparent);
+  color: var(--color-muted-foreground);
+}
+
+.markdown code {
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-muted) 70%, var(--color-foreground) 4%);
+}
+
+.markdown pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-muted);
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown hr {
+  margin: 16px 0;
+  border-color: var(--color-border);
+}
+
+.markdown table {
+  margin: 8px 0;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.markdown th,
+.markdown td {
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.markdown th {
+  background: var(--color-muted);
+  font-weight: 600;
+}
+
+.markdown li:has(> .task, > p > .task) {
+  list-style: none;
+  margin-left: -20px;
+  padding-left: 20px;
+  position: relative;
+}
+
+.markdown li:has(> .task, > p > .task) + li:has(> .task, > p > .task) {
+  margin-top: 8px;
+}
+
+.markdown .task {
+  position: absolute;
+  left: 0;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--color-muted-foreground);
+  border-radius: 4px;
+  background: transparent center / 10px no-repeat;
+}
+
+.markdown .task.done {
+  border-color: var(--color-primary);
+  background-color: var(--color-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.5 5 8.7l4.5-5.4' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.markdown .task.skipped {
+  border-color: var(--color-muted-foreground);
+  background-color: var(--color-muted-foreground);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 6h6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.markdown .task.failed {
+  border-color: var(--color-destructive);
+  background-color: var(--color-destructive);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M6 2.5v4.5M6 9.5v.2' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.markdown li:has(> .task.done, > p > .task.done),
+.markdown li:has(> .task.skipped, > p > .task.skipped) {
+  color: var(--color-muted-foreground);
+}
+
+.markdown li:has(> .task.done, > p > .task.done) strong,
+.markdown li:has(> .task.skipped, > p > .task.skipped) strong {
+  color: inherit;
+}
+
+.markdown li:has(> .task.done):not(:has(li)),
+.markdown li:has(> .task.skipped):not(:has(li)),
+.markdown li > p:has(> .task.done),
+.markdown li > p:has(> .task.skipped) {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
+}
+
+.markdown li:has(> .task.failed, > p > .task.failed) > p:first-child,
+.markdown li:has(> .task.failed) {
+  color: var(--color-destructive);
+}
+
+.markdown li:has(> .task, > p > .task) > ul {
+  margin: 4px 0 0;
+  padding-left: 10px;
+  border-left: 1px solid var(--color-border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted-foreground);
+  text-decoration: none;
+}
+
+.markdown li:has(> .task, > p > .task) > ul li {
+  list-style: none;
+  margin: 2px 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
