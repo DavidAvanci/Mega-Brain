@@ -53,7 +53,7 @@ function setState(next: Partial<CardsState>): void {
   listeners.forEach((notify) => notify())
 }
 
-const JIRA_KEY = /^[a-z][a-z0-9]*-\d+$/i
+const JIRA_KEY = /^(?!MB-)[A-Z][A-Z0-9]*-\d+$/i
 let jiraStatuses: Record<string, string> = {}
 
 async function fetchJiraStatuses(folders: WorkspaceFolder[]): Promise<void> {

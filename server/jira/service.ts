@@ -1,7 +1,7 @@
 import { systemClock, type Clock } from '../system'
 
 export interface JiraEnv { site?: string; email?: string; token?: string }
-export const JIRA_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9]*-\d+$/
+export const JIRA_KEY_PATTERN = /^(?!MB-)[A-Z][A-Z0-9]*-\d+$/i
 export interface JiraTransition { id: string; to?: { name?: string } }
 const BLOCK_NODES = new Set(['paragraph', 'heading', 'listItem', 'codeBlock', 'blockquote'])
 export function adfToText(node: unknown): string { if (!node || typeof node !== 'object') return ''; const { type, text, content } = node as { type?: string; text?: string; content?: unknown[] }; if (typeof text === 'string') return text; const inner = (content ?? []).map(adfToText).join(''); return type && BLOCK_NODES.has(type) ? `${inner}\n` : inner }
