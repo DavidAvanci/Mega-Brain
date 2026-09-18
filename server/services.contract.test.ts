@@ -37,9 +37,9 @@ test('workspace service creates and lists only inside a temporary root', async (
   const root = mkdtempSync(join(tmpdir(), 'mega-brain-service-'))
   const service = createWorkspaceService({ workspaceDir: root, executables: {} })
   await expect(service.handle('/', 'POST', new URLSearchParams(), { title: 'Meu card' }))
-    .resolves.toMatchObject({ folder: 'meu-card' })
+    .resolves.toMatchObject({ folder: 'MB-001' })
   await expect(service.handle('/', 'GET', new URLSearchParams(), undefined))
-    .resolves.toMatchObject([{ name: 'meu-card', title: 'Meu card' }])
+    .resolves.toMatchObject([{ name: 'MB-001', title: 'Meu card' }])
 })
 
 test('workspace service opens only the requested project PR', async () => {

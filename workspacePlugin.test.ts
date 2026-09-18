@@ -11,16 +11,8 @@ import {
   readAgent,
   readCard,
   readExternalAgent,
-  slugify,
   STAGES,
 } from './workspacePlugin'
-
-test('slugify', () => {
-  expect(slugify('Corrigir divisão de pagamentos')).toBe('corrigir-divisao-de-pagamentos')
-  expect(slugify('  Fix: bug #42 (urgente!)  ')).toBe('fix-bug-42-urgente')
-  expect(slugify('///')).toBe('task')
-  expect(slugify('a'.repeat(100))).toHaveLength(60)
-})
 
 test('readCard', () => {
   const dir = mkdtempSync(join(tmpdir(), 'card-'))
