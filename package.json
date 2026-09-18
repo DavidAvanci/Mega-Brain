@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "card:create": "tsx scripts/create-card.ts",
     "test": "vitest run",
     "server:dev": "node scripts/server-dev.mjs",
     "server:build": "node scripts/server-build.mjs",
