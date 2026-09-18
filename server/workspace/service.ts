@@ -26,19 +26,8 @@ import { resolveOptionalExecutable, wslDesktopCandidates } from '../platform'
 import { editorExecutable, readGeneralSettings, writeGeneralSettings } from '../app-settings'
 import { detectEditors } from '../editor-detection'
 import { assertTestWorkspace } from '../test-safety'
+import { claimNextCardFolder } from './card-id'
 import { createWorkspacePathResolver } from './path'
-
-export function slugify(title: string): string {
-  const slug = title
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
-    .replace(/-+$/, '')
-  return slug || 'task'
-}
 
 interface CardData {
   title: string
@@ -115,6 +104,21 @@ export function readCard(folderPath: string, name: string): CardData {
 
 function writeCard(folderPath: string, card: CardData): void {
   writeFileSync(join(folderPath, 'card.json'), `${JSON.stringify(card, null, 2)}\n`)
+}
+
+export function createCard(root: string, data: Record<string, unknown>): { folder: string; path: string } {
+  const requested = String(data.name ?? '')
+  const { name, path } = /^[\w-]+$/.test(requested) ? claimNamedFolder(root, requested) : claimNextCardFolder(root)
+  writeCard(path, { title: String(data.title ?? '').trim() || name, description: String(data.description ?? '').trim(), status: 'a-fazer', flow: readFlow(data.flow) })
+  return { folder: name, path }
+}
+
+function claimNamedFolder(root: string, requested: string): { name: string; path: string } {
+  let name = requested
+  for (let n = 2; existsSync(join(root, name)); n++) name = `${requested}-${n}`
+  const path = join(root, name)
+  mkdirSync(path, { recursive: true })
+  return { name, path }
 }
 
 const AGENT_FILE = 'agent.json'
@@ -1173,7 +1177,7 @@ export function createWorkspaceService(inputConfig: WorkspaceConfigInput, runner
       return { general, stages: data.stages === undefined ? readStageSettings(root) : writeStageSettings(root, data.stages) }
     }
     if (path === '/open') { const card = folder(data.name); const editor = editorExecutable(config); const child = runner.spawn(editor, [card.path], { detached: true, stdio: 'ignore' }); child.on('error', (error) => console.error('editor:', error.message)); child.unref(); return { ok: true } }
-    if (path === '/') { const requested = String(data.name ?? ''); const base = /^[\w-]+$/.test(requested) && requested ? requested : slugify(String(data.title ?? '')); let created = base; for (let n = 2; existsSync(join(root, created)); n++) created = `${base}-${n}`; const createdPath = join(root, created); mkdirSync(createdPath, { recursive: true }); writeCard(createdPath, { title: String(data.title ?? '').trim() || created, description: String(data.description ?? '').trim(), status: 'a-fazer', flow: readFlow(data.flow) }); return { folder: created, path: createdPath } }
+    if (path === '/') return createCard(root, data)
     const card = folder(data.name); const { name, path: cardPath } = card
     if (path === '/terminal') {
       const id = readAgent(cardPath)?.sessionId
