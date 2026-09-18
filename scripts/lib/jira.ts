@@ -1,6 +1,6 @@
 import { loadEnv } from './env.ts'
 
-export const JIRA_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/
+export const JIRA_KEY = /^(?!MB-)[A-Z][A-Z0-9]*-\d+$/i
 
 export interface JiraEnv {
   site: string

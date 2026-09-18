@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
+import { JIRA_KEY_PATTERN } from '../jira/service'
 import { claimNextCardFolder, formatCardId } from './card-id'
 import { createCard } from './service'
 
@@ -38,4 +39,10 @@ test('createCard keeps the requested Jira key and numbers manual cards', () => {
   const root = tempRoot()
   expect(createCard(root, { name: 'TAT1C0-154', title: 'Jira' }).folder).toBe('TAT1C0-154')
   expect(createCard(root, { title: 'Manual' }).folder).toBe('MB-001')
+})
+
+test('MB ids are not treated as Jira keys', () => {
+  expect(JIRA_KEY_PATTERN.test('MB-001')).toBe(false)
+  expect(JIRA_KEY_PATTERN.test('mb-001')).toBe(false)
+  expect(JIRA_KEY_PATTERN.test('TAT1C0-154')).toBe(true)
 })
