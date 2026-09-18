@@ -18,7 +18,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readDevEnv, startDevEnv, stopDevEnv } from '../../devEnv'
 import { prStates } from '../../prStatus'
-import { FLOW_LEVELS, type AgentInfo, type FlowLevel } from '../../src/types'
+import type { AgentInfo, FlowLevel } from '../../src/types'
 import type { MegaBrainConfig } from '../config'
 import { createOwnedProcessRunner, nodeProcessRunner, type ProcessOwner, type ProcessRunner } from '../process'
 import type { ProcessChild } from '../process'
@@ -26,7 +26,7 @@ import { resolveOptionalExecutable, wslDesktopCandidates } from '../platform'
 import { editorExecutable, readGeneralSettings, writeGeneralSettings } from '../app-settings'
 import { detectEditors } from '../editor-detection'
 import { assertTestWorkspace } from '../test-safety'
-import { claimNextCardFolder } from './card-id'
+import { createCard, DEFAULT_FLOW, readFlow } from './card-folder'
 import { createWorkspacePathResolver } from './path'
 
 interface CardData {
@@ -43,14 +43,6 @@ interface WorktreeOrigin {
   hash: string
   repository?: string
   createdAt?: string
-}
-
-const DEFAULT_FLOW: FlowLevel = 'dificil'
-
-function readFlow(value: unknown): FlowLevel {
-  return typeof value === 'string' && FLOW_LEVELS.includes(value as FlowLevel)
-    ? value as FlowLevel
-    : DEFAULT_FLOW
 }
 
 function readPrEnv(value: unknown): Record<string, string> | undefined {
@@ -104,21 +96,6 @@ export function readCard(folderPath: string, name: string): CardData {
 
 function writeCard(folderPath: string, card: CardData): void {
   writeFileSync(join(folderPath, 'card.json'), `${JSON.stringify(card, null, 2)}\n`)
-}
-
-export function createCard(root: string, data: Record<string, unknown>): { folder: string; path: string } {
-  const requested = String(data.name ?? '')
-  const { name, path } = /^[\w-]+$/.test(requested) ? claimNamedFolder(root, requested) : claimNextCardFolder(root)
-  writeCard(path, { title: String(data.title ?? '').trim() || name, description: String(data.description ?? '').trim(), status: 'a-fazer', flow: readFlow(data.flow) })
-  return { folder: name, path }
-}
-
-function claimNamedFolder(root: string, requested: string): { name: string; path: string } {
-  let name = requested
-  for (let n = 2; existsSync(join(root, name)); n++) name = `${requested}-${n}`
-  const path = join(root, name)
-  mkdirSync(path, { recursive: true })
-  return { name, path }
 }
 
 const AGENT_FILE = 'agent.json'
