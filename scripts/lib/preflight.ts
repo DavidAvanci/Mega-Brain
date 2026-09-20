@@ -53,10 +53,12 @@ export function preflight(items: Item[], deps: PreflightDeps): PreflightIssue[] 
   const repos = new Set<string>()
   for (const item of items) {
     if (item.repo) repos.add(item.repo)
-    else issues.push({ level: 'error', where: item.id, message: 'Sem repo — falta um heading `## <repo>` antes do item' })
+    else
+      issues.push({ level: 'error', where: item.id, message: 'Sem repo — falta um heading `## <repo>` antes do item' })
     for (const dep of item.deps) {
       if (dep === item.id) issues.push({ level: 'error', where: item.id, message: 'Depende de si mesmo' })
-      else if (!ids.has(dep)) issues.push({ level: 'error', where: item.id, message: `deps: ${dep} não existe no checklist` })
+      else if (!ids.has(dep))
+        issues.push({ level: 'error', where: item.id, message: `deps: ${dep} não existe no checklist` })
     }
   }
 
@@ -76,7 +78,11 @@ export function preflight(items: Item[], deps: PreflightDeps): PreflightIssue[] 
     if (!item.repo || !deps.repoExists(item.repo)) continue
     for (const pattern of item.files) {
       if (deps.pathExists(item.repo, pattern)) continue
-      issues.push({ level: 'warn', where: item.id, message: `files: ${pattern} — nem o path nem o diretório pai existem` })
+      issues.push({
+        level: 'warn',
+        where: item.id,
+        message: `files: ${pattern} — nem o path nem o diretório pai existem`,
+      })
     }
   }
   return issues

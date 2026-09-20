@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
-import { createPrTracker } from './prStatus'
-import type { PrState } from './src/types'
+import { createPrTracker } from './server/platform/pr-status'
+import type { PrState } from './shared/domain/cards'
 
 function tracker(responses: Record<string, PrState | undefined>) {
   const fetched: string[] = []

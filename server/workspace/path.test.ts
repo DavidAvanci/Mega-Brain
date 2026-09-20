@@ -40,7 +40,9 @@ describe('workspace card path validation', () => {
   test('rejects a card symlink that resolves outside the configured workspace', () => {
     const { root, outside } = fixture()
     symlinkSync(outside, join(root, 'escaped-card'), 'dir')
-    expect(() => createWorkspacePathResolver(root).resolveCardFolder('escaped-card')).toThrow('Pasta não encontrada: escaped-card')
+    expect(() => createWorkspacePathResolver(root).resolveCardFolder('escaped-card')).toThrow(
+      'Pasta não encontrada: escaped-card',
+    )
   })
 
   test('workspace and chat services share the symlink-escape guard', async () => {
@@ -58,8 +60,9 @@ describe('workspace card path validation', () => {
       },
     })
 
-    await expect(workspace.handle('/detail', 'GET', new URLSearchParams({ name: 'escaped-card' }), undefined))
-      .rejects.toThrow('Pasta não encontrada: escaped-card')
+    await expect(
+      workspace.handle('/detail', 'GET', new URLSearchParams({ name: 'escaped-card' }), undefined),
+    ).rejects.toThrow('Pasta não encontrada: escaped-card')
     await expect(chat.history('escaped-card')).rejects.toThrow('Pasta não encontrada: escaped-card')
   })
 })

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { parseUsage } from './claudeUsagePlugin'
+import { parseUsage } from './server/claude-usage/service'
 
 test('parseUsage', () => {
   const empty = { fiveHour: null, sevenDay: null, fable: null }

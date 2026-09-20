@@ -10,7 +10,7 @@ import {
   ServerIcon,
 } from '@hugeicons/core-free-icons'
 import type { IconSvgElement } from '@hugeicons/react'
-import type { Status } from './types'
+import type { Status } from '../shared/domain/cards'
 
 interface StatusMeta {
   icon: IconSvgElement

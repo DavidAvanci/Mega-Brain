@@ -34,31 +34,49 @@ export function productionRouteKey(method: string, path: string): string {
  */
 export function createProductionRouteTable(options: ProductionRouteOptions): ProductionRouteTable {
   const routes = new Map<string, ProductionRouteHandler>()
-  const add = (method: string, path: string, handler: ProductionRouteHandler) => routes.set(productionRouteKey(method, path), handler)
+  const add = (method: string, path: string, handler: ProductionRouteHandler) =>
+    routes.set(productionRouteKey(method, path), handler)
   const runner = options.processRunner ?? nodeProcessRunner
-  const owner = options.processOwner ?? createProcessOwner({
-    signalTree: (pid, signal) => process.kill(-pid, signal),
-  })
+  const owner =
+    options.processOwner ??
+    createProcessOwner({
+      signalTree: (pid, signal) => process.kill(-pid, signal),
+    })
   const config = options.config
   const workspaceAdapter = workspaceHttp(createWorkspaceService(config, runner, owner))
   // The workspace handler predates the common /api registry and intentionally
   // keeps its compact domain-relative paths. Normalize once at composition,
   // rather than teaching either HTTP transport a workspace-specific rule.
-  const workspace: ApiHandler = (request) => workspaceAdapter({
-    ...request,
-    path: request.path.slice('/api/workspace'.length) || '/',
-  })
+  const workspace: ApiHandler = (request) =>
+    workspaceAdapter({
+      ...request,
+      path: request.path.slice('/api/workspace'.length) || '/',
+    })
   const chat = createChatService(config, runner, owner)
   const jira = createJiraService(config.jira)
   const usage = createClaudeUsageService(config.directories.claudeCredentials)
   const coffee = coffeeHttp(createCoffeeService(runner, config.executables.powershell, owner))
 
   for (const [method, path] of [
-    ['GET', '/api/workspace'], ['GET', '/api/workspace/settings'], ['GET', '/api/workspace/settings/editors'], ['GET', '/api/workspace/detail'], ['GET', '/api/workspace/diff'],
-    ['POST', '/api/workspace'], ['POST', '/api/workspace/settings'], ['POST', '/api/workspace/open'], ['POST', '/api/workspace/terminal'],
-    ['POST', '/api/workspace/prs/open'], ['POST', '/api/workspace/dev-env'], ['POST', '/api/workspace/dev-env/stop'],
-    ['POST', '/api/workspace/dev-env/open'], ['POST', '/api/workspace/dev-env/agent'], ['POST', '/api/workspace/stage/reset'], ['POST', '/api/workspace/update'], ['POST', '/api/workspace/delete'],
-  ] as const) add(method, path, workspace)
+    ['GET', '/api/workspace'],
+    ['GET', '/api/workspace/settings'],
+    ['GET', '/api/workspace/settings/editors'],
+    ['GET', '/api/workspace/detail'],
+    ['GET', '/api/workspace/diff'],
+    ['POST', '/api/workspace'],
+    ['POST', '/api/workspace/settings'],
+    ['POST', '/api/workspace/open'],
+    ['POST', '/api/workspace/terminal'],
+    ['POST', '/api/workspace/prs/open'],
+    ['POST', '/api/workspace/dev-env'],
+    ['POST', '/api/workspace/dev-env/stop'],
+    ['POST', '/api/workspace/dev-env/open'],
+    ['POST', '/api/workspace/dev-env/agent'],
+    ['POST', '/api/workspace/stage/reset'],
+    ['POST', '/api/workspace/update'],
+    ['POST', '/api/workspace/delete'],
+  ] as const)
+    add(method, path, workspace)
   add('GET', '/api/chat', chatHistoryHttp(chat))
   add('POST', '/api/chat/send', chatSendHttp(chat))
   add('POST', '/api/chat/abort', chatAbortHttp(chat))

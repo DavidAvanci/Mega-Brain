@@ -1,6 +1,6 @@
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
-import type { GeneralSettings } from '../src/types'
+import type { GeneralSettings } from '../shared/domain/settings'
 import type { MegaBrainConfig } from './config'
 import { resolveOptionalExecutable } from './platform'
 import { detectEditors } from './editor-detection'
@@ -40,10 +40,16 @@ export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): G
   const editorCommand = typeof input.editorCommand === 'string' ? input.editorCommand.trim() : ''
   if (editor === 'custom' && !editorCommand) throw new Error('Informe o executável do editor personalizado')
 
-  const jiraSite = typeof input.jiraSite === 'string' ? input.jiraSite.trim().replace(/^https?:\/\//, '').replace(/\.atlassian\.net\/?$/, '') : ''
+  const jiraSite =
+    typeof input.jiraSite === 'string'
+      ? input.jiraSite
+          .trim()
+          .replace(/^https?:\/\//, '')
+          .replace(/\.atlassian\.net\/?$/, '')
+      : ''
   const jiraEmail = typeof input.jiraEmail === 'string' ? input.jiraEmail.trim() : ''
   const newJiraToken = typeof input.jiraApiToken === 'string' ? input.jiraApiToken.trim() : ''
-  const jiraApiToken = jiraSite || jiraEmail ? (newJiraToken || config.jira.token || '') : ''
+  const jiraApiToken = jiraSite || jiraEmail ? newJiraToken || config.jira.token || '' : ''
   if (jiraSite || jiraEmail || jiraApiToken) {
     if (!jiraSite || !jiraEmail || !jiraApiToken) throw new Error('Preencha site, e-mail e token da API do Jira')
   }

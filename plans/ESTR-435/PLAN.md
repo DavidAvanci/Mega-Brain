@@ -1,9 +1,11 @@
 # PLAN — ESTR-435: [OPR] Banner de aviso na topbar - Nova OPR
 
 ## Contexto — resumo do problema e do resultado esperado
+
 A Takeat vai migrar os clientes do painel de operação atual (operação antiga) para o novo modelo de operação (Nova OPR). Hoje os clientes trabalham no painel atual e não têm nenhum aviso dentro do produto sobre essa mudança. O resultado esperado é um banner de aviso posicionado entre o header (topbar) e o conteúdo da página do painel atual, comunicando a migração, com um botão "Conheça as novidades" que abre um modal apresentando os quatro vídeos sobre as frentes impactadas (Fluxo de Pedidos, Fluxo de Vendas no Modo Balcão, Conferência de Caixa e Pagamento de Mesas e Comandas), e com a possibilidade de o usuário fechar o aviso. O banner e o modal devem ser construídos com os componentes do `takeat-design-system-ui-kit` sempre que houver componente equivalente disponível.
 
 ## Especificação — requisitos observáveis e testáveis do comportamento final
+
 - O banner é renderizado imediatamente abaixo do header (topbar) e acima do conteúdo da página, ocupando a largura disponível, visível em todas as telas do painel atual que exibem o header, sem sobrepor nem quebrar os elementos existentes do header nem o conteúdo abaixo dele (o conteúdo é empurrado para baixo, não coberto).
 - O banner, o botão "Conheça as novidades", o botão de fechar e o modal usam componentes do `takeat-design-system-ui-kit` sempre que existir equivalente na biblioteca (ex.: `Button`, componente de modal/dialog, ícones via subpath de ícones, tipografia e tokens do tema via `UiKitTheme`); só se cria markup/estilo próprio para o que a biblioteca não cobre.
 - O texto do banner comunica que a operação será atualizada para o novo modelo. O texto final deve ser proposto e aprovado pelo time de produto antes do merge.
@@ -17,9 +19,11 @@ A Takeat vai migrar os clientes do painel de operação atual (operação antiga
 - Usuários que nunca fecharam o banner o veem por padrão; nenhuma configuração de backend é necessária para exibi-lo.
 
 ## Repositórios
+
 - garcom-restaurant-dashboard
 
 ## Tasks
+
 - [x] Validar com produto o texto final do aviso e confirmar as URLs dos quatro vídeos citados no card (Fluxo de Pedidos, Fluxo de Vendas no Modo Balcão, Conferência de Caixa, Pagamento de Mesas e Comandas).
 - [x] Verificar a viabilidade do `takeat-design-system-ui-kit` no `garcom-restaurant-dashboard`: instalar/atualizar o pacote, checar compatibilidade da versão de React com o peer range da lib, configurar o wrapper `UiKitTheme` e o import do CSS da lib (atenção ao mapa de `exports` do pacote, que pode exigir alias/ajuste no bundler para expor o CSS), e listar quais componentes da lib cobrem banner, botão, ícones e modal.
 - [x] Localizar o layout do painel (header + área de conteúdo) e mapear o ponto de montagem do banner entre o header e o conteúdo, garantindo que ele apareça em todas as telas que usam esse layout.
@@ -33,6 +37,7 @@ A Takeat vai migrar os clientes do painel de operação atual (operação antiga
 - [x] Abrir PR com screenshot/GIF do banner e do modal (exibição, abertura do modal e fechamento) para revisão.
 
 ## Testes manuais
+
 - [x] Acessar o painel atual com um navegador sem estado prévio e verificar que o banner aparece entre o header e o conteúdo em todas as telas principais (pedidos, balcão, caixa, mesas/comandas), sem cobrir o header nem o conteúdo.
 - [x] Conferir que o texto exibido é o aprovado por produto e que o visual do banner e do modal usa os componentes/tokens do ui-kit conforme o protótipo.
 - [x] Clicar em "Conheça as novidades" e verificar que o modal abre com os quatro vídeos: Fluxo de Pedidos, Fluxo de Vendas no Modo Balcão, Conferência de Caixa e Pagamento de Mesas e Comandas.

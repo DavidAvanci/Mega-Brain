@@ -31,13 +31,13 @@ Com Vite pronto em `http://localhost:5173`, foram feitos GETs locais, cada um
 com timeout de 20 segundos. Foram registrados somente status, tamanho e forma
 da resposta; conteúdo de cards, configurações, Jira e uso não foi gravado.
 
-| Check | Resultado |
-| --- | --- |
-| `GET /` | `200`; 615 bytes; HTML contém `#root` e script de módulo React. |
-| `GET /api/workspace` | `200`; array com 8 entradas. |
-| `GET /api/workspace/settings` | `200`; objeto com `stages`. |
-| `GET /api/jira/ready` | `200`; array com 21 entradas. |
-| `GET /api/claude/usage` | `200`; objeto com `fiveHour`, `sevenDay` e `fable`. |
+| Check                         | Resultado                                                       |
+| ----------------------------- | --------------------------------------------------------------- |
+| `GET /`                       | `200`; 615 bytes; HTML contém `#root` e script de módulo React. |
+| `GET /api/workspace`          | `200`; array com 8 entradas.                                    |
+| `GET /api/workspace/settings` | `200`; objeto com `stages`.                                     |
+| `GET /api/jira/ready`         | `200`; array com 21 entradas.                                   |
+| `GET /api/claude/usage`       | `200`; objeto com `fiveHour`, `sevenDay` e `fable`.             |
 
 Não foi usado browser/E2E: Playwright não é dependência do projeto. A resposta
 HTML e o carregamento do módulo confirmam o ponto de entrada da UI; as APIs

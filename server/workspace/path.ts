@@ -13,7 +13,13 @@ export interface WorkspacePathResolver {
 
 function isChildOf(root: string, candidate: string): boolean {
   const path = relative(root, candidate)
-  return path !== '' && !path.startsWith(`..${sep}`) && path !== '..' && !path.includes('\0') && !resolve(root, path).startsWith(`..${sep}`)
+  return (
+    path !== '' &&
+    !path.startsWith(`..${sep}`) &&
+    path !== '..' &&
+    !path.includes('\0') &&
+    !resolve(root, path).startsWith(`..${sep}`)
+  )
 }
 
 function validCardName(name: string): boolean {

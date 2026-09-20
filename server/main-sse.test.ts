@@ -31,15 +31,28 @@ function chatFixture() {
     execFileSync: () => '',
     execFile: (_command, _args, _options, callback) => callback(null, '', ''),
   }
-  const service = createChatService({
-    workspaceDir: root,
-    directories: { home: root, claudeHome: join(root, '.claude'), claudeProjects: join(root, 'projects'), claudeCredentials: join(root, '.claude', '.credentials.json') },
-    executables: { claude: 'claude-fake' },
-  }, runner)
+  const service = createChatService(
+    {
+      workspaceDir: root,
+      directories: {
+        home: root,
+        claudeHome: join(root, '.claude'),
+        claudeProjects: join(root, 'projects'),
+        claudeCredentials: join(root, '.claude', '.credentials.json'),
+      },
+      executables: { claude: 'claude-fake' },
+    },
+    runner,
+  )
   const runtime = createServerRuntime()
   runtime.register('POST', '/api/chat/send', chatSendHttp(service))
   runtime.register('POST', '/api/chat/abort', chatAbortHttp(service))
-  return { runtime, get child() { return child } }
+  return {
+    runtime,
+    get child() {
+      return child
+    },
+  }
 }
 
 describe('standalone chat SSE', () => {
@@ -67,17 +80,32 @@ describe('standalone chat SSE', () => {
   test('frames and flushes separate SSE chunks before the chat finishes, including a final error', async () => {
     const { base, fixture } = await start()
     const response = await fetch(`${base}/api/chat/send`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'card', text: 'oi' }),
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'card', text: 'oi' }),
     })
     expect(response.headers.get('content-type')).toBe('text/event-stream')
     expect(response.headers.get('cache-control')).toBe('no-cache')
     expect(response.headers.get('connection')).toBe('keep-alive')
     const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader()
-    fixture.child!.stdout.emit('data', Buffer.from('{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"um"}}}\n'))
+    fixture.child!.stdout.emit(
+      'data',
+      Buffer.from(
+        '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"um"}}}\n',
+      ),
+    )
     expect((await reader.read()).value).toBe('data: {"type":"text","text":"um"}\n\n')
-    fixture.child!.stdout.emit('data', Buffer.from('{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"dois"}}}\n'))
+    fixture.child!.stdout.emit(
+      'data',
+      Buffer.from(
+        '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"dois"}}}\n',
+      ),
+    )
     expect((await reader.read()).value).toBe('data: {"type":"text","text":"dois"}\n\n')
-    fixture.child!.stdout.emit('data', Buffer.from('{"type":"result","subtype":"error","is_error":true,"result":"falha fake"}\n'))
+    fixture.child!.stdout.emit(
+      'data',
+      Buffer.from('{"type":"result","subtype":"error","is_error":true,"result":"falha fake"}\n'),
+    )
     expect((await reader.read()).value).toBe('data: {"type":"done","error":"falha fake"}\n\n')
     expect((await reader.read()).done).toBe(true)
   })
@@ -85,10 +113,14 @@ describe('standalone chat SSE', () => {
   test('explicit abort kills the fake child and ends the SSE without an orphan', async () => {
     const { base, fixture } = await start()
     const stream = await fetch(`${base}/api/chat/send`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'card', text: 'oi' }),
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'card', text: 'oi' }),
     })
     const abort = await fetch(`${base}/api/chat/abort`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'card' }),
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'card' }),
     })
     expect(await abort.json()).toEqual({ ok: true })
     expect(fixture.child!.kills).toEqual(['SIGTERM'])
@@ -100,15 +132,27 @@ describe('standalone chat SSE', () => {
   test('a disconnected client cancels the fake child and does not attempt further SSE writes', async () => {
     const { base, fixture } = await start()
     await new Promise<void>((resolve, reject) => {
-      const req = nodeRequest(`${base}/api/chat/send`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }, (response) => {
-        response.once('data', () => undefined)
-      })
-      req.once('error', (error: NodeJS.ErrnoException) => error.code === 'ECONNRESET' ? resolve() : reject(error))
+      const req = nodeRequest(
+        `${base}/api/chat/send`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
+        (response) => {
+          response.once('data', () => undefined)
+        },
+      )
+      req.once('error', (error: NodeJS.ErrnoException) => (error.code === 'ECONNRESET' ? resolve() : reject(error)))
       req.end(JSON.stringify({ name: 'card', text: 'oi' }))
-      setTimeout(() => { req.destroy(); resolve() }, 20)
+      setTimeout(() => {
+        req.destroy()
+        resolve()
+      }, 20)
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(fixture.child!.kills).toEqual(['SIGTERM'])
-    fixture.child!.stdout.emit('data', Buffer.from('{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"ignored"}}}\n'))
+    fixture.child!.stdout.emit(
+      'data',
+      Buffer.from(
+        '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"ignored"}}}\n',
+      ),
+    )
   })
 })

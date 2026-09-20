@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { apiClientMode } from './apiClient'
+import { apiClientMode } from './shared/api/api-client'
 import { bootstrapDesktopApiClient } from './desktopBootstrap'
 import { DesktopBootstrapError, type DesktopBootstrapFailure } from './desktopBootstrap'
 
@@ -57,10 +57,12 @@ export class DesktopConnection {
     this.set({ phase: 'starting', hasConnected: this.state.hasConnected })
     const pending = this.bootstrapWhenReady()
       .then(() => this.set({ phase: 'ready', hasConnected: true }))
-      .catch((error) => this.set({
-        phase: error instanceof DesktopBootstrapError ? error.failure : 'unavailable',
-        hasConnected: this.state.hasConnected,
-      }))
+      .catch((error) =>
+        this.set({
+          phase: error instanceof DesktopBootstrapError ? error.failure : 'unavailable',
+          hasConnected: this.state.hasConnected,
+        }),
+      )
       .finally(() => {
         if (this.pending === pending) this.pending = undefined
       })

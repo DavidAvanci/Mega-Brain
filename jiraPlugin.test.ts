@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { matchTransition } from './jiraPlugin'
+import { matchTransition } from './server/jira/service'
 
 test('matchTransition', () => {
   const transitions = [

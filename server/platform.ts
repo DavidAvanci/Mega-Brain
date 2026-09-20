@@ -32,16 +32,19 @@ export function resolveOptionalExecutable(options: OptionalExecutableOptions): s
     if (found) return found
   }
   const requested = options.configured ? ` configurado em ${options.configured}` : ''
-  throw new Error(`${options.label} não está disponível${requested}. Instale-o ou defina o executável em Configurações.`)
+  throw new Error(
+    `${options.label} não está disponível${requested}. Instale-o ou defina o executável em Configurações.`,
+  )
 }
 
 export function wslDesktopCandidates(kind: 'cursor' | 'terminal' | 'browser' | 'powershell'): readonly string[] {
   const wsl = Boolean(process.env.WSL_DISTRO_NAME)
   if (kind === 'cursor') return ['cursor', 'cursor.exe']
   if (kind === 'terminal') return wsl ? ['wt.exe', '/mnt/c/Windows/System32/wt.exe'] : ['x-terminal-emulator']
-  if (kind === 'browser') return wsl
-    ? ['/mnt/c/Program Files/Google/Chrome/Application/chrome.exe', 'chrome.exe']
-    : ['google-chrome', 'chromium', 'chromium-browser']
+  if (kind === 'browser')
+    return wsl
+      ? ['/mnt/c/Program Files/Google/Chrome/Application/chrome.exe', 'chrome.exe']
+      : ['google-chrome', 'chromium', 'chromium-browser']
   return wsl
     ? ['/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe', 'powershell.exe']
     : ['powershell.exe', 'powershell']

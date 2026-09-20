@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'vitest'
-import { ApiClient } from './apiClient'
-import type { ChatEvent } from './types'
-import { createReleaseFixture } from '../server/release-fixture'
+import { ApiClient } from './shared/api/api-client'
+import type { ChatEvent } from '../shared/contracts/chat'
+import { createReleaseFixture } from '../test/support/server/release-fixture'
 import { createServerRuntime } from '../server/runtime'
 import type { ApiRequest, JsonResponse, SseResponse } from '../server/contracts'
 
@@ -40,7 +40,10 @@ function fixtureRuntime() {
     const input = body as { title?: unknown; description?: unknown; flow?: unknown }
     const title = String(input.title ?? '').trim()
     if (!title) return json(400, { error: 'title é obrigatório' })
-    const name = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    const name = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
     const card: FixtureCard = {
       name,
       path: `/fixture/workspace/${name}`,
@@ -71,11 +74,13 @@ function fixtureRuntime() {
     boardSettings = structuredClone((body as { stages: typeof settings }).stages)
     return json(200, { stages: boardSettings })
   })
-  runtime.register('GET', '/api/chat', async (request) => json(200, {
-    sessionId: `fixture-${request.query.get('name')}`,
-    entries: [{ role: 'assistant', text: 'Histórico simulado' }],
-    settings: { model: 'gpt-5.6', effort: 'medium' },
-  }))
+  runtime.register('GET', '/api/chat', async (request) =>
+    json(200, {
+      sessionId: `fixture-${request.query.get('name')}`,
+      entries: [{ role: 'assistant', text: 'Histórico simulado' }],
+      settings: { model: 'gpt-5.6', effort: 'medium' },
+    }),
+  )
   runtime.register('POST', '/api/chat/send', async (): Promise<SseResponse<ChatEvent>> => ({
     status: 200,
     headers: { 'Content-Type': 'text/event-stream' },
@@ -112,13 +117,22 @@ describe('Fase 8 fixture flow (simulated transport contract, not desktop E2E)', 
     const { client } = await startFixture(servers)
     await expect(client.json('/api/workspace')).resolves.toEqual([])
 
-    await expect(client.json('/api/workspace', { method: 'POST', body: { title: 'Card crítico', description: 'Fixture segura', flow: 'medio' } }))
-      .resolves.toEqual({ folder: 'card-cr-tico' })
-    await expect(client.json('/api/workspace/update', { method: 'POST', body: { name: 'card-cr-tico', status: 'desenvolvendo' } }))
-      .resolves.toEqual({ ok: true })
-    await expect(client.json<FixtureCard[]>('/api/workspace')).resolves.toMatchObject([{ name: 'card-cr-tico', status: 'desenvolvendo', flow: 'medio' }])
+    await expect(
+      client.json('/api/workspace', {
+        method: 'POST',
+        body: { title: 'Card crítico', description: 'Fixture segura', flow: 'medio' },
+      }),
+    ).resolves.toEqual({ folder: 'card-cr-tico' })
+    await expect(
+      client.json('/api/workspace/update', { method: 'POST', body: { name: 'card-cr-tico', status: 'desenvolvendo' } }),
+    ).resolves.toEqual({ ok: true })
+    await expect(client.json<FixtureCard[]>('/api/workspace')).resolves.toMatchObject([
+      { name: 'card-cr-tico', status: 'desenvolvendo', flow: 'medio' },
+    ])
 
-    await expect(client.json('/api/workspace/delete', { method: 'POST', body: { name: 'card-cr-tico' } })).resolves.toEqual({ ok: true })
+    await expect(
+      client.json('/api/workspace/delete', { method: 'POST', body: { name: 'card-cr-tico' } }),
+    ).resolves.toEqual({ ok: true })
     await expect(client.json('/api/workspace')).resolves.toEqual([])
   })
 
@@ -126,20 +140,36 @@ describe('Fase 8 fixture flow (simulated transport contract, not desktop E2E)', 
     const { client } = await startFixture(servers)
     await client.json('/api/workspace', { method: 'POST', body: { title: 'Card crítico' } })
 
-    await expect(client.json('/api/workspace/detail?name=card-cr-tico')).resolves.toMatchObject({ files: { 'PLAN.md': '# Plano de fixture' } })
-    await expect(client.json('/api/workspace/diff?name=card-cr-tico')).resolves.toMatchObject({ repos: [{ name: 'fixture-repo', diff: expect.stringContaining('diff --git') }] })
+    await expect(client.json('/api/workspace/detail?name=card-cr-tico')).resolves.toMatchObject({
+      files: { 'PLAN.md': '# Plano de fixture' },
+    })
+    await expect(client.json('/api/workspace/diff?name=card-cr-tico')).resolves.toMatchObject({
+      repos: [{ name: 'fixture-repo', diff: expect.stringContaining('diff --git') }],
+    })
 
     const events: ChatEvent[] = []
-    await client.sse('/api/chat/send', { method: 'POST', body: JSON.stringify({ name: 'card-cr-tico', text: 'Olá' }), headers: { 'Content-Type': 'application/json' }, onEvent: (event) => { events.push(event as ChatEvent) } })
+    await client.sse('/api/chat/send', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'card-cr-tico', text: 'Olá' }),
+      headers: { 'Content-Type': 'application/json' },
+      onEvent: (event) => {
+        events.push(event as ChatEvent)
+      },
+    })
     expect(events).toEqual([
       { type: 'settings', settings: { model: 'gpt-5.6', effort: 'medium' } },
       { type: 'text', text: 'Resposta simulada' },
       { type: 'done' },
     ])
-    await expect(client.json('/api/chat?name=card-cr-tico')).resolves.toMatchObject({ sessionId: 'fixture-card-cr-tico', entries: [{ text: 'Histórico simulado' }] })
+    await expect(client.json('/api/chat?name=card-cr-tico')).resolves.toMatchObject({
+      sessionId: 'fixture-card-cr-tico',
+      entries: [{ text: 'Histórico simulado' }],
+    })
 
     const changed = { ...settings, development: { model: 'gpt-5.6', effort: 'max' } }
-    await expect(client.json('/api/workspace/settings', { method: 'POST', body: { stages: changed } })).resolves.toEqual({ stages: changed })
+    await expect(
+      client.json('/api/workspace/settings', { method: 'POST', body: { stages: changed } }),
+    ).resolves.toEqual({ stages: changed })
     await expect(client.json('/api/workspace/settings')).resolves.toEqual({ stages: changed })
   })
 })

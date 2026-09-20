@@ -9,7 +9,10 @@ const errors = (md: string, deps: PreflightDeps = allOk) =>
 
 test('heading que não é repo vira erro antes de gastar agente', () => {
   const deps = { ...allOk, repoExists: (repo: string) => repo === 'api-core' }
-  const issues = errors('## api-core\n- [ ] T1 Fazer {files: a.ts}\n## infra (fora de repo)\n- [ ] T2 Outra {files: b.ts}\n', deps)
+  const issues = errors(
+    '## api-core\n- [ ] T1 Fazer {files: a.ts}\n## infra (fora de repo)\n- [ ] T2 Outra {files: b.ts}\n',
+    deps,
+  )
   expect(issues).toHaveLength(1)
   expect(issues[0].where).toBe('## infra (fora de repo)')
   expect(issues[0].message).toContain('~~infra (fora de repo)~~')
@@ -48,5 +51,7 @@ test('checklist só com seções descartadas não é executável', () => {
 })
 
 test('checklist válido não gera nada', () => {
-  expect(preflight(parseChecklist('## repo\n- [ ] T1 A {files: a.ts}\n- [ ] T2 B {files: b.ts; deps: T1}\n'), allOk)).toEqual([])
+  expect(
+    preflight(parseChecklist('## repo\n- [ ] T1 A {files: a.ts}\n- [ ] T2 B {files: b.ts; deps: T1}\n'), allOk),
+  ).toEqual([])
 })

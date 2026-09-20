@@ -53,8 +53,16 @@ export function createServerRuntime(options: ServerRuntimeOptions = {}): ServerR
   return runtime
 }
 
-function registerProductionRoutes(runtime: ServerRuntime, config: MegaBrainConfig, options: ServerRuntimeOptions): void {
-  const routes = createProductionRouteTable({ config, processRunner: options.processRunner, processOwner: options.processOwner })
+function registerProductionRoutes(
+  runtime: ServerRuntime,
+  config: MegaBrainConfig,
+  options: ServerRuntimeOptions,
+): void {
+  const routes = createProductionRouteTable({
+    config,
+    processRunner: options.processRunner,
+    processOwner: options.processOwner,
+  })
   for (const [key, handler] of routes) {
     const [method, path] = key.split(' ', 2)
     runtime.register(method, path, handler)

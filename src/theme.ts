@@ -24,10 +24,6 @@ colorScheme.addEventListener('change', () => {
   listeners.forEach((notify) => notify())
 })
 
-export function toggleTheme(): void {
-  setTheme(resolvedTheme() === 'dark' ? 'light' : 'dark')
-}
-
 export function setTheme(nextTheme: ThemePreference): void {
   if (preference === nextTheme) return
   preference = nextTheme
@@ -38,13 +34,10 @@ export function setTheme(nextTheme: ThemePreference): void {
 }
 
 export function useTheme(): Theme {
-  return useSyncExternalStore(
-    (notify) => {
-      listeners.add(notify)
-      return () => listeners.delete(notify)
-    },
-    resolvedTheme,
-  )
+  return useSyncExternalStore((notify) => {
+    listeners.add(notify)
+    return () => listeners.delete(notify)
+  }, resolvedTheme)
 }
 
 export function useThemePreference(): ThemePreference {

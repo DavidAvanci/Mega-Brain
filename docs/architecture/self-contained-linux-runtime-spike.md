@@ -19,12 +19,12 @@ para produzir e testar esse candidato localmente.
 
 ## Evidências da inspeção
 
-| Área | Evidência | Consequência |
-| --- | --- | --- |
-| Backend | `npm run server:build` gera `dist/server/main.mjs` (93.869 bytes) com esbuild, `platform: node`, ESM e alvo Node 18. | O artefato de produção não é binário. |
-| Claude | `~/.local/bin/claude` resolve para `~/.local/share/claude/versions/2.1.259`, um ELF Linux; `--version` retornou `2.1.259`. | Claude não é o bloqueio observado para remover o Node global. |
-| Scripts dinâmicos | `server/workspace/service.ts` chama `<raiz>/node_modules/.bin/tsx` para `scripts/dev-stage.ts`, `test-stage.ts`, `stage.ts` e `master-pr.ts`; esse arquivo começa com `#!/usr/bin/env node`. | Sem `node` no `PATH`, os quatro fluxos falham antes de executar o script. |
-| Assets/caminhos | O backend é um bundle único, mas `workspace/service.ts` resolve `MEGA_ROOT` a partir de `import.meta.url` e busca `node_modules/.bin/tsx` fora do bundle. | Um executável precisa de um layout de runtime explícito; não pode pressupor o checkout nem embutir assets dinâmicos sem teste. |
+| Área              | Evidência                                                                                                                                                  | Consequência                                                                                                                   |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Backend           | `npm run server:build` gera `dist/server/main.mjs` (93.869 bytes) com esbuild, `platform: node`, ESM e alvo Node 18.                                       | O artefato de produção não é binário.                                                                                          |
+| Claude            | `~/.local/bin/claude` resolve para `~/.local/share/claude/versions/2.1.259`, um ELF Linux; `--version` retornou `2.1.259`.                                 | Claude não é o bloqueio observado para remover o Node global.                                                                  |
+| Scripts dinâmicos | `server/workspace/service.ts` chama `<raiz>/node_modules/.bin/tsx` para os comandos em `scripts/commands/`; esse arquivo começa com `#!/usr/bin/env node`. | Sem `node` no `PATH`, os quatro fluxos falham antes de executar o script.                                                      |
+| Assets/caminhos   | O backend é um bundle único, mas `workspace/service.ts` resolve `MEGA_ROOT` a partir de `import.meta.url` e busca `node_modules/.bin/tsx` fora do bundle.  | Um executável precisa de um layout de runtime explícito; não pode pressupor o checkout nem embutir assets dinâmicos sem teste. |
 
 Os comandos usados para repetir a inspeção são:
 

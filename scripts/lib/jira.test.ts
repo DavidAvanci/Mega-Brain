@@ -7,7 +7,11 @@ test('prsCommentAdf builds clickable links', () => {
     { 'operation-takeat': 'https://github.com/takeat/operation-takeat/pull/1' },
     [['O que foi feito', 'Congela o restante.\n\nParcela sempre fecha.']],
   )
-  expect(adf.content[0]).toEqual({ type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'PRs Staging' }] })
+  expect(adf.content[0]).toEqual({
+    type: 'heading',
+    attrs: { level: 1 },
+    content: [{ type: 'text', text: 'PRs Staging' }],
+  })
   const link = adf.content[1].content[0].content[0].content[0]
   expect(link.text).toBe('operation-takeat')
   expect(link.marks).toEqual([{ type: 'link', attrs: { href: 'https://github.com/takeat/operation-takeat/pull/1' } }])

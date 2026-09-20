@@ -5,7 +5,10 @@ import { DesktopBootstrapError } from './desktopBootstrap'
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason?: unknown) => void
-  const promise = new Promise<T>((ok, fail) => { resolve = ok; reject = fail })
+  const promise = new Promise<T>((ok, fail) => {
+    resolve = ok
+    reject = fail
+  })
   return { promise, resolve, reject }
 }
 
@@ -36,9 +39,7 @@ describe('desktop connection bootstrap state machine', () => {
   })
 
   it('makes an unavailable backend retryable', async () => {
-    const boot = vi.fn()
-      .mockRejectedValueOnce(new Error('WSL unavailable'))
-      .mockResolvedValueOnce(undefined)
+    const boot = vi.fn().mockRejectedValueOnce(new Error('WSL unavailable')).mockResolvedValueOnce(undefined)
     const connection = new DesktopConnection(boot)
 
     await connection.start()
@@ -50,7 +51,8 @@ describe('desktop connection bootstrap state machine', () => {
 
   it('waits for the supervisor handshake instead of showing a transient failure', async () => {
     vi.useFakeTimers()
-    const boot = vi.fn()
+    const boot = vi
+      .fn()
       .mockRejectedValueOnce(new DesktopBootstrapError('backend-starting'))
       .mockResolvedValueOnce(undefined)
     const connection = new DesktopConnection(boot)
@@ -65,7 +67,9 @@ describe('desktop connection bootstrap state machine', () => {
   })
 
   it('retains an actionable startup failure for the boundary', async () => {
-    const connection = new DesktopConnection(vi.fn().mockRejectedValue(new DesktopBootstrapError('runtime-unavailable')))
+    const connection = new DesktopConnection(
+      vi.fn().mockRejectedValue(new DesktopBootstrapError('runtime-unavailable')),
+    )
     await connection.start()
     expect(connection.snapshot()).toEqual({ phase: 'runtime-unavailable', hasConnected: false })
   })

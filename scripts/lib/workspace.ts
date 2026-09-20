@@ -13,7 +13,7 @@ import {
 import { appendFileSync, mkdirSync, rmdirSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { TAKEAT, WORKTREES } from './env.ts'
-import { changedFiles, currentBranch, defaultBranch, git, hasRef } from './git.ts'
+import { currentBranch, defaultBranch, git, hasRef } from './git.ts'
 import { JIRA_KEY } from './jira.ts'
 import { installCommand } from './packageManager.ts'
 import { readPlan } from './plan.ts'
@@ -36,15 +36,26 @@ export function slugify(title: string): string {
   return slug || 'task'
 }
 
+function readCardRecord(path: string): Record<string, unknown> | undefined {
+  try {
+    const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function taskInfo(wsPath: string): TaskInfo {
   const folder = basename(wsPath)
   const plan = readPlan(wsPath)
   let title = folder
-  try {
-    const card = JSON.parse(readFileSync(join(wsPath, 'card.json'), 'utf8'))
-    if (typeof card.title === 'string' && card.title) title = card.title
-  } catch {}
-  const key = JIRA_KEY.test(folder) ? folder.toUpperCase() : plan.issue && JIRA_KEY.test(plan.issue) ? plan.issue.toUpperCase() : undefined
+  const card = readCardRecord(join(wsPath, 'card.json'))
+  if (typeof card?.title === 'string' && card.title) title = card.title
+  const key = JIRA_KEY.test(folder)
+    ? folder.toUpperCase()
+    : plan.issue && JIRA_KEY.test(plan.issue)
+      ? plan.issue.toUpperCase()
+      : undefined
   const id = key ?? slugify(folder)
   const branch = `${plan.type}/${key ? `${id}-` : ''}${slugify(title)}`.slice(0, 60).replace(/-+$/, '')
   return { id, jiraKey: key, title, type: plan.type, branch }
@@ -84,7 +95,7 @@ function insideWorktrees(path: string): boolean {
 export function registeredWorktreePaths(porcelain: string): string[] {
   return porcelain
     .split('\n')
-    .flatMap((line) => line.startsWith('worktree ') ? [canonicalPath(line.slice('worktree '.length))] : [])
+    .flatMap((line) => (line.startsWith('worktree ') ? [canonicalPath(line.slice('worktree '.length))] : []))
 }
 
 function isRegisteredWorktree(mainRepo: string, path: string): boolean {
@@ -119,7 +130,10 @@ function copyUntrackedEnv(real: string, worktree: string): void {
 // As dependências e a configuração local pertencem ao checkout original (master).
 // As worktrees de tarefas só as referenciam para não duplicar installs ou credenciais.
 export function linkProjectRuntimeFiles(real: string, worktree: string): void {
-  for (const [name, type] of [['node_modules', 'dir'], ['.env', 'file']] as const) {
+  for (const [name, type] of [
+    ['node_modules', 'dir'],
+    ['.env', 'file'],
+  ] as const) {
     const source = join(real, name)
     const target = join(worktree, name)
     if (!existsSync(source) || lstatSync(target, { throwIfNoEntry: false })) continue
@@ -145,13 +159,9 @@ interface WorktreeOrigin {
 
 function recordWorktreeOrigin(wsPath: string, repo: string, origin: WorktreeOrigin): void {
   const file = join(wsPath, 'card.json')
-  let card: Record<string, unknown> = {}
-  try {
-    card = JSON.parse(readFileSync(file, 'utf8'))
-  } catch {}
-  const saved = card.worktrees && typeof card.worktrees === 'object'
-    ? card.worktrees as Record<string, WorktreeOrigin>
-    : {}
+  const card = readCardRecord(file) ?? {}
+  const saved =
+    card.worktrees && typeof card.worktrees === 'object' ? (card.worktrees as Record<string, WorktreeOrigin>) : {}
   card.worktrees = { ...saved, [repo]: origin }
   writeFileSync(file, `${JSON.stringify(card, null, 2)}\n`)
 }
@@ -173,7 +183,9 @@ export function ensureWorktree(wsPath: string, repo: string, taskId: string, bra
       return target
     }
     if (!lstatSync(link).isSymbolicLink()) {
-      throw new Error(`${repo}: ${link} não é uma worktree Git registrada — remova o resíduo antes de rodar o checklist`)
+      throw new Error(
+        `${repo}: ${link} não é uma worktree Git registrada — remova o resíduo antes de rodar o checklist`,
+      )
     }
     unlinkSync(link)
   }
@@ -205,7 +217,9 @@ export function ensureWorktree(wsPath: string, repo: string, taskId: string, bra
     try {
       execFileSync(install.cmd, install.args, { cwd: worktree, stdio: 'ignore', timeout: 15 * 60_000 })
     } catch (error) {
-      process.stderr.write(`${install.cmd} ${install.args.join(' ')} falhou em ${repo}: ${error instanceof Error ? error.message : error}\n`)
+      process.stderr.write(
+        `${install.cmd} ${install.args.join(' ')} falhou em ${repo}: ${error instanceof Error ? error.message : error}\n`,
+      )
     }
   }
   ensureBackendCompanions(taskId, repo)
@@ -230,7 +244,9 @@ export function ensureBackendCompanions(taskId: string, repo: string): void {
     try {
       addDetachedWorktree(realRepoPath(companion), path)
     } catch (error) {
-      process.stderr.write(`${companion}: não foi possível criar a worktree companion: ${error instanceof Error ? error.message : error}\n`)
+      process.stderr.write(
+        `${companion}: não foi possível criar a worktree companion: ${error instanceof Error ? error.message : error}\n`,
+      )
     }
   }
 }
@@ -260,13 +276,15 @@ function isLink(path: string): boolean {
 
 export function mergeCardPrs(wsPath: string, env: 'staging' | 'master', prs: Record<string, string>): void {
   const file = join(wsPath, 'card.json')
-  let card: any = {}
-  try {
-    card = JSON.parse(readFileSync(file, 'utf8'))
-  } catch {
-    return
-  }
-  card.prs = { ...card.prs, [env]: { ...card.prs?.[env], ...prs } }
+  const card = readCardRecord(file)
+  if (!card) return
+  const currentPrs =
+    card.prs && typeof card.prs === 'object' && !Array.isArray(card.prs) ? (card.prs as Record<string, unknown>) : {}
+  const currentEnvironment =
+    currentPrs[env] && typeof currentPrs[env] === 'object' && !Array.isArray(currentPrs[env])
+      ? (currentPrs[env] as Record<string, string>)
+      : {}
+  card.prs = { ...currentPrs, [env]: { ...currentEnvironment, ...prs } }
   writeFileSync(file, `${JSON.stringify(card, null, 2)}\n`)
 }
 
@@ -276,10 +294,6 @@ const INJECTED_PATHS = ['node_modules', '.env']
 
 export function isInjected(path: string): boolean {
   return INJECTED_PATHS.some((injected) => path === injected || path.startsWith(`${injected}/`))
-}
-
-export function dirtyFiles(cwd: string): string[] {
-  return changedFiles(cwd).filter((path) => !isInjected(path))
 }
 
 function unignoredInjectedPaths(cwd: string): string[] {

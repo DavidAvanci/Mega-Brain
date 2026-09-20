@@ -48,13 +48,27 @@ export interface ClaudeItemOptions {
   timeoutMs: number
 }
 
+type ResultStatus = ItemResult['status']
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined
+}
+
+function resultFrom(value: unknown, costUsd?: number): ItemResult | null {
+  const parsed = record(value)
+  const status = parsed?.status
+  if (status !== 'done' && status !== 'failed' && status !== 'blocked') return null
+  return { status: status as ResultStatus, note: String(parsed?.note ?? ''), costUsd }
+}
+
 function parseResult(stdout: string): ItemResult | null {
-  let data: any
+  let data: Record<string, unknown> | undefined
   try {
-    data = JSON.parse(stdout)
+    data = record(JSON.parse(stdout))
   } catch {
     return null
   }
+  if (!data) return null
   const costUsd = typeof data.total_cost_usd === 'number' ? data.total_cost_usd : undefined
   const candidates = [data.structured_output, data.structuredOutput]
   if (typeof data.result === 'string') {
@@ -63,9 +77,8 @@ function parseResult(stdout: string): ItemResult | null {
     } catch {}
   }
   for (const candidate of candidates) {
-    if (candidate && ['done', 'failed', 'blocked'].includes(candidate.status)) {
-      return { status: candidate.status, note: String(candidate.note ?? ''), costUsd }
-    }
+    const result = resultFrom(candidate, costUsd)
+    if (result) return result
   }
   if (data.is_error || data.subtype !== 'success') {
     const detail =
@@ -83,20 +96,19 @@ function parseResult(stdout: string): ItemResult | null {
 }
 
 function parseStructuredText(text: string): ItemResult | null {
-  const normalized = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+  const normalized = text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim()
   try {
     const value = JSON.parse(normalized)
-    if (value && ['done', 'failed', 'blocked'].includes(value.status)) {
-      return { status: value.status, note: String(value.note ?? '') }
-    }
+    const result = resultFrom(value)
+    if (result) return result
   } catch {}
   const match = normalized.match(/\{[\s\S]*\}/)
   if (!match) return null
   try {
-    const value = JSON.parse(match[0])
-    return value && ['done', 'failed', 'blocked'].includes(value.status)
-      ? { status: value.status, note: String(value.note ?? '') }
-      : null
+    return resultFrom(JSON.parse(match[0]))
   } catch {
     return null
   }
@@ -106,12 +118,15 @@ function parseCodexResult(stdout: string): ItemResult | null {
   let message = ''
   for (const line of stdout.split('\n')) {
     try {
-      const event = JSON.parse(line)
+      const event = record(JSON.parse(line))
+      if (!event) continue
+      const error = record(event.error)
+      const item = record(event.item)
       if (event?.type === 'turn.failed' || event?.type === 'error') {
-        return { status: 'failed', note: String(event.error?.message ?? event.message ?? 'Execução do ChatGPT falhou') }
+        return { status: 'failed', note: String(error?.message ?? event.message ?? 'Execução do ChatGPT falhou') }
       }
-      if (event?.type === 'item.completed' && event.item?.type === 'agent_message') {
-        message = String(event.item.text ?? '')
+      if (event?.type === 'item.completed' && item?.type === 'agent_message') {
+        message = String(item.text ?? '')
       }
     } catch {}
   }
@@ -124,28 +139,41 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
     const settle = (result: ItemResult) => resolve({ ...result, durationMs: Date.now() - startedAt })
     const provider = process.env.MEGA_BRAIN_LLM_PROVIDER === 'chatgpt' ? 'chatgpt' : 'claude'
     const claudeArgs = [
-      '-p', options.prompt,
-      '--model', options.model,
+      '-p',
+      options.prompt,
+      '--model',
+      options.model,
       ...(options.model.toLowerCase().includes('fable') ? ['--fallback-model', 'opus'] : []),
       ...(options.effort ? ['--effort', options.effort] : []),
-      '--json-schema', RESULT_SCHEMA,
-      '--max-turns', String(options.maxTurns),
-      '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
-      '--tools', options.tools,
+      '--json-schema',
+      RESULT_SCHEMA,
+      '--max-turns',
+      String(options.maxTurns),
+      '--strict-mcp-config',
+      '--mcp-config',
+      '{"mcpServers":{}}',
+      '--tools',
+      options.tools,
       '--dangerously-skip-permissions',
-      '--output-format', 'json',
+      '--output-format',
+      'json',
     ]
     const codexPrompt = `${options.prompt}\n\nAo terminar, responda somente com JSON válido no formato {"status":"done|failed|blocked","note":"resumo curto"}.`
-    const codexModel = ['fable', 'opus', 'sonnet', 'haiku', 'default'].includes(options.model.toLowerCase()) ? [] : ['--model', options.model]
+    const codexModel = ['fable', 'opus', 'sonnet', 'haiku', 'default'].includes(options.model.toLowerCase())
+      ? []
+      : ['--model', options.model]
     const command = provider === 'chatgpt' ? codexBin() : claudeBin()
-    const args = provider === 'chatgpt'
-      ? [
-          'exec', '--json', '--dangerously-bypass-approvals-and-sandbox',
-          ...codexModel,
-          ...(options.effort ? ['--config', `model_reasoning_effort="${options.effort}"`] : []),
-          codexPrompt,
-        ]
-      : claudeArgs
+    const args =
+      provider === 'chatgpt'
+        ? [
+            'exec',
+            '--json',
+            '--dangerously-bypass-approvals-and-sandbox',
+            ...codexModel,
+            ...(options.effort ? ['--config', `model_reasoning_effort="${options.effort}"`] : []),
+            codexPrompt,
+          ]
+        : claudeArgs
     const child = spawn(command, args, { cwd: options.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
@@ -154,7 +182,10 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
     const timer = setTimeout(() => child.kill('SIGKILL'), options.timeoutMs)
     child.on('error', (error) => {
       clearTimeout(timer)
-      settle({ status: 'failed', note: `Falha ao iniciar ${provider === 'chatgpt' ? 'ChatGPT' : 'Claude'}: ${error.message}` })
+      settle({
+        status: 'failed',
+        note: `Falha ao iniciar ${provider === 'chatgpt' ? 'ChatGPT' : 'Claude'}: ${error.message}`,
+      })
     })
     child.on('close', (code, signal) => {
       clearTimeout(timer)

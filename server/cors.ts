@@ -6,10 +6,7 @@
  * capability into a cross-origin API.  The two origins are the Tauri 2
  * Windows origins proven by the loopback spike.
  */
-export const TAURI_ALLOWED_ORIGINS = [
-  'http://tauri.localhost',
-  'https://tauri.localhost',
-] as const
+export const TAURI_ALLOWED_ORIGINS = ['http://tauri.localhost', 'https://tauri.localhost'] as const
 const TAURI_DEV_ORIGIN = 'http://127.0.0.1:15173'
 
 export const CORS_ALLOWED_METHODS = ['GET', 'POST', 'DELETE'] as const
@@ -23,10 +20,7 @@ const allowedMethods = new Set<string>(CORS_ALLOWED_METHODS)
 const allowedHeaders = new Set(CORS_ALLOWED_HEADERS.map((header) => header.toLowerCase()))
 
 export type CorsDecision =
-  | { kind: 'absent' }
-  | { kind: 'actual'; origin: string }
-  | { kind: 'preflight'; origin: string }
-  | { kind: 'reject' }
+  { kind: 'absent' } | { kind: 'actual'; origin: string } | { kind: 'preflight'; origin: string } | { kind: 'reject' }
 
 /**
  * Evaluates an Origin exactly; prefixes, suffixes, ports and lookalike hosts

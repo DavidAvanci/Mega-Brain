@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { claudeBin, claudeCwds, codexBin, readAgent, readTail, summarizeInput } from '../workspace/service'
+import { readTail, summarizeAgentInput } from '../agent-log'
+import { claudeBin, codexBin } from '../agent-executable'
+import { agentCwds } from '../agent-process'
+import { readAgent } from '../workspace/stage-agent-status'
 import { createWorkspacePathResolver } from '../workspace/path'
-import type { ChatAgentSettings, ChatEntry, ChatEvent } from '../../src/types'
+import type { ChatAgentSettings, ChatEntry, ChatEvent } from '../../shared/contracts/chat'
 import { loadMegaBrainConfig, type MegaBrainConfig } from '../config'
 import { nodeProcessRunner, type ProcessChild, type ProcessOwner, type ProcessRunner } from '../process'
 import { assertTestWorkspace } from '../test-safety'
@@ -11,6 +14,18 @@ import { assertTestWorkspace } from '../test-safety'
 const DEFAULT_PROJECTS_ROOT = loadMegaBrainConfig().directories.claudeProjects
 const TRANSCRIPT_TAIL_BYTES = 512 * 1024
 const HISTORY_LIMIT = 80
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined
+}
+
+function jsonRecord(line: string): Record<string, unknown> | undefined {
+  try {
+    return record(JSON.parse(line))
+  } catch {
+    return undefined
+  }
+}
 
 export function sessionDir(cwd: string, projectsRoot = DEFAULT_PROJECTS_ROOT): string {
   return join(projectsRoot, cwd.replace(/[/.]/g, '-'))
@@ -33,20 +48,16 @@ export function resolveSession(path: string, projectsRoot = DEFAULT_PROJECTS_ROO
 export function parseTranscript(text: string): ChatEntry[] {
   const entries: ChatEntry[] = []
   for (const line of text.split('\n')) {
-    let event: any
-    try {
-      event = JSON.parse(line)
-    } catch {
-      continue
-    }
-    if (event?.isSidechain) continue
-    const content = event?.message?.content
+    const event = jsonRecord(line)
+    if (!event || event.isSidechain) continue
+    const content = record(event.message)?.content
     if (event?.type === 'user' && typeof content === 'string' && !content.startsWith('<')) {
       entries.push({ role: 'user', text: content })
     }
     if (event?.type !== 'assistant' || !Array.isArray(content)) continue
-    for (const block of content) {
-      if (block?.type === 'text' && String(block.text ?? '').trim()) {
+    for (const rawBlock of content) {
+      const block = record(rawBlock)
+      if (block?.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
         entries.push({ role: 'assistant', text: block.text })
       }
       if (block?.type === 'tool_use') {
@@ -57,10 +68,11 @@ export function parseTranscript(text: string): ChatEntry[] {
   return entries
 }
 
-function settingsFromEvent(event: any): ChatAgentSettings | null {
-  if (event?.type !== 'assistant' || event?.isSidechain) return null
-  const model = event.message?.model
-  const effort = event.effort
+function settingsFromEvent(event: unknown): ChatAgentSettings | null {
+  const parsed = record(event)
+  if (parsed?.type !== 'assistant' || parsed.isSidechain) return null
+  const model = record(parsed.message)?.model
+  const effort = parsed.effort
   if (typeof model !== 'string' || !model.trim() || typeof effort !== 'string' || !effort.trim()) return null
   return { model: model.trim(), effort: effort.trim() }
 }
@@ -70,7 +82,7 @@ export function parseChatSettings(text: string): ChatAgentSettings | null {
   let settings: ChatAgentSettings | null = null
   for (const line of text.split('\n')) {
     try {
-      settings = settingsFromEvent(JSON.parse(line)) ?? settings
+      settings = settingsFromEvent(jsonRecord(line)) ?? settings
     } catch {}
   }
   return settings
@@ -78,7 +90,7 @@ export function parseChatSettings(text: string): ChatAgentSettings | null {
 
 function settingsEvent(line: string): ChatEvent | null {
   try {
-    const settings = settingsFromEvent(JSON.parse(line))
+    const settings = settingsFromEvent(jsonRecord(line))
     return settings ? { type: 'settings', settings } : null
   } catch {
     return null
@@ -86,29 +98,33 @@ function settingsEvent(line: string): ChatEvent | null {
 }
 
 function toolLabel(block: { name?: string; input?: Record<string, unknown> }): string {
-  return [block.name, summarizeInput(block.input)].filter(Boolean).join(': ')
+  return [block.name, summarizeAgentInput(block.input)].filter(Boolean).join(': ')
 }
 
 export function chatEvent(line: string): ChatEvent | null {
-  let event: any
-  try {
-    event = JSON.parse(line)
-  } catch {
-    return null
-  }
+  const event = jsonRecord(line)
+  if (!event) return null
   if (event?.type === 'stream_event') {
-    const delta = event.event?.delta
-    if (event.event?.type !== 'content_block_delta' || delta?.type !== 'text_delta') return null
+    const stream = record(event.event)
+    const delta = record(stream?.delta)
+    if (stream?.type !== 'content_block_delta' || delta?.type !== 'text_delta') return null
     return { type: 'text', text: String(delta.text ?? '') }
   }
   if (event?.type === 'assistant') {
-    const tool = event.message?.content?.find?.((block: any) => block?.type === 'tool_use')
+    const content = record(event.message)?.content
+    const tool = Array.isArray(content) ? content.map(record).find((block) => block?.type === 'tool_use') : undefined
     return tool ? { type: 'tool', tool: toolLabel(tool) } : null
   }
   if (event?.type !== 'result') return null
   if (event.subtype === 'success' && !event.is_error) return { type: 'done' }
   const detail = typeof event.result === 'string' && event.result.trim() ? event.result : event.subtype
-  return { type: 'done', error: String(detail ?? 'erro desconhecido').trim().replace(/\s+/g, ' ').slice(0, 300) }
+  return {
+    type: 'done',
+    error: String(detail ?? 'erro desconhecido')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .slice(0, 300),
+  }
 }
 
 function transcript(path: string, projectsRoot: string): { entries: ChatEntry[]; settings: ChatAgentSettings | null } {
@@ -125,7 +141,7 @@ const aborted = new WeakSet<ProcessChild>()
 
 function terminalOpen(path: string): boolean {
   const real = realpathSync(path)
-  for (const cwd of claudeCwds()) if (cwd === real) return true
+  for (const cwd of agentCwds()) if (cwd === real) return true
   return false
 }
 
@@ -138,17 +154,29 @@ function busyReason(path: string): string | undefined {
 
 function chatArgs(text: string, session: string | undefined): string[] {
   return [
-    '-p', text,
+    '-p',
+    text,
     ...(session ? ['--resume', session] : ['--session-id', randomUUID()]),
-    '--output-format', 'stream-json',
+    '--output-format',
+    'stream-json',
     '--include-partial-messages',
     '--verbose',
-    '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+    '--strict-mcp-config',
+    '--mcp-config',
+    '{"mcpServers":{}}',
     '--dangerously-skip-permissions',
   ]
 }
 
-function streamChat(path: string, text: string, emit: (event: ChatEvent) => void, projectsRoot: string, executable: string | undefined, runner: ProcessRunner, owner?: ProcessOwner): void {
+function streamChat(
+  path: string,
+  text: string,
+  emit: (event: ChatEvent) => void,
+  projectsRoot: string,
+  executable: string | undefined,
+  runner: ProcessRunner,
+  owner?: ProcessOwner,
+): void {
   const child = runner.spawn(claudeBin(executable), chatArgs(text, resolveSession(path, projectsRoot)), {
     cwd: path,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -186,11 +214,22 @@ function streamChat(path: string, text: string, emit: (event: ChatEvent) => void
   })
 }
 
-function streamCodexChat(path: string, text: string, emit: (event: ChatEvent) => void, executable: string | undefined, runner: ProcessRunner, owner?: ProcessOwner): void {
-  const child = runner.spawn(codexBin(executable), ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', text], {
-    cwd: path,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+function streamCodexChat(
+  path: string,
+  text: string,
+  emit: (event: ChatEvent) => void,
+  executable: string | undefined,
+  runner: ProcessRunner,
+  owner?: ProcessOwner,
+): void {
+  const child = runner.spawn(
+    codexBin(executable),
+    ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', text],
+    {
+      cwd: path,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  )
   owner?.own(child, { label: 'chat' })
   running.set(path, child)
   let buffer = ''
@@ -208,13 +247,15 @@ function streamCodexChat(path: string, text: string, emit: (event: ChatEvent) =>
     buffer = lines.pop() ?? ''
     for (const line of lines) {
       try {
-        const event = JSON.parse(line)
-        if (event?.type === 'item.completed' && event.item?.type === 'agent_message' && event.item.text) {
-          emit({ type: 'text', text: String(event.item.text) })
+        const event = jsonRecord(line)
+        const item = record(event?.item)
+        const error = record(event?.error)
+        if (event?.type === 'item.completed' && item?.type === 'agent_message' && item.text) {
+          emit({ type: 'text', text: String(item.text) })
         } else if (event?.type === 'turn.completed') {
           finish({ type: 'done' })
         } else if (event?.type === 'turn.failed' || event?.type === 'error') {
-          finish({ type: 'done', error: String(event.error?.message ?? event.message ?? 'Falha no ChatGPT') })
+          finish({ type: 'done', error: String(error?.message ?? event?.message ?? 'Falha no ChatGPT') })
         }
       } catch {}
     }
@@ -229,9 +270,20 @@ function streamCodexChat(path: string, text: string, emit: (event: ChatEvent) =>
   })
 }
 
-export interface ChatService { history(name: string): Promise<{ sessionId: string | null; entries: ChatEntry[]; settings?: ChatAgentSettings | null }>; send(name: string, text: string, emit: (event: ChatEvent) => void): void; abort(name: string): boolean }
+export interface ChatService {
+  history(
+    name: string,
+  ): Promise<{ sessionId: string | null; entries: ChatEntry[]; settings?: ChatAgentSettings | null }>
+  send(name: string, text: string, emit: (event: ChatEvent) => void): void
+  abort(name: string): boolean
+}
 
-export function createChatService(config: Pick<MegaBrainConfig, 'workspaceDir' | 'directories' | 'executables'> & Partial<Pick<MegaBrainConfig, 'preferences'>>, runner: ProcessRunner = nodeProcessRunner, owner?: ProcessOwner): ChatService {
+export function createChatService(
+  config: Pick<MegaBrainConfig, 'workspaceDir' | 'directories' | 'executables'> &
+    Partial<Pick<MegaBrainConfig, 'preferences'>>,
+  runner: ProcessRunner = nodeProcessRunner,
+  owner?: ProcessOwner,
+): ChatService {
   const folderPath = (name: unknown): string => {
     const root = resolve(config.workspaceDir)
     assertTestWorkspace(root)
@@ -251,9 +303,17 @@ export function createChatService(config: Pick<MegaBrainConfig, 'workspaceDir' |
       if (!message) throw new Error('Mensagem vazia')
       const busy = busyReason(path)
       if (busy) throw new Error(busy)
-      if (config.preferences?.llmProvider === 'chatgpt') streamCodexChat(path, message, emit, config.executables.codex, runner, owner)
+      if (config.preferences?.llmProvider === 'chatgpt')
+        streamCodexChat(path, message, emit, config.executables.codex, runner, owner)
       else streamChat(path, message, emit, config.directories.claudeProjects, config.executables.claude, runner, owner)
     },
-    abort(name) { const child = running.get(folderPath(name)); if (child) { aborted.add(child); child.kill('SIGTERM') }; return true },
+    abort(name) {
+      const child = running.get(folderPath(name))
+      if (child) {
+        aborted.add(child)
+        child.kill('SIGTERM')
+      }
+      return true
+    },
   }
 }

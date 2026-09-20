@@ -3,9 +3,19 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import type { DevEnvInfo } from './src/types'
+import type { DevEnvInfo } from './shared/domain/agents'
 import type { ProcessRunner } from './server/process'
-import { classifyRepos, killRunningApps, planDevEnv, preferredPort, prepareDependencies, readDevEnv, shouldInstallDependencies, startDevEnv, stopDevEnv } from './devEnv'
+import {
+  classifyRepos,
+  killRunningApps,
+  planDevEnv,
+  preferredPort,
+  prepareDependencies,
+  readDevEnv,
+  shouldInstallDependencies,
+  startDevEnv,
+  stopDevEnv,
+} from './server/modules/dev-environments/dev-env'
 
 test('classifyRepos', () => {
   expect(classifyRepos(['api-garcom-digital', 'api-core', 'operation-takeat', 'api-clube', 'gym-app'])).toEqual({
@@ -59,7 +69,11 @@ test('desvincula node_modules compartilhado quando os lockfiles divergem', () =>
   mkdirSync(worktree)
   writeFileSync(join(canonical, 'package-lock.json'), '{"version":1}')
   writeFileSync(join(worktree, 'package-lock.json'), '{"version":2}')
-  symlinkSync(join(canonical, 'node_modules'), join(worktree, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
+  symlinkSync(
+    join(canonical, 'node_modules'),
+    join(worktree, 'node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  )
 
   expect(prepareDependencies(worktree, canonical)).toBe(true)
   expect(() => realpathSync(join(worktree, 'node_modules'))).toThrow()
@@ -176,7 +190,13 @@ test('planDevEnv: só api-clube pede escolha de frontend', () => {
 })
 
 test('planDevEnv: symlinks em repos/ são encontrados', () => {
-  const card = cardWith([{ name: 'api-garcom-digital', branch: 'ESTR-1' }, { name: 'operation-takeat', branch: 'ESTR-1' }], 'repos')
+  const card = cardWith(
+    [
+      { name: 'api-garcom-digital', branch: 'ESTR-1' },
+      { name: 'operation-takeat', branch: 'ESTR-1' },
+    ],
+    'repos',
+  )
   expect(planDevEnv(card)).toMatchObject({
     localBackend: true,
     fronts: [{ repo: 'operation-takeat', source: 'worktree' }],
@@ -242,7 +262,10 @@ test('finalização de tentativa antiga não remove uma nova tentativa do mesmo 
   const frontend = join(card, 'internal-dashboard')
   const realFrontend = realpathSync(frontend)
   mkdirSync(join(realFrontend, 'node_modules'))
-  writeFileSync(join(realFrontend, 'package.json'), JSON.stringify({ scripts: { dev: 'vite' }, packageManager: 'npm@10' }))
+  writeFileSync(
+    join(realFrontend, 'package.json'),
+    JSON.stringify({ scripts: { dev: 'vite' }, packageManager: 'npm@10' }),
+  )
 
   const children = new Set<ReturnType<typeof spawn>>()
   const runner: ProcessRunner = {
@@ -250,7 +273,9 @@ test('finalização de tentativa antiga não remove uma nova tentativa do mesmo 
       return execFileSync(command, [...args], options)
     },
     execFile(command, args, options, callback) {
-      execFile(command, [...args], options, (error, stdout, stderr) => callback(error, String(stdout ?? ''), String(stderr ?? '')))
+      execFile(command, [...args], options, (error, stdout, stderr) =>
+        callback(error, String(stdout ?? ''), String(stderr ?? '')),
+      )
     },
     spawn(_command, _args, options) {
       const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], options)

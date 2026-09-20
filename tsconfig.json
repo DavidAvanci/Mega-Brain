@@ -2,11 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "useDefineForClassFields": true,
-    "lib": [
-      "ES2023",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -17,9 +13,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"]
     },
     "strict": true,
     "noUnusedLocals": true,
@@ -28,14 +22,13 @@
   },
   "include": [
     "src",
+    "shared",
     "server",
     "vite.config.ts",
-    "workspacePlugin.ts",
     "workspacePlugin.test.ts",
     "vitest.config.ts",
     "scripts",
     "devEnv.ts",
-    "jiraPlugin.ts",
     "prStatus.ts"
   ]
 }

@@ -1,11 +1,22 @@
 # Plano de refatoração sistêmica do Mega Brain
 
-**Status:** proposta executável  
+**Status:** fases 0–6 executadas; plano de refatoração concluído
 **Data da análise:** 2026-09-16  
 **Escopo:** frontend React/Vite, backend Node, automações, shell Tauri, testes, dependências e documentação  
 **Documento relacionado:** `PLAN.md` continua sendo a fonte do roadmap do produto desktop; este plano trata da saúde interna do código.
 
 ## 1. Resultado esperado
+
+### Progresso da execução
+
+- Fase 0: baseline versionado, npm definido para o CI e validação Linux isolada estabelecida.
+- Fase 1: ESLint, Prettier, Knip, cobertura e workflow de qualidade adicionados; imports proibidos são verificados.
+- Fase 2: modelos compartilhados separados em `shared/domain/**` e contratos de transporte em `shared/contracts/**`; não há imports de produção entre `src/**` e `server/**`.
+- Fase 3: concluída. O backend foi dividido em módulos de cards, etapas, agentes, worktrees, HTTP e lifecycle; `main.ts` e `workspace/service.ts` são fachadas de composição. Entradas externas e JSON persistido usam `unknown` com narrowing, serviços reportam falhas via logger estruturado, automações compartilham parsing de `card.json` e os adaptadores Vite legados foram removidos. Os contratos standalone/Vite e os guardrails de segurança seguem cobertos pela suíte.
+- Fase 4: concluída. A fronteira HTTP foi movida para `src/shared/api/`; cards foram separados em API, integração Jira, mapeadores, estado e comandos; e board, cards, chat, configurações, ambientes de desenvolvimento e deploy passaram a ter diretórios de feature. Fachadas na raiz preservam os imports públicos temporariamente, enquanto a composição principal usa os módulos de feature. Painéis pesados continuam carregados por `lazy`/`Suspense`.
+- Fase 5: concluída. `devEnv.ts` foi movido para `server/modules/dev-environments/dev-env.ts`, com perfis tipados em `dev-env-config.ts`; o rastreador de PRs foi para `server/platform/pr-status.ts`; todos os executáveis ativos foram para `scripts/commands/`, com runners explícitos e importação inerte; a fixture de release foi para `test/support/server/release-fixture.ts`; e as automações Git usam o `ProcessRunner` compartilhado. Workspace e automações importam os módulos proprietários diretamente.
+- Fase 6: concluída. As fachadas temporárias de frontend foram removidas, incluindo o legado de `src/cards.ts`; produção e testes importam diretamente módulos de feature e a fronteira HTTP compartilhada. O executável vazio `scripts/server-test.mjs` e a dependência sem consumidores `date-fns` foram removidos.
+- Limpeza da Fase 6: Knip completo está sem arquivos, exports ou dependências mortas. `knip.production.json` mantém a auditoria estrita de produção separada e documenta as dependências que o resolvedor não alcança por imports CSS, plugins Vite ou carregamento condicional de desenvolvimento; os usos foram confirmados por busca textual antes de serem excluídos desse relatório específico.
 
 Refatorar o Mega Brain de forma incremental para que:
 
@@ -23,40 +34,40 @@ Este não é um redesenho do produto nem uma reescrita. A estratégia é substit
 
 ### 2.1 Evidências coletadas
 
-| Evidência | Estado observado | Consequência |
-| --- | --- | --- |
-| Histórico Git | A fonte canônica está em uma branch `master` sem commits; todos os arquivos aparecem como `untracked` | Bloqueia refatoração segura: não há diff confiável, rollback ou bisect |
-| Tamanho | 17.222 linhas em 159 arquivos TS/TSX/MJS/Rust nas áreas analisadas | Projeto ainda comporta uma reorganização incremental, sem exigir monorepo |
-| Testes | 48 arquivos de teste TS encontrados; há também testes Rust inline | Boa base de proteção, mas não há métrica de cobertura |
-| TypeScript | `npx tsc --noEmit --pretty false` passou em 2026-09-16 | O baseline de tipos está saudável |
-| Vitest no WSL | A suíte não iniciou: o `node_modules` do checkout é Windows e não contém `@rollup/rollup-linux-x64-gnu` | É preciso tornar o ambiente de validação reproduzível por SO antes de usar os testes como gate |
-| CI | Existe somente workflow de release Windows por tag ou disparo manual | Pull requests não recebem gate automático de qualidade |
-| Dependências internas | A análise estática local não encontrou ciclos de imports | Deve permanecer em zero e virar regra automatizada |
-| Fronteiras | Sete arquivos de produção do backend importam tipos de `src/`; workspace importa módulos soltos da raiz | Backend e frontend não são estruturalmente independentes |
-| Gerenciador de pacotes | `package-lock.json` e `yarn.lock` coexistem; scripts e CI usam npm | Instalações podem divergir e gerar ruído de lockfile |
-| Qualidade | `strict`, `noUnusedLocals` e `noUnusedParameters` já estão ativos; ESLint, formatter, Knip e cobertura não estão configurados | Há boa base do compilador, mas faltam guardrails arquiteturais e de código morto |
+| Evidência              | Estado observado                                                                                                              | Consequência                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Histórico Git          | A fonte canônica está em uma branch `master` sem commits; todos os arquivos aparecem como `untracked`                         | Bloqueia refatoração segura: não há diff confiável, rollback ou bisect                         |
+| Tamanho                | 17.222 linhas em 159 arquivos TS/TSX/MJS/Rust nas áreas analisadas                                                            | Projeto ainda comporta uma reorganização incremental, sem exigir monorepo                      |
+| Testes                 | 48 arquivos de teste TS encontrados; há também testes Rust inline                                                             | Boa base de proteção, mas não há métrica de cobertura                                          |
+| TypeScript             | `npx tsc --noEmit --pretty false` passou em 2026-09-16                                                                        | O baseline de tipos está saudável                                                              |
+| Vitest no WSL          | A suíte não iniciou: o `node_modules` do checkout é Windows e não contém `@rollup/rollup-linux-x64-gnu`                       | É preciso tornar o ambiente de validação reproduzível por SO antes de usar os testes como gate |
+| CI                     | Existe somente workflow de release Windows por tag ou disparo manual                                                          | Pull requests não recebem gate automático de qualidade                                         |
+| Dependências internas  | A análise estática local não encontrou ciclos de imports                                                                      | Deve permanecer em zero e virar regra automatizada                                             |
+| Fronteiras             | Sete arquivos de produção do backend importam tipos de `src/`; workspace importa módulos soltos da raiz                       | Backend e frontend não são estruturalmente independentes                                       |
+| Gerenciador de pacotes | `package-lock.json` e `yarn.lock` coexistem; scripts e CI usam npm                                                            | Instalações podem divergir e gerar ruído de lockfile                                           |
+| Qualidade              | `strict`, `noUnusedLocals` e `noUnusedParameters` já estão ativos; ESLint, formatter, Knip e cobertura não estão configurados | Há boa base do compilador, mas faltam guardrails arquiteturais e de código morto               |
 
 ### 2.2 Hotspots prioritários
 
-| Arquivo/área | Sinal | Refatoração proposta |
-| --- | --- | --- |
-| `server/workspace/service.ts` | 1.184 linhas / ~50 KB; mistura cards, estágios, agentes, Git/worktrees, diffs, launchers e ambientes dev | Separar por casos de uso e adaptadores, mantendo `workspaceHttp` como fachada temporária |
-| `devEnv.ts` | 607 linhas; configuração específica de projetos, planejamento, dependências, portas, processos e persistência | Criar módulo `dev-environments` com `planner`, `repository`, `process-supervisor` e perfis de projeto |
-| `server/main.ts` | 583 linhas; listener, auth/CORS, limits, body parser, SSE, diagnostics, lifecycle e sinais | Extrair infraestrutura HTTP sem alterar o protocolo do supervisor |
-| `src/cards.ts` | 448 linhas; store, polling, mapeamento, migração, Jira e todos os comandos da API | Separar `store`, `queries`, `commands`, `mappers` e integração Jira |
-| `src/CardModal.tsx` | 459 linhas e vários subcomponentes | Mover para `features/cards/detail/` e dividir cabeçalho, ações, PRs e conteúdo |
-| `src/CardView.tsx` | 421 linhas; apresentação, agentes, reset, PR e exclusão | Separar componentes por comportamento e manter a composição na feature de cards |
-| `src/DiffTab.tsx` | 380 linhas; parsing, virtualização, navegação e renderização | Separar modelo de linhas/virtualização de componentes visuais |
-| `src/SettingsDialog.tsx` | 307 linhas; carregamento, estado, modelos e apresentação | Criar feature de settings com formulário, catálogo de modelos e hook de persistência |
-| `src/index.css` | 451 linhas globais | Manter tokens/reset globais e aproximar estilos específicos das features |
-| raiz do projeto | módulos de aplicação e testes misturados com configurações | Deixar na raiz apenas metadados e arquivos de configuração |
+| Arquivo/área                  | Sinal                                                                                                         | Refatoração proposta                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `server/workspace/service.ts` | 1.184 linhas / ~50 KB; mistura cards, estágios, agentes, Git/worktrees, diffs, launchers e ambientes dev      | Separar por casos de uso e adaptadores, mantendo `workspaceHttp` como fachada temporária              |
+| `devEnv.ts`                   | 607 linhas; configuração específica de projetos, planejamento, dependências, portas, processos e persistência | Criar módulo `dev-environments` com `planner`, `repository`, `process-supervisor` e perfis de projeto |
+| `server/main.ts`              | 583 linhas; listener, auth/CORS, limits, body parser, SSE, diagnostics, lifecycle e sinais                    | Extrair infraestrutura HTTP sem alterar o protocolo do supervisor                                     |
+| `src/cards.ts`                | 448 linhas; store, polling, mapeamento, migração, Jira e todos os comandos da API                             | Separar `store`, `queries`, `commands`, `mappers` e integração Jira                                   |
+| `src/CardModal.tsx`           | 459 linhas e vários subcomponentes                                                                            | Mover para `features/cards/detail/` e dividir cabeçalho, ações, PRs e conteúdo                        |
+| `src/CardView.tsx`            | 421 linhas; apresentação, agentes, reset, PR e exclusão                                                       | Separar componentes por comportamento e manter a composição na feature de cards                       |
+| `src/DiffTab.tsx`             | 380 linhas; parsing, virtualização, navegação e renderização                                                  | Separar modelo de linhas/virtualização de componentes visuais                                         |
+| `src/SettingsDialog.tsx`      | 307 linhas; carregamento, estado, modelos e apresentação                                                      | Criar feature de settings com formulário, catálogo de modelos e hook de persistência                  |
+| `src/index.css`               | 451 linhas globais                                                                                            | Manter tokens/reset globais e aproximar estilos específicos das features                              |
+| raiz do projeto               | módulos de aplicação e testes misturados com configurações                                                    | Deixar na raiz apenas metadados e arquivos de configuração                                            |
 
 ### 2.3 Acoplamentos que devem ser removidos
 
 1. `server/*` importa contratos de `src/types.ts`. Tipos compartilhados não podem pertencer ao frontend.
 2. `server/workspace/service.ts` importa `devEnv.ts` e `prStatus.ts` da raiz.
 3. `server/chat/service.ts` importa utilidades internas de `server/workspace/service.ts`.
-4. `scripts/master-pr.ts` importa uma regra de janela de deploy de `src/deployWindow.ts`.
+4. O comando `scripts/commands/master-pr.ts` importa a regra compartilhada de janela de deploy.
 5. `viteApiAdapter.ts` conhece formatação específica de chat em vez de depender somente de contratos de transporte.
 6. `server/workspace/service.ts` e `scripts/lib/workspace.ts` duplicam conceitos como `slugify`, leitura de `card.json` e regras de workspace.
 
@@ -371,39 +382,39 @@ Para cada lote:
 
 ### 5.1 Candidatos identificados
 
-| Candidato | Confiança | Ação proposta antes de remover |
-| --- | --- | --- |
-| `@tanstack/react-query`, `@tanstack/react-query-persist-client`, `@tanstack/query-sync-storage-persister` | Alta | Confirmar Knip produção e remover os três no mesmo PR |
-| `src/components/ui/alert.tsx` | Alta | Confirmar que não há import dinâmico/gerador dependente; remover |
-| `chatPlugin.ts`, `claudeUsagePlugin.ts`, `coffeePlugin.ts`, `jiraPlugin.ts`, `workspacePlugin.ts` | Alta para produção, média para exclusão | Hoje não são entradas do Vite; migrar testes dos re-exports para `server/modules`, substituir o guardrail estrutural e então remover |
-| `server/index.ts` | Média | Como o package é privado e não declara exports, confirmar ausência de consumidor externo; remover ou torná-lo API pública real, não deixá-lo ornamental |
-| `server/release-fixture.ts` | Não é morto; está deslocado | Mover para `test/support/server/` porque só um teste o importa |
-| `codex-write-test.txt` vazio | Alta | Confirmar que é resíduo e excluir |
-| `tsconfig.tsbuildinfo` | Alta como artefato | Adicionar ao ignore e não versionar |
-| `yarn.lock` | Alta após decisão npm | Excluir somente depois de `npm ci` limpo e do baseline |
-| pacote `shadcn` em `dependencies` | Média | Confirmar uso apenas como CLI; mover para `devDependencies` ou remover se os componentes já gerados não precisam dele |
-| exports reexportados por plugins legados | Alta após migração de testes | Importar diretamente dos módulos proprietários e remover barrels de compatibilidade |
+| Candidato                                                                                                                    | Confiança                    | Ação proposta antes de remover                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@tanstack/react-query`, `@tanstack/react-query-persist-client`, `@tanstack/query-sync-storage-persister`                    | Alta                         | Confirmar Knip produção e remover os três no mesmo PR                                                                                                   |
+| `src/components/ui/alert.tsx`                                                                                                | Alta                         | Confirmar que não há import dinâmico/gerador dependente; remover                                                                                        |
+| Adaptadores Vite legados (`chatPlugin.ts`, `claudeUsagePlugin.ts`, `coffeePlugin.ts`, `jiraPlugin.ts`, `workspacePlugin.ts`) | Concluído                    | Testes migrados para `server/**`, guardrail atualizado para `viteMegaBrainPlugin.ts` e arquivos removidos                                               |
+| `server/index.ts`                                                                                                            | Média                        | Como o package é privado e não declara exports, confirmar ausência de consumidor externo; remover ou torná-lo API pública real, não deixá-lo ornamental |
+| `server/release-fixture.ts`                                                                                                  | Não é morto; está deslocado  | Mover para `test/support/server/` porque só um teste o importa                                                                                          |
+| `codex-write-test.txt` vazio                                                                                                 | Alta                         | Confirmar que é resíduo e excluir                                                                                                                       |
+| `tsconfig.tsbuildinfo`                                                                                                       | Alta como artefato           | Adicionar ao ignore e não versionar                                                                                                                     |
+| `yarn.lock`                                                                                                                  | Alta após decisão npm        | Excluir somente depois de `npm ci` limpo e do baseline                                                                                                  |
+| pacote `shadcn` em `dependencies`                                                                                            | Média                        | Confirmar uso apenas como CLI; mover para `devDependencies` ou remover se os componentes já gerados não precisam dele                                   |
+| exports reexportados por plugins legados                                                                                     | Alta após migração de testes | Importar diretamente dos módulos proprietários e remover barrels de compatibilidade                                                                     |
 
 ## 6. Sequência recomendada de PRs
 
 Cada PR deve ser reversível e preservar comportamento, salvo quando declarar mudança funcional.
 
-| PR | Escopo | Risco |
-| --- | --- | --- |
-| 0 | Recuperar/criar baseline Git, revisar secrets e artefatos | Alto, pré-condição |
-| 1 | Padronizar npm, ambiente por SO e CI de pull request | Médio |
-| 2 | ESLint/formatter/Knip/cobertura em modo baseline | Baixo a médio |
-| 3 | Extrair `shared/contracts` e tsconfigs por ambiente | Médio |
-| 4 | Migrar imports `server -> src` e `scripts -> src` | Médio |
-| 5 | Remover dependências/arquivos mortos de alta confiança e plugins legados | Médio |
-| 6 | Extrair cards/repository/schema de `workspace/service.ts` | Médio |
-| 7 | Extrair stages/agents/worktrees/diff/launchers | Alto |
-| 8 | Decompor `server/main.ts` preservando contratos HTTP/SSE/lifecycle | Alto |
-| 9 | Modularizar `devEnv.ts` e consolidar Git/processos | Alto |
-| 10 | Dividir `src/cards.ts` e organizar features do frontend | Médio |
-| 11 | Decompor componentes hotspots e estilos por feature | Médio |
-| 12 | Reorganizar comandos/test-support, remover shims e fechar documentação | Médio |
-| 13 | Hardening final, E2E, métricas e remoção das últimas exceções | Alto |
+| PR  | Escopo                                                                   | Risco              |
+| --- | ------------------------------------------------------------------------ | ------------------ |
+| 0   | Recuperar/criar baseline Git, revisar secrets e artefatos                | Alto, pré-condição |
+| 1   | Padronizar npm, ambiente por SO e CI de pull request                     | Médio              |
+| 2   | ESLint/formatter/Knip/cobertura em modo baseline                         | Baixo a médio      |
+| 3   | Extrair `shared/contracts` e tsconfigs por ambiente                      | Médio              |
+| 4   | Migrar imports `server -> src` e `scripts -> src`                        | Médio              |
+| 5   | Remover dependências/arquivos mortos de alta confiança e plugins legados | Médio              |
+| 6   | Extrair cards/repository/schema de `workspace/service.ts`                | Médio              |
+| 7   | Extrair stages/agents/worktrees/diff/launchers                           | Alto               |
+| 8   | Decompor `server/main.ts` preservando contratos HTTP/SSE/lifecycle       | Alto               |
+| 9   | Modularizar `devEnv.ts` e consolidar Git/processos                       | Alto               |
+| 10  | Dividir `src/cards.ts` e organizar features do frontend                  | Médio              |
+| 11  | Decompor componentes hotspots e estilos por feature                      | Médio              |
+| 12  | Reorganizar comandos/test-support, remover shims e fechar documentação   | Médio              |
+| 13  | Hardening final, E2E, métricas e remoção das últimas exceções            | Alto               |
 
 PRs 6–11 podem ser subdivididos. Não devem ser executados em paralelo quando alterarem o mesmo contrato ou fachada.
 
@@ -427,35 +438,35 @@ PRs 6–11 podem ser subdivididos. Não devem ser executados em paralelo quando 
 
 Medir tendência, não perseguir números cosméticos.
 
-| Métrica | Baseline atual | Meta |
-| --- | --- | --- |
-| Commits recuperáveis | 0 no checkout analisado | Histórico e baseline imutável antes da Fase 1 |
-| Ciclos estáticos | 0 na análise local | Permanecer em 0 no CI |
-| Imports de produção `server -> src` | 7 | 0 após Fase 2 |
-| Módulos de aplicação TS na raiz | Vários | 0 após Fase 5 |
-| Dependências diretas sem uso confirmadas | Pelo menos 3 TanStack | 0, com exceções documentadas |
-| Arquivos mortos confirmados | Candidatos, ainda sem gate reproduzível | 0 em modo produção Knip |
-| `any` em fronteiras externas | Presente em Claude/Codex, Jira e JSON | 0 nos módulos migrados; redução contínua até 0 |
-| Cobertura | Não configurada | Baseline publicado, sem regressão; contratos críticos explicitamente cobertos |
-| Validação de PR | Ausente | Typecheck, lint, Knip, testes e builds obrigatórios |
-| Paridade Vite/standalone | Testes existentes | Permanecer verde em toda extração backend |
+| Métrica                                  | Baseline atual                          | Meta                                                                          |
+| ---------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------- |
+| Commits recuperáveis                     | 0 no checkout analisado                 | Histórico e baseline imutável antes da Fase 1                                 |
+| Ciclos estáticos                         | 0 na análise local                      | Permanecer em 0 no CI                                                         |
+| Imports de produção `server -> src`      | 7                                       | 0 após Fase 2                                                                 |
+| Módulos de aplicação TS na raiz          | Vários                                  | 0 após Fase 5                                                                 |
+| Dependências diretas sem uso confirmadas | Pelo menos 3 TanStack                   | 0, com exceções documentadas                                                  |
+| Arquivos mortos confirmados              | Candidatos, ainda sem gate reproduzível | 0 em modo produção Knip                                                       |
+| `any` em fronteiras externas             | Presente em Claude/Codex, Jira e JSON   | 0 nos módulos migrados; redução contínua até 0                                |
+| Cobertura                                | Não configurada                         | Baseline publicado, sem regressão; contratos críticos explicitamente cobertos |
+| Validação de PR                          | Ausente                                 | Typecheck, lint, Knip, testes e builds obrigatórios                           |
+| Paridade Vite/standalone                 | Testes existentes                       | Permanecer verde em toda extração backend                                     |
 
 Linhas por arquivo não são gate. Um arquivo deve ser dividido quando mistura motivos de mudança, efeitos externos ou conceitos, não apenas ao cruzar um limite numérico.
 
 ## 9. Riscos e controles
 
-| Risco | Controle |
-| --- | --- |
-| Refatoração sem histórico apagar comportamento | Fase 0 bloqueante, baseline/tag e PRs pequenos |
-| Testes passarem em um SO e falharem em outro | instalações limpas separadas por SO e matriz CI |
-| Quebrar o handshake Tauri/backend | testes de ready line, version, health e smoke Windows–WSL |
-| Quebrar SSE/cancelamento | contrato de framing, desconexão, abort e backpressure antes/depois de cada extração |
-| Abrir acesso indevido a arquivos/processos | preservar path resolver, loopback, auth, CORS, ownership e guardrails de teste |
-| Criar arquitetura excessivamente abstrata | ports somente para efeitos/variação reais; funções puras permanecem simples |
-| Falso positivo de código morto | entradas explícitas, modo completo + produção, verificação dinâmica e PR isolado |
-| Manter duas arquiteturas indefinidamente | cada shim tem issue/PR de remoção e gate na Fase 6 |
-| Refatorar UI e comportamento juntos | primeiro mover/extrair com smoke visual; mudanças de UX em PR separado |
-| Troca oportunista de biblioteca de estado | ADR específica; remover dependências não usadas antes de considerar adoção |
+| Risco                                          | Controle                                                                            |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Refatoração sem histórico apagar comportamento | Fase 0 bloqueante, baseline/tag e PRs pequenos                                      |
+| Testes passarem em um SO e falharem em outro   | instalações limpas separadas por SO e matriz CI                                     |
+| Quebrar o handshake Tauri/backend              | testes de ready line, version, health e smoke Windows–WSL                           |
+| Quebrar SSE/cancelamento                       | contrato de framing, desconexão, abort e backpressure antes/depois de cada extração |
+| Abrir acesso indevido a arquivos/processos     | preservar path resolver, loopback, auth, CORS, ownership e guardrails de teste      |
+| Criar arquitetura excessivamente abstrata      | ports somente para efeitos/variação reais; funções puras permanecem simples         |
+| Falso positivo de código morto                 | entradas explícitas, modo completo + produção, verificação dinâmica e PR isolado    |
+| Manter duas arquiteturas indefinidamente       | cada shim tem issue/PR de remoção e gate na Fase 6                                  |
+| Refatorar UI e comportamento juntos            | primeiro mover/extrair com smoke visual; mudanças de UX em PR separado              |
+| Troca oportunista de biblioteca de estado      | ADR específica; remover dependências não usadas antes de considerar adoção          |
 
 ## 10. Pesquisas e fundamentos aplicados
 

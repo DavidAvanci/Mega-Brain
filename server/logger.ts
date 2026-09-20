@@ -3,12 +3,15 @@ import type { Writable } from 'node:stream'
 /** Versioned, stderr-only diagnostic format. Values are deliberately metadata-only. */
 export const LOG_SCHEMA_VERSION = 1
 
-export interface LogSink { write(line: string): unknown }
+export interface LogSink {
+  write(line: string): unknown
+}
 export interface StructuredLogger {
   event(name: string, fields?: Record<string, unknown>): void
 }
 
-const sensitiveKey = /(token|secret|password|credential|authorization|cookie|jira|email|prompt|content|body|query|header|stack|message|file|path|url)/i
+const sensitiveKey =
+  /(token|secret|password|credential|authorization|cookie|jira|email|prompt|content|body|query|header|stack|message|file|path|url)/i
 const bearer = /\bBearer\s+[^\s"']+/gi
 const credentialUrl = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi
 
@@ -19,7 +22,8 @@ const credentialUrl = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi
 export function sanitizeLogValue(value: unknown, depth = 0): unknown {
   if (depth > 5) return '[omitted-depth]'
   if (value === null || typeof value === 'boolean' || typeof value === 'number') return value
-  if (typeof value === 'string') return value.replace(bearer, 'Bearer [redacted]').replace(credentialUrl, '$1[redacted]@')
+  if (typeof value === 'string')
+    return value.replace(bearer, 'Bearer [redacted]').replace(credentialUrl, '$1[redacted]@')
   if (value instanceof Error) return { name: value.name || 'Error', code: errorCode(value) }
   if (Array.isArray(value)) return value.map((item) => sanitizeLogValue(item, depth + 1))
   if (typeof value === 'object') {
@@ -37,7 +41,11 @@ function errorCode(error: Error): string | undefined {
   return typeof code === 'string' || typeof code === 'number' ? String(code) : undefined
 }
 
-export function createJsonlLogger(sink: LogSink, sessionId?: string, now: () => Date = () => new Date()): StructuredLogger {
+export function createJsonlLogger(
+  sink: LogSink,
+  sessionId?: string,
+  now: () => Date = () => new Date(),
+): StructuredLogger {
   return {
     event(name, fields = {}) {
       // Event names and the correlation ids are application-generated, never
@@ -50,7 +58,11 @@ export function createJsonlLogger(sink: LogSink, sessionId?: string, now: () => 
         ...(sessionId ? { sessionId } : {}),
         ...fields,
       })
-      try { sink.write(`${JSON.stringify(record)}\n`) } catch { /* logging is best effort */ }
+      try {
+        sink.write(`${JSON.stringify(record)}\n`)
+      } catch {
+        /* logging is best effort */
+      }
     },
   }
 }

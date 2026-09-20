@@ -1,10 +1,36 @@
 import { readFileSync } from 'node:fs'
-import type { ClaudeUsage, UsageWindow } from '../../src/types'
+import type { ClaudeUsage, UsageWindow } from '../../shared/contracts/usage'
 import { systemClock, type Clock, type TextFileReader } from '../system'
 const EMPTY: ClaudeUsage = { fiveHour: null, sevenDay: null, fable: null }
-function window(value: unknown): UsageWindow | null { if (!value || typeof value !== 'object') return null; const v = value as { utilization?: unknown; resets_at?: unknown }; return typeof v.utilization === 'number' ? { utilization: v.utilization, resetsAt: typeof v.resets_at === 'string' ? v.resets_at : null } : null }
-export function parseUsage(data: unknown): ClaudeUsage { if (!data || typeof data !== 'object') return EMPTY; const d = data as Record<string, unknown>; const limit = Array.isArray(d.limits) ? d.limits.find((x: any) => x?.scope?.model?.display_name === 'Fable') as any : undefined; return { fiveHour: window(d.five_hour), sevenDay: window(d.seven_day), fable: limit && typeof limit.percent === 'number' ? { utilization: limit.percent, resetsAt: typeof limit.resets_at === 'string' ? limit.resets_at : null } : null } }
-export interface ClaudeUsageService { getUsage(): Promise<ClaudeUsage> }
+function window(value: unknown): UsageWindow | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as { utilization?: unknown; resets_at?: unknown }
+  return typeof v.utilization === 'number'
+    ? { utilization: v.utilization, resetsAt: typeof v.resets_at === 'string' ? v.resets_at : null }
+    : null
+}
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined
+}
+function fableLimit(value: unknown): UsageWindow | null {
+  if (!Array.isArray(value)) return null
+  const limit = value.map(record).find((entry) => {
+    const scope = record(entry?.scope)
+    const model = record(scope?.model)
+    return model?.display_name === 'Fable'
+  })
+  return limit && typeof limit.percent === 'number'
+    ? { utilization: limit.percent, resetsAt: typeof limit.resets_at === 'string' ? limit.resets_at : null }
+    : null
+}
+export function parseUsage(data: unknown): ClaudeUsage {
+  const parsed = record(data)
+  if (!parsed) return EMPTY
+  return { fiveHour: window(parsed.five_hour), sevenDay: window(parsed.seven_day), fable: fableLimit(parsed.limits) }
+}
+export interface ClaudeUsageService {
+  getUsage(): Promise<ClaudeUsage>
+}
 
 export interface ClaudeUsageDependencies {
   clock?: Clock
@@ -26,7 +52,9 @@ export function createClaudeUsageService(
     async getUsage() {
       if (cached && cached.expires > clock.now()) return cached.value
       let token: unknown
-      try { token = JSON.parse(files.readText(credentialsFile))?.claudeAiOauth?.accessToken } catch {}
+      try {
+        token = JSON.parse(files.readText(credentialsFile))?.claudeAiOauth?.accessToken
+      } catch {}
       let value = EMPTY
       if (typeof token === 'string' && token) {
         try {

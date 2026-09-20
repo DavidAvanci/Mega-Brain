@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { chatEvent, parseTranscript, resolveSession, sessionDir } from './chatPlugin'
+import { chatEvent, parseTranscript, resolveSession, sessionDir } from './server/chat/service'
 
 test('sessionDir', () => {
   expect(sessionDir('/home/david/takeat/workspace/ESTR-426', '/projects')).toBe(
@@ -44,7 +44,12 @@ test('parseTranscript', () => {
     JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'ok' }] } }),
     JSON.stringify({
       type: 'assistant',
-      message: { content: [{ type: 'thinking', thinking: 'hmm' }, { type: 'text', text: 'Feito.' }] },
+      message: {
+        content: [
+          { type: 'thinking', thinking: 'hmm' },
+          { type: 'text', text: 'Feito.' },
+        ],
+      },
     }),
     JSON.stringify({
       type: 'assistant',
@@ -73,9 +78,16 @@ test('chatEvent', () => {
   expect(chatEvent(stream({ type: 'content_block_delta', delta: { type: 'input_json_delta' } }))).toBeNull()
   expect(chatEvent(stream({ type: 'message_stop' }))).toBeNull()
   expect(
-    chatEvent(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }] } })),
+    chatEvent(
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }] },
+      }),
+    ),
   ).toEqual({ type: 'tool', tool: 'Bash: ls' })
-  expect(chatEvent(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'oi' }] } }))).toBeNull()
+  expect(
+    chatEvent(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'oi' }] } })),
+  ).toBeNull()
   expect(chatEvent(JSON.stringify({ type: 'result', subtype: 'success' }))).toEqual({ type: 'done' })
   expect(chatEvent(JSON.stringify({ type: 'result', subtype: 'error_max_turns', is_error: true }))).toEqual({
     type: 'done',

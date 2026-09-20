@@ -25,7 +25,9 @@ export function assertSafeTestWorkspace(path: string): void {
 ;(globalThis as Record<symbol, unknown>)[WORKSPACE_GUARD] = assertSafeTestWorkspace
 
 function commandName(command: string): string {
-  return basename(command).replace(/\.exe$/i, '').toLowerCase()
+  return basename(command)
+    .replace(/\.exe$/i, '')
+    .toLowerCase()
 }
 
 function commandCwd(args: readonly unknown[], options: unknown): string | undefined {
@@ -66,7 +68,12 @@ childProcess.execFileSync = ((command: string, args: string[] = [], options?: un
   assertSafeTestProcess(command, args, options)
   return realExecFileSync(command, args, options as Parameters<typeof realExecFileSync>[2])
 }) as typeof childProcess.execFileSync
-childProcess.execFile = ((command: string, args: string[] = [], options: unknown, callback: Parameters<typeof realExecFile>[3]) => {
+childProcess.execFile = ((
+  command: string,
+  args: string[] = [],
+  options: unknown,
+  callback: Parameters<typeof realExecFile>[3],
+) => {
   assertSafeTestProcess(command, args, options)
   return realExecFile(command, args, options as Parameters<typeof realExecFile>[2], callback)
 }) as typeof childProcess.execFile

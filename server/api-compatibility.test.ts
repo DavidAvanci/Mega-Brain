@@ -10,7 +10,13 @@ import { jiraReadyHttp, jiraStatusesHttp, jiraTransitionHttp } from './jira/http
 import { createWorkspaceService } from './workspace/service'
 import { workspaceHttp } from './workspace/http'
 
-const request = (method: string, path = '/', body?: unknown, query = new URLSearchParams()) => ({ method, path, body, query, headers: {} })
+const request = (method: string, path = '/', body?: unknown, query = new URLSearchParams()) => ({
+  method,
+  path,
+  body,
+  query,
+  headers: {},
+})
 
 test('JSON adapters preserve the statuses, content type and body shapes used by the frontend', async () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'mega-brain-contract-'))
@@ -51,7 +57,7 @@ test('JSON adapters preserve the statuses, content type and body shapes used by 
       },
       {
         "body": {
-          "folder": "card-de-teste",
+          "folder": "MB-001",
           "path": "<temporary-workspace>/card-de-teste",
         },
         "headers": {
@@ -157,7 +163,11 @@ test('chat SSE keeps the headers and data-plus-blank-line framing consumed by se
   const send = chatSendHttp({
     history: async () => ({ sessionId: null, entries: [] }),
     abort: () => true,
-    send: (_name, _text, emit) => { emit({ type: 'text', text: 'olá' }); emit({ type: 'tool', tool: 'Read: PLAN.md' }); emit({ type: 'done' }) },
+    send: (_name, _text, emit) => {
+      emit({ type: 'text', text: 'olá' })
+      emit({ type: 'tool', tool: 'Read: PLAN.md' })
+      emit({ type: 'done' })
+    },
   })
   const response = await send(request('POST', '/send', { name: 'MB-1', text: 'oi' }))
   response.stream((event) => events.push(event))

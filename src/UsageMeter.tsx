@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Tip } from './Tip'
-import type { ClaudeUsage, UsageWindow } from './types'
-import { apiClient } from './apiClient'
+import type { ClaudeUsage, UsageWindow } from '../shared/contracts/usage'
+import { apiClient } from './shared/api/api-client'
 
 const POLL_INTERVAL = 60_000
 
@@ -27,12 +27,7 @@ function Meter({ label, usage, name }: { label: string; usage: UsageWindow; name
   const pct = Math.round(usage.utilization)
   return (
     <Tip side="bottom" label={`Uso do Claude (${name}): ${pct}%${resetLabel(usage)}`}>
-      <span
-        className={cn(
-          'flex items-center gap-1.5 text-[11px] tabular-nums',
-          levelClass(usage.utilization),
-        )}
-      >
+      <span className={cn('flex items-center gap-1.5 text-[11px] tabular-nums', levelClass(usage.utilization))}>
         {label}
         <span className="h-1.5 w-10 overflow-hidden rounded-full bg-muted">
           <span

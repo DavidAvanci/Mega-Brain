@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import type { JiraEnv } from './jira/service'
-import type { EditorPreference, LlmProvider } from '../src/types'
+import type { EditorPreference, LlmProvider } from '../shared/domain/settings'
 
 /**
  * Runtime configuration shared by the Vite development adapter and the future
@@ -68,7 +68,7 @@ function executionMode(value: string | undefined): ExecutionMode {
 function persistedSettings(file: string): Record<string, unknown> {
   try {
     const value = JSON.parse(readFileSync(file, 'utf8'))
-    return value && typeof value === 'object' ? value as Record<string, unknown> : {}
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
   } catch {
     return {}
   }
@@ -108,11 +108,22 @@ export function loadMegaBrainConfig(options: LoadMegaBrainConfigOptions = {}): M
   const saved = persistedSettings(settingsFile)
   const defaultWorkspaceDir = optional(env.WORKSPACE_DIR) ?? './mega-brain-files/workspace'
   const workspaceDir = savedAbsolutePath(saved.workspaceDir) ?? defaultWorkspaceDir
-  const worktreesDir = savedAbsolutePath(saved.worktreesDir)
-    ?? optional(env.MEGA_BRAIN_WORKTREES_DIR)
-    ?? join(dirname(workspaceDir), 'worktrees')
-  const editorChoices: ReadonlySet<EditorPreference> = new Set(['cursor', 'vscode', 'windsurf', 'zed', 'sublime', 'intellij', 'webstorm', 'pycharm', 'custom'])
-  const editor = editorChoices.has(saved.editor as EditorPreference) ? saved.editor as EditorPreference : 'cursor'
+  const worktreesDir =
+    savedAbsolutePath(saved.worktreesDir) ??
+    optional(env.MEGA_BRAIN_WORKTREES_DIR) ??
+    join(dirname(workspaceDir), 'worktrees')
+  const editorChoices: ReadonlySet<EditorPreference> = new Set([
+    'cursor',
+    'vscode',
+    'windsurf',
+    'zed',
+    'sublime',
+    'intellij',
+    'webstorm',
+    'pycharm',
+    'custom',
+  ])
+  const editor = editorChoices.has(saved.editor as EditorPreference) ? (saved.editor as EditorPreference) : 'cursor'
   const llmProvider = saved.llmProvider === 'chatgpt' ? 'chatgpt' : 'claude'
   return {
     mode: executionMode(env.MEGA_BRAIN_MODE),

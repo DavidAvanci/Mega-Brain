@@ -18,9 +18,7 @@ export function detectPackageManager(dir: string): PackageManager {
 }
 
 export function installCommand(dir: string): Command {
-  return detectPackageManager(dir) === 'yarn'
-    ? { cmd: 'yarn', args: ['install'] }
-    : { cmd: 'npm', args: ['install'] }
+  return detectPackageManager(dir) === 'yarn' ? { cmd: 'yarn', args: ['install'] } : { cmd: 'npm', args: ['install'] }
 }
 
 export function lockfilesMatch(left: string, right: string): boolean {

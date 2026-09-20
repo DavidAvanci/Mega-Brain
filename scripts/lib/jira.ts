@@ -14,7 +14,11 @@ export function jiraEnv(): JiraEnv | null {
   return { site: env.JIRA_SITE, email: env.JIRA_EMAIL, token: env.JIRA_API_TOKEN }
 }
 
-async function jiraFetch(env: JiraEnv, path: string, init: RequestInit = {}): Promise<any> {
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined
+}
+
+async function jiraFetch(env: JiraEnv, path: string, init: RequestInit = {}): Promise<unknown> {
   const response = await fetch(`https://${env.site}.atlassian.net${path}`, {
     ...init,
     headers: {
@@ -70,10 +74,13 @@ export function textCommentAdf(value: string): AdfNode {
   return { version: 1, type: 'doc', content: [paragraph(text(value))] }
 }
 
-function firstText(node: any): string {
-  if (!node || typeof node !== 'object') return ''
-  if (typeof node.text === 'string') return node.text
-  for (const child of node.content ?? []) {
+function firstText(node: unknown): string {
+  const parsed = record(node)
+  if (!parsed) return ''
+  if (typeof parsed.text === 'string') return parsed.text
+  const content = parsed.content
+  if (!Array.isArray(content)) return ''
+  for (const child of content) {
     const found = firstText(child)
     if (found) return found
   }
@@ -81,28 +88,38 @@ function firstText(node: any): string {
 }
 
 export async function upsertComment(env: JiraEnv, key: string, title: string, body: AdfNode): Promise<void> {
-  const existing = await jiraFetch(env, `/rest/api/3/issue/${key}/comment?maxResults=100`)
-  const found = (existing?.comments ?? []).find((comment: any) => firstText(comment.body).trim().startsWith(title))
+  const existing = record(await jiraFetch(env, `/rest/api/3/issue/${key}/comment?maxResults=100`))
+  const comments = Array.isArray(existing?.comments) ? existing.comments.map(record) : []
+  const found = comments.find((comment) => firstText(comment?.body).trim().startsWith(title))
   const payload = JSON.stringify({ body })
-  if (found) await jiraFetch(env, `/rest/api/3/issue/${key}/comment/${found.id}`, { method: 'PUT', body: payload })
+  if (typeof found?.id === 'string')
+    await jiraFetch(env, `/rest/api/3/issue/${key}/comment/${found.id}`, { method: 'PUT', body: payload })
   else await jiraFetch(env, `/rest/api/3/issue/${key}/comment`, { method: 'POST', body: payload })
 }
 
 export async function currentStatus(env: JiraEnv, key: string): Promise<string> {
-  const data = await jiraFetch(env, `/rest/api/3/issue/${key}?fields=status`)
-  return data?.fields?.status?.name ?? ''
+  const data = record(await jiraFetch(env, `/rest/api/3/issue/${key}?fields=status`))
+  const fields = record(data?.fields)
+  const status = record(fields?.status)
+  return typeof status?.name === 'string' ? status.name : ''
 }
 
 export async function transitionTo(env: JiraEnv, key: string, statusName: string): Promise<boolean> {
   const status = await currentStatus(env, key)
   if (status.toUpperCase() === statusName.toUpperCase()) return false
-  const data = await jiraFetch(env, `/rest/api/3/issue/${key}/transitions`)
-  const target = (data?.transitions ?? []).find(
-    (transition: any) =>
-      transition.name?.toUpperCase() === statusName.toUpperCase() ||
-      transition.to?.name?.toUpperCase() === statusName.toUpperCase(),
-  )
-  if (!target) throw new Error(`Transição para "${statusName}" indisponível a partir de "${status}" em ${key}`)
+  const data = record(await jiraFetch(env, `/rest/api/3/issue/${key}/transitions`))
+  const transitions = Array.isArray(data?.transitions) ? data.transitions.map(record) : []
+  const target = transitions.find((transition) => {
+    const to = record(transition?.to)
+    const transitionName = transition?.name
+    const targetName = to?.name
+    return (
+      (typeof transitionName === 'string' && transitionName.toUpperCase() === statusName.toUpperCase()) ||
+      (typeof targetName === 'string' && targetName.toUpperCase() === statusName.toUpperCase())
+    )
+  })
+  if (!target || typeof target.id !== 'string')
+    throw new Error(`Transição para "${statusName}" indisponível a partir de "${status}" em ${key}`)
   await jiraFetch(env, `/rest/api/3/issue/${key}/transitions`, {
     method: 'POST',
     body: JSON.stringify({ transition: { id: target.id } }),
