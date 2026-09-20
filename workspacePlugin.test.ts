@@ -2,24 +2,32 @@ import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, utim
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import {
-  advanceStage,
-  expiredInProduction,
-  externalAgentCwd,
-  FLOW_PROFILES,
-  isResolvedAgentError,
-  readAgent,
-  readCard,
-  readExternalAgent,
-  STAGES,
-} from './workspacePlugin'
+import { externalAgentCwd, readExternalAgent } from './server/agent-process'
+import { readCard } from './server/workspace/card-record'
+import { advanceStage, isResolvedAgentError } from './server/workspace/stage-transition'
+import { expiredInProduction } from './server/workspace/worktree-lifecycle'
+import { FLOW_PROFILES, STAGES } from './server/workspace/stage-catalog'
+import { readAgent } from './server/workspace/stage-agent-status'
 
 test('readCard', () => {
   const dir = mkdtempSync(join(tmpdir(), 'card-'))
-  expect(readCard(dir, 'minha-task')).toEqual({ title: 'minha-task', description: '', status: 'a-fazer', flow: 'dificil' })
+  expect(readCard(dir, 'minha-task')).toEqual({
+    title: 'minha-task',
+    description: '',
+    status: 'a-fazer',
+    flow: 'dificil',
+  })
 
-  writeFileSync(join(dir, 'card.json'), JSON.stringify({ title: 'Fix bug', description: 'detalhes', status: 'staging' }))
-  expect(readCard(dir, 'minha-task')).toEqual({ title: 'Fix bug', description: 'detalhes', status: 'staging', flow: 'dificil' })
+  writeFileSync(
+    join(dir, 'card.json'),
+    JSON.stringify({ title: 'Fix bug', description: 'detalhes', status: 'staging' }),
+  )
+  expect(readCard(dir, 'minha-task')).toEqual({
+    title: 'Fix bug',
+    description: 'detalhes',
+    status: 'staging',
+    flow: 'dificil',
+  })
 
   writeFileSync(join(dir, 'card.json'), JSON.stringify({ title: 'Fix bug', status: 'a-fazer', flow: 'simples' }))
   expect(readCard(dir, 'minha-task').flow).toBe('simples')
@@ -35,7 +43,12 @@ test('readCard', () => {
   expect(readCard(dir, 'minha-task').prs).toEqual({ staging: { 'takeat-app': 'https://github.com/x/1' } })
 
   writeFileSync(join(dir, 'card.json'), '{quebrado')
-  expect(readCard(dir, 'minha-task')).toEqual({ title: 'minha-task', description: '', status: 'a-fazer', flow: 'dificil' })
+  expect(readCard(dir, 'minha-task')).toEqual({
+    title: 'minha-task',
+    description: '',
+    status: 'a-fazer',
+    flow: 'dificil',
+  })
 })
 
 test('readAgent', () => {
@@ -88,7 +101,12 @@ test('readAgent', () => {
   writeFileSync(join(dir, 'task-planning.jsonl'), `${result}\n`)
   expect(readAgent(dir, () => false)).toMatchObject({ status: 'concluido', sessionId: 'abc-123' })
 
-  const failure = JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: 'abc-123' })
+  const failure = JSON.stringify({
+    type: 'result',
+    subtype: 'error_during_execution',
+    is_error: true,
+    session_id: 'abc-123',
+  })
   writeFileSync(join(dir, 'task-planning.jsonl'), `${failure}\n`)
   expect(readAgent(dir, () => true)).toMatchObject({ status: 'erro', error: 'Erro durante a execução' })
 
@@ -127,7 +145,10 @@ test('readAgent com stage de checklist', () => {
     progress: { done: 1, total: 3 },
   })
 
-  writeFileSync(join(dir, 'TASK-CHECKLIST.md'), '- [x] criar rota\n- [-] ajustar tela\n- [!] validar fluxo\n- [ ] revisar\n')
+  writeFileSync(
+    join(dir, 'TASK-CHECKLIST.md'),
+    '- [x] criar rota\n- [-] ajustar tela\n- [!] validar fluxo\n- [ ] revisar\n',
+  )
   expect(readAgent(dir, () => true)).toMatchObject({
     phase: 'revisar',
     progress: { done: 1, total: 4 },
@@ -176,7 +197,10 @@ test('readExternalAgent', () => {
   )
   expect(readExternalAgent(cardPath, projectsRoot)).toMatchObject({ status: 'rodando' })
 
-  appendFileSync(join(projectDir, 'sessao-1.jsonl'), `${JSON.stringify({ ...JSON.parse(endTurn), isSidechain: true })}\n`)
+  appendFileSync(
+    join(projectDir, 'sessao-1.jsonl'),
+    `${JSON.stringify({ ...JSON.parse(endTurn), isSidechain: true })}\n`,
+  )
   expect(readExternalAgent(cardPath, projectsRoot)).toMatchObject({ status: 'rodando' })
 })
 
@@ -263,13 +287,20 @@ test('advanceStage respeita os fluxos simples e médio', () => {
   const simple = { title: 'Ajuste pequeno', description: '', status: 'planejando', flow: 'simples' as const }
   expect(advanceStage(dir, simple, planningDone, start)).toMatchObject({ status: 'desenvolvendo', flow: 'simples' })
   expect(started).toEqual(['run-task-checklist'])
-  expect(advanceStage(dir, { ...simple, status: 'desenvolvendo' }, devDone, start)).toMatchObject({ status: 'code-review' })
+  expect(advanceStage(dir, { ...simple, status: 'desenvolvendo' }, devDone, start)).toMatchObject({
+    status: 'code-review',
+  })
   expect(started).toEqual(['run-task-checklist'])
 
   const mediumPlanning = { ...simple, flow: 'medio' as const }
-  expect(advanceStage(dir, mediumPlanning, planningDone, start)).toMatchObject({ status: 'revisao-de-plano', flow: 'medio' })
+  expect(advanceStage(dir, mediumPlanning, planningDone, start)).toMatchObject({
+    status: 'revisao-de-plano',
+    flow: 'medio',
+  })
   expect(started).toEqual(['run-task-checklist'])
-  expect(advanceStage(dir, { ...mediumPlanning, status: 'desenvolvendo' }, devDone, start)).toMatchObject({ status: 'code-review' })
+  expect(advanceStage(dir, { ...mediumPlanning, status: 'desenvolvendo' }, devDone, start)).toMatchObject({
+    status: 'code-review',
+  })
   expect(started).toEqual(['run-task-checklist'])
 })
 
@@ -283,29 +314,53 @@ test('isResolvedAgentError limpa somente erros superados ou comprovadamente reso
 
   const stagingError = { status: 'erro' as const, stage: 'stage-task' }
   expect(isResolvedAgentError({ ...card, status: 'staging' }, stagingError)).toBe(false)
-  expect(isResolvedAgentError({
-    ...card,
-    status: 'staging',
-    prs: { staging: { api: 'https://github.com/example/api/pull/1' } },
-  }, stagingError, ['api'])).toBe(true)
-  expect(isResolvedAgentError({
-    ...card,
-    status: 'staging',
-    prs: { staging: { api: 'https://github.com/example/api/pull/1' } },
-  }, stagingError, ['api', 'web'])).toBe(false)
+  expect(
+    isResolvedAgentError(
+      {
+        ...card,
+        status: 'staging',
+        prs: { staging: { api: 'https://github.com/example/api/pull/1' } },
+      },
+      stagingError,
+      ['api'],
+    ),
+  ).toBe(true)
+  expect(
+    isResolvedAgentError(
+      {
+        ...card,
+        status: 'staging',
+        prs: { staging: { api: 'https://github.com/example/api/pull/1' } },
+      },
+      stagingError,
+      ['api', 'web'],
+    ),
+  ).toBe(false)
 
   const masterError = { status: 'erro' as const, stage: 'master-pr-task' }
   expect(isResolvedAgentError({ ...card, status: 'aguardando-deploy' }, masterError)).toBe(false)
-  expect(isResolvedAgentError({
-    ...card,
-    status: 'aguardando-deploy',
-    prs: { master: { api: 'https://github.com/example/api/pull/2' } },
-  }, masterError, ['api'])).toBe(true)
-  expect(isResolvedAgentError({
-    ...card,
-    status: 'aguardando-deploy',
-    prs: { master: { api: 'https://github.com/example/api/pull/2' } },
-  }, masterError, ['api', 'web'])).toBe(false)
+  expect(
+    isResolvedAgentError(
+      {
+        ...card,
+        status: 'aguardando-deploy',
+        prs: { master: { api: 'https://github.com/example/api/pull/2' } },
+      },
+      masterError,
+      ['api'],
+    ),
+  ).toBe(true)
+  expect(
+    isResolvedAgentError(
+      {
+        ...card,
+        status: 'aguardando-deploy',
+        prs: { master: { api: 'https://github.com/example/api/pull/2' } },
+      },
+      masterError,
+      ['api', 'web'],
+    ),
+  ).toBe(false)
   expect(isResolvedAgentError({ ...card, status: 'producao' }, masterError)).toBe(true)
 })
 
@@ -329,7 +384,10 @@ test('perfis compartilham modelos e restringem os artefatos do planejamento', ()
 test('progresso de planejamento espera apenas os artefatos do fluxo', () => {
   const dir = mkdtempSync(join(tmpdir(), 'planning-flow-'))
   writeFileSync(join(dir, 'card.json'), JSON.stringify({ title: 'Ajuste', status: 'planejando', flow: 'simples' }))
-  writeFileSync(join(dir, 'agent.json'), JSON.stringify({ pid: 1234, startedAt: '2026-01-01T00:00:00.000Z', stage: 'task-planning' }))
+  writeFileSync(
+    join(dir, 'agent.json'),
+    JSON.stringify({ pid: 1234, startedAt: '2026-01-01T00:00:00.000Z', stage: 'task-planning' }),
+  )
   writeFileSync(join(dir, 'task-planning.jsonl'), `${JSON.stringify({ type: 'system', session_id: 'simple-1' })}\n`)
   expect(readAgent(dir, () => true)).toMatchObject({
     phase: 'Criando tasks',

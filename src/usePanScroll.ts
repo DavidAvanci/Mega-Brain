@@ -15,10 +15,7 @@ export function usePanScroll<T extends HTMLElement>() {
 
     while (element && element !== root) {
       const { overflowY } = window.getComputedStyle(element)
-      if (
-        (overflowY === 'auto' || overflowY === 'scroll')
-        && element.scrollHeight > element.clientHeight
-      ) {
+      if ((overflowY === 'auto' || overflowY === 'scroll') && element.scrollHeight > element.clientHeight) {
         return element
       }
       element = element.parentElement

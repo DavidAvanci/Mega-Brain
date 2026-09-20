@@ -60,7 +60,9 @@ describe('standalone Node entrypoint', () => {
     const token = 's'.repeat(43)
     const runtime: ServerRuntime = {
       register: () => undefined,
-      handle: async () => { throw new Error(`secret ${token}`) },
+      handle: async () => {
+        throw new Error(`secret ${token}`)
+      },
     }
     const server = createStandaloneServer({
       config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-entrypoint-test' }),
@@ -139,7 +141,11 @@ describe('standalone Node entrypoint', () => {
     const invalidPreflightHeaders: Record<string, string>[] = [
       { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' },
       { Origin: 'http://tauri.localhost', 'Access-Control-Request-Method': 'PATCH' },
-      { Origin: 'http://tauri.localhost', 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization, x-spoofed' },
+      {
+        Origin: 'http://tauri.localhost',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'authorization, x-spoofed',
+      },
       {},
     ]
     for (const headers of invalidPreflightHeaders) {
@@ -153,23 +159,38 @@ describe('standalone Node entrypoint', () => {
 
   test('reports an authenticated, stable ready health payload without invoking the application runtime', async () => {
     const token = 'h'.repeat(43)
-    const runtime: ServerRuntime = { register: () => undefined, handle: async () => { throw new Error('runtime must not handle health') } }
+    const runtime: ServerRuntime = {
+      register: () => undefined,
+      handle: async () => {
+        throw new Error('runtime must not handle health')
+      },
+    }
     const server = createStandaloneServer({
-      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-health-test' }), runtime, listen: { port: 0 }, sessionToken: token,
+      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-health-test' }),
+      runtime,
+      listen: { port: 0 },
+      sessionToken: token,
     })
     servers.push(server)
     await server.start()
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/health`, { headers: { Authorization: `Bearer ${token}` } })
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/health`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
-      service: 'mega-brain-backend', apiProtocolVersion: BACKEND_API_PROTOCOL_VERSION, status: 'ready',
+      service: 'mega-brain-backend',
+      apiProtocolVersion: BACKEND_API_PROTOCOL_VERSION,
+      status: 'ready',
     })
   })
 
   test('rejects unauthenticated diagnostics and rejects unsupported diagnostic methods', async () => {
     const token = 'm'.repeat(43)
     const server = createStandaloneServer({
-      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-health-auth-test' }), runtime: createServerRuntime(), listen: { port: 0 }, sessionToken: token,
+      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-health-auth-test' }),
+      runtime: createServerRuntime(),
+      listen: { port: 0 },
+      sessionToken: token,
     })
     servers.push(server)
     await server.start()
@@ -183,16 +204,23 @@ describe('standalone Node entrypoint', () => {
   test('exposes compatible protocol and Node runtime metadata to the authenticated supervisor', async () => {
     const token = 'v'.repeat(43)
     const server = createStandaloneServer({
-      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-version-test' }), runtime: createServerRuntime(), listen: { port: 0 }, sessionToken: token,
+      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-version-test' }),
+      runtime: createServerRuntime(),
+      listen: { port: 0 },
+      sessionToken: token,
       runtimeVersion: '99.1.2-test',
     })
     servers.push(server)
     await server.start()
-    const response = await fetch(`http://127.0.0.1:${server.address().port}/version`, { headers: { Authorization: `Bearer ${token}` } })
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/version`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({
-      service: 'mega-brain-backend', apiProtocolVersion: BACKEND_API_PROTOCOL_VERSION,
-      readyProtocolVersion: BACKEND_READY_PROTOCOL_VERSION, runtime: { name: 'node', version: '99.1.2-test' },
+      service: 'mega-brain-backend',
+      apiProtocolVersion: BACKEND_API_PROTOCOL_VERSION,
+      readyProtocolVersion: BACKEND_READY_PROTOCOL_VERSION,
+      runtime: { name: 'node', version: '99.1.2-test' },
     })
   })
 
@@ -200,35 +228,57 @@ describe('standalone Node entrypoint', () => {
     const token = 'd'.repeat(43)
     let runtimeAvailable = false
     const server = createStandaloneServer({
-      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-health-state-test' }), runtime: createServerRuntime(), listen: { port: 0 }, sessionToken: token,
-      readiness: () => runtimeAvailable ? { status: 'ready' } : { status: 'starting', reason: 'workspace-loading' },
+      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-health-state-test' }),
+      runtime: createServerRuntime(),
+      listen: { port: 0 },
+      sessionToken: token,
+      readiness: () => (runtimeAvailable ? { status: 'ready' } : { status: 'starting', reason: 'workspace-loading' }),
     })
     servers.push(server)
     await server.start()
     const url = `http://127.0.0.1:${server.address().port}/health`
     const pending = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
     expect(pending.status).toBe(503)
-    await expect(pending.json()).resolves.toEqual({ service: 'mega-brain-backend', apiProtocolVersion: BACKEND_API_PROTOCOL_VERSION, status: 'starting', reason: 'workspace-loading' })
+    await expect(pending.json()).resolves.toEqual({
+      service: 'mega-brain-backend',
+      apiProtocolVersion: BACKEND_API_PROTOCOL_VERSION,
+      status: 'starting',
+      reason: 'workspace-loading',
+    })
     runtimeAvailable = true
     expect((await fetch(url, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(200)
 
     const unavailable = createStandaloneServer({
-      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-health-throwing-test' }), runtime: createServerRuntime(), listen: { port: 0 }, sessionToken: token,
-      readiness: () => { throw new Error('fake runtime failed') },
+      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-health-throwing-test' }),
+      runtime: createServerRuntime(),
+      listen: { port: 0 },
+      sessionToken: token,
+      readiness: () => {
+        throw new Error('fake runtime failed')
+      },
     })
     servers.push(unavailable)
     await unavailable.start()
-    const degraded = await fetch(`http://127.0.0.1:${unavailable.address().port}/health`, { headers: { Authorization: `Bearer ${token}` } })
+    const degraded = await fetch(`http://127.0.0.1:${unavailable.address().port}/health`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
     expect(degraded.status).toBe(503)
-    await expect(degraded.json()).resolves.toEqual({ service: 'mega-brain-backend', apiProtocolVersion: BACKEND_API_PROTOCOL_VERSION, status: 'degraded', reason: 'runtime-status-unavailable' })
+    await expect(degraded.json()).resolves.toEqual({
+      service: 'mega-brain-backend',
+      apiProtocolVersion: BACKEND_API_PROTOCOL_VERSION,
+      status: 'degraded',
+      reason: 'runtime-status-unavailable',
+    })
   })
 
   test('rejects a public bind override before a listener is created', () => {
-    expect(() => createStandaloneServer({
-      config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-entrypoint-test' }),
-      runtime: createServerRuntime(),
-      listen: { host: '0.0.0.0', port: 0 },
-    })).toThrow('apenas host 127.0.0.1')
+    expect(() =>
+      createStandaloneServer({
+        config: loadMegaBrainConfig({ env: {}, homeDir: '/tmp/mega-brain-entrypoint-test' }),
+        runtime: createServerRuntime(),
+        listen: { host: '0.0.0.0', port: 0 },
+      }),
+    ).toThrow('apenas host 127.0.0.1')
   })
 
   test('writes exactly one versioned, parseable ready line to stdout and diagnostics to stderr', async () => {
@@ -257,7 +307,7 @@ describe('standalone Node entrypoint', () => {
       sessionId: 'test-session-identifier-1234',
     })
     expect(ready.port).toBeGreaterThan(0)
-      expect(output.stderr).toContain('"event":"backend.ready"')
+    expect(output.stderr).toContain('"event":"backend.ready"')
     expect(output.stdout + output.stderr).not.toContain(token)
   })
 
@@ -267,7 +317,12 @@ describe('standalone Node entrypoint', () => {
     process.exitCode = undefined
     try {
       await runFromCommandLine({
-        createServer: () => ({ start: async () => { throw new Error('credential-do-not-print') } }) as unknown as StandaloneServer,
+        createServer: () =>
+          ({
+            start: async () => {
+              throw new Error('credential-do-not-print')
+            },
+          }) as unknown as StandaloneServer,
         sessionId: 'test-session-identifier-1234',
         streams,
       })
@@ -286,8 +341,18 @@ function captureStreams(): { streams: BackendProcessStreams; output: { stdout: s
   return {
     output,
     streams: {
-      stdout: { write: (chunk: string | Uint8Array) => { output.stdout += String(chunk); return true } },
-      stderr: { write: (chunk: string | Uint8Array) => { output.stderr += String(chunk); return true } },
+      stdout: {
+        write: (chunk: string | Uint8Array) => {
+          output.stdout += String(chunk)
+          return true
+        },
+      },
+      stderr: {
+        write: (chunk: string | Uint8Array) => {
+          output.stderr += String(chunk)
+          return true
+        },
+      },
     },
   }
 }

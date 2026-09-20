@@ -6,7 +6,8 @@ import { expect, test } from 'vitest'
 import { jiraTransitionHttp } from './jira/http'
 import { createJiraService } from './jira/service'
 import type { ProcessChild, ProcessOwner, ProcessRunner } from './process'
-import { createWorkspaceService, worktreeRepoInfo } from './workspace/service'
+import { createWorkspaceService } from './workspace/service'
+import { worktreeRepoInfo } from './workspace/worktree-inspector'
 
 function gitRunner(commonGitDir: string): ProcessRunner & { calls: string[][] } {
   const calls: string[][] = []
@@ -36,10 +37,12 @@ function cardWithWorktree(root: string, status = 'a-fazer') {
 test('workspace service creates and lists only inside a temporary root', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mega-brain-service-'))
   const service = createWorkspaceService({ workspaceDir: root, executables: {} })
-  await expect(service.handle('/', 'POST', new URLSearchParams(), { title: 'Meu card' }))
-    .resolves.toMatchObject({ folder: 'MB-001' })
-  await expect(service.handle('/', 'GET', new URLSearchParams(), undefined))
-    .resolves.toMatchObject([{ name: 'MB-001', title: 'Meu card' }])
+  await expect(service.handle('/', 'POST', new URLSearchParams(), { title: 'Meu card' })).resolves.toMatchObject({
+    folder: 'MB-001',
+  })
+  await expect(service.handle('/', 'GET', new URLSearchParams(), undefined)).resolves.toMatchObject([
+    { name: 'MB-001', title: 'Meu card' },
+  ])
 })
 
 test('workspace service opens only the requested project PR', async () => {
@@ -48,16 +51,19 @@ test('workspace service opens only the requested project PR', async () => {
   const browser = join(root, 'browser-fixture')
   mkdirSync(card)
   writeFileSync(browser, '')
-  writeFileSync(join(card, 'card.json'), JSON.stringify({
-    title: 'Card',
-    status: 'aguardando-deploy',
-    prs: {
-      master: {
-        api: 'https://github.test/api/pull/1',
-        web: 'https://github.test/web/pull/2',
+  writeFileSync(
+    join(card, 'card.json'),
+    JSON.stringify({
+      title: 'Card',
+      status: 'aguardando-deploy',
+      prs: {
+        master: {
+          api: 'https://github.test/api/pull/1',
+          web: 'https://github.test/web/pull/2',
+        },
       },
-    },
-  }))
+    }),
+  )
 
   const calls: Array<{ command: string; args: readonly string[] }> = []
   const child = Object.assign(new EventEmitter(), { unref() {} }) as unknown as ProcessChild
@@ -69,14 +75,22 @@ test('workspace service opens only the requested project PR', async () => {
   } as ProcessRunner
   const service = createWorkspaceService({ workspaceDir: root, executables: { browser } }, runner)
 
-  await expect(service.handle('/prs/open', 'POST', new URLSearchParams(), {
-    name: 'card', env: 'master', project: 'web',
-  })).resolves.toEqual({ ok: true })
+  await expect(
+    service.handle('/prs/open', 'POST', new URLSearchParams(), {
+      name: 'card',
+      env: 'master',
+      project: 'web',
+    }),
+  ).resolves.toEqual({ ok: true })
   expect(calls).toEqual([{ command: browser, args: ['--new-window', 'https://github.test/web/pull/2'] }])
 
-  await expect(service.handle('/prs/open', 'POST', new URLSearchParams(), {
-    name: 'card', env: 'master', project: 'unknown',
-  })).rejects.toThrow('Sem PR de master para unknown')
+  await expect(
+    service.handle('/prs/open', 'POST', new URLSearchParams(), {
+      name: 'card',
+      env: 'master',
+      project: 'unknown',
+    }),
+  ).rejects.toThrow('Sem PR de master para unknown')
   expect(calls).toHaveLength(1)
 })
 
@@ -87,10 +101,13 @@ test('workspace service opens a running dev environment in the configured browse
   mkdirSync(join(card, '.dev-env'), { recursive: true })
   writeFileSync(browser, '')
   writeFileSync(join(card, 'card.json'), JSON.stringify({ title: 'Card', status: 'code-review' }))
-  writeFileSync(join(card, '.dev-env', 'state.json'), JSON.stringify({
-    status: 'rodando',
-    apps: [{ repo: 'web', kind: 'frontend', source: 'worktree', status: 'rodando', url: 'http://localhost:5180' }],
-  }))
+  writeFileSync(
+    join(card, '.dev-env', 'state.json'),
+    JSON.stringify({
+      status: 'rodando',
+      apps: [{ repo: 'web', kind: 'frontend', source: 'worktree', status: 'rodando', url: 'http://localhost:5180' }],
+    }),
+  )
 
   const calls: Array<{ command: string; args: readonly string[] }> = []
   const child = Object.assign(new EventEmitter(), { unref() {} }) as unknown as ProcessChild
@@ -102,12 +119,14 @@ test('workspace service opens a running dev environment in the configured browse
   } as ProcessRunner
   const service = createWorkspaceService({ workspaceDir: root, executables: { browser } }, runner)
 
-  await expect(service.handle('/dev-env/open', 'POST', new URLSearchParams(), { name: 'card', repo: 'web' }))
-    .resolves.toEqual({ ok: true })
+  await expect(
+    service.handle('/dev-env/open', 'POST', new URLSearchParams(), { name: 'card', repo: 'web' }),
+  ).resolves.toEqual({ ok: true })
   expect(calls).toEqual([{ command: browser, args: ['--new-window', 'http://localhost:5180'] }])
 
-  await expect(service.handle('/dev-env/open', 'POST', new URLSearchParams(), { name: 'card', repo: 'api' }))
-    .rejects.toThrow('Ambiente não está rodando: api')
+  await expect(
+    service.handle('/dev-env/open', 'POST', new URLSearchParams(), { name: 'card', repo: 'api' }),
+  ).rejects.toThrow('Ambiente não está rodando: api')
 })
 
 test('automatic stage reset stops its owned process and restores the pre-run artifacts', async () => {
@@ -122,14 +141,21 @@ test('automatic stage reset stops its owned process and restores the pre-run art
     exitCode: null,
     killed: false,
     unref() {},
-    kill() { rawChild.killed = true; rawChild.emit('exit', 0); return true },
+    kill() {
+      rawChild.killed = true
+      rawChild.emit('exit', 0)
+      return true
+    },
   })
   const child = rawChild as unknown as ProcessChild
   const runner = { spawn: () => child } as unknown as ProcessRunner
   let stopped = false
   const owner: ProcessOwner = {
     own: (owned) => owned,
-    stop: async (owned) => { stopped = true; owned.kill('SIGTERM') },
+    stop: async (owned) => {
+      stopped = true
+      owned.kill('SIGTERM')
+    },
     shutdown: async () => {},
     size: 1,
   }
@@ -139,8 +165,9 @@ test('automatic stage reset stops its owned process and restores the pre-run art
   writeFileSync(join(card, 'PLAN.md'), '# Plano parcial da execução\n')
   writeFileSync(join(card, 'TASK-CHECKLIST.md'), '- [ ] T1 Parcial\n')
 
-  await expect(service.handle('/stage/reset', 'POST', new URLSearchParams(), { name: 'card', stage: 'task-planning' }))
-    .resolves.toEqual({ ok: true })
+  await expect(
+    service.handle('/stage/reset', 'POST', new URLSearchParams(), { name: 'card', stage: 'task-planning' }),
+  ).resolves.toEqual({ ok: true })
   expect(stopped).toBe(true)
   expect(readFileSync(join(card, 'PLAN.md'), 'utf8')).toBe('# Plano original\n')
   expect(existsSync(join(card, 'TASK-CHECKLIST.md'))).toBe(false)
@@ -157,12 +184,18 @@ test('script stages receive the configured Claude executable', async () => {
   let spawnedEnv: NodeJS.ProcessEnv | undefined
   const child = Object.assign(new EventEmitter(), { pid: 123, unref() {} }) as unknown as ProcessChild
   const runner = {
-    spawn(_command, _args, options) { spawnedEnv = options?.env as NodeJS.ProcessEnv; return child },
+    spawn(_command, _args, options) {
+      spawnedEnv = options?.env as NodeJS.ProcessEnv
+      return child
+    },
   } as ProcessRunner
-  const service = createWorkspaceService({
-    workspaceDir: root,
-    executables: { claude: '/fixture/bin/claude' },
-  }, runner)
+  const service = createWorkspaceService(
+    {
+      workspaceDir: root,
+      executables: { claude: '/fixture/bin/claude' },
+    },
+    runner,
+  )
 
   await service.handle('/update', 'POST', new URLSearchParams(), { name: 'card', status: 'staging' })
 
@@ -175,28 +208,37 @@ test('ChatGPT stages forward the selected model and reasoning effort to Codex', 
   const card = join(root, 'card')
   mkdirSync(card)
   writeFileSync(join(card, 'card.json'), JSON.stringify({ title: 'Card', status: 'a-fazer', flow: 'simples' }))
-  writeFileSync(join(root, '.mega-brain-settings.json'), JSON.stringify({
-    stages: {
-      'task-planning': { model: 'gpt-6-astra', effort: 'xhigh' },
-    },
-  }))
+  writeFileSync(
+    join(root, '.mega-brain-settings.json'),
+    JSON.stringify({
+      stages: {
+        'task-planning': { model: 'gpt-6-astra', effort: 'xhigh' },
+      },
+    }),
+  )
   const calls: Array<{ command: string; args: readonly string[] }> = []
   const child = Object.assign(new EventEmitter(), { pid: 123, unref() {} }) as unknown as ProcessChild
   const runner = {
-    spawn(command: string, args: readonly string[]) { calls.push({ command, args }); return child },
-  } as ProcessRunner
-  const service = createWorkspaceService({
-    workspaceDir: root,
-    worktreesDir: join(root, '..', 'worktrees'),
-    executables: { codex: '/fixture/bin/codex' },
-    preferences: {
-      settingsFile: join(root, '.global-settings.json'),
-      editor: 'cursor',
-      editorCommand: '',
-      llmProvider: 'chatgpt',
-      onboardingCompleted: true,
+    spawn(command: string, args: readonly string[]) {
+      calls.push({ command, args })
+      return child
     },
-  }, runner)
+  } as ProcessRunner
+  const service = createWorkspaceService(
+    {
+      workspaceDir: root,
+      worktreesDir: join(root, '..', 'worktrees'),
+      executables: { codex: '/fixture/bin/codex' },
+      preferences: {
+        settingsFile: join(root, '.global-settings.json'),
+        editor: 'cursor',
+        editorCommand: '',
+        llmProvider: 'chatgpt',
+        onboardingCompleted: true,
+      },
+    },
+    runner,
+  )
 
   await service.handle('/update', 'POST', new URLSearchParams(), { name: 'card', status: 'planejando' })
 
@@ -240,12 +282,12 @@ test('worktree metadata identifies repository, branch, base version and current 
   })
   expect(info.head.hash).toBe(headHash)
 
-  const recorded = worktreeRepoInfo(
-    { name: 'example', path: '/worktrees/card/example' },
-    'git-fixture',
-    runner,
-    { ref: 'release/2026.09', hash: baseHash, repository: '/repos/canonical', createdAt: '2026-09-10T11:00:00Z' },
-  )
+  const recorded = worktreeRepoInfo({ name: 'example', path: '/worktrees/card/example' }, 'git-fixture', runner, {
+    ref: 'release/2026.09',
+    hash: baseHash,
+    repository: '/repos/canonical',
+    createdAt: '2026-09-10T11:00:00Z',
+  })
   expect(recorded.base).toEqual({
     ref: 'release/2026.09',
     hash: baseHash,
@@ -262,7 +304,9 @@ test('manual card deletion removes its managed worktrees through Git first', asy
   const runner = gitRunner(join(root, 'main', '.git'))
   const service = createWorkspaceService({ workspaceDir: root, executables: { git: 'git-fixture' } }, runner)
 
-  await expect(service.handle('/delete', 'POST', new URLSearchParams(), { name: 'card' })).resolves.toEqual({ ok: true })
+  await expect(service.handle('/delete', 'POST', new URLSearchParams(), { name: 'card' })).resolves.toEqual({
+    ok: true,
+  })
   expect(existsSync(card)).toBe(false)
   expect(runner.calls).toEqual([
     ['git-fixture', '-c', 'core.quotePath=false', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
@@ -283,7 +327,15 @@ test('automatic production cleanup removes linked worktrees too', async () => {
 
   await expect(service.handle('/', 'GET', new URLSearchParams(), undefined)).resolves.toEqual([])
   expect(existsSync(card)).toBe(false)
-  expect(runner.calls).toContainEqual(['git-fixture', '-c', 'core.quotePath=false', 'worktree', 'remove', '--force', worktree])
+  expect(runner.calls).toContainEqual([
+    'git-fixture',
+    '-c',
+    'core.quotePath=false',
+    'worktree',
+    'remove',
+    '--force',
+    worktree,
+  ])
 })
 
 test('automatic cleanup removes a managed worktree whose Git registration was pruned', async () => {
@@ -292,7 +344,9 @@ test('automatic cleanup removes a managed worktree whose Git registration was pr
   const old = new Date(Date.now() - 25 * 60 * 60 * 1000)
   utimesSync(join(card, 'card.json'), old, old)
   const runner = {
-    execFileSync() { throw new Error('fatal: not a git repository') },
+    execFileSync() {
+      throw new Error('fatal: not a git repository')
+    },
   } as unknown as ProcessRunner
   const service = createWorkspaceService({ workspaceDir: root, executables: { git: 'git-fixture' } }, runner)
 
@@ -308,12 +362,15 @@ test('worktree cleanup still reports Git failures when its registration exists',
   mkdirSync(registration, { recursive: true })
   writeFileSync(join(worktree, '.git'), `gitdir: ${registration}\n`)
   const runner = {
-    execFileSync() { throw new Error('Git indisponível') },
+    execFileSync() {
+      throw new Error('Git indisponível')
+    },
   } as unknown as ProcessRunner
   const service = createWorkspaceService({ workspaceDir: root, executables: { git: 'git-fixture' } }, runner)
 
-  await expect(service.handle('/delete', 'POST', new URLSearchParams(), { name: 'card' }))
-    .rejects.toThrow('Não foi possível remover a worktree repo: Git indisponível')
+  await expect(service.handle('/delete', 'POST', new URLSearchParams(), { name: 'card' })).rejects.toThrow(
+    'Não foi possível remover a worktree repo: Git indisponível',
+  )
   expect(existsSync(worktree)).toBe(true)
   expect(existsSync(card)).toBe(true)
 })
@@ -325,7 +382,15 @@ test('card deletion removes temporary item worktrees and their container', async
   const service = createWorkspaceService({ workspaceDir: root, executables: { git: 'git-fixture' } }, runner)
 
   await service.handle('/delete', 'POST', new URLSearchParams(), { name: 'card' })
-  expect(runner.calls).toContainEqual(['git-fixture', '-c', 'core.quotePath=false', 'worktree', 'remove', '--force', itemWorktree])
+  expect(runner.calls).toContainEqual([
+    'git-fixture',
+    '-c',
+    'core.quotePath=false',
+    'worktree',
+    'remove',
+    '--force',
+    itemWorktree,
+  ])
   expect(existsSync(itemWorktree)).toBe(false)
 })
 
@@ -333,17 +398,24 @@ test('jira service has a testable transport and preserves disabled behavior', as
   const disabled = createJiraService({})
   await expect(disabled.ready()).resolves.toEqual([])
   await expect(disabled.statuses('ABC-1')).resolves.toEqual({})
-  await expect(disabled.transition('ABC-1', 'em desenvolvimento')).rejects.toThrow('Integração com Jira não configurada')
-  await expect(jiraTransitionHttp(disabled)({
-    method: 'POST',
-    path: '/api/jira/transition',
-    query: new URLSearchParams(),
-    headers: {},
-    body: { key: 'ABC-1', status: 'em desenvolvimento' },
-  })).resolves.toMatchObject({
+  await expect(disabled.transition('ABC-1', 'em desenvolvimento')).rejects.toThrow(
+    'Integração com Jira não configurada',
+  )
+  await expect(
+    jiraTransitionHttp(disabled)({
+      method: 'POST',
+      path: '/api/jira/transition',
+      query: new URLSearchParams(),
+      headers: {},
+      body: { key: 'ABC-1', status: 'em desenvolvimento' },
+    }),
+  ).resolves.toMatchObject({
     status: 500,
     body: { error: 'Integração com Jira não configurada. Informe site, e-mail e token em Configurações.' },
   })
-  const service = createJiraService({ site: 'example', email: 'a', token: 'b' }, async () => new Response(JSON.stringify({ fields: { status: { name: 'Ready' } } })))
+  const service = createJiraService(
+    { site: 'example', email: 'a', token: 'b' },
+    async () => new Response(JSON.stringify({ fields: { status: { name: 'Ready' } } })),
+  )
   await expect(service.statuses('ABC-1,broken')).resolves.toEqual({ 'ABC-1': 'Ready' })
 })

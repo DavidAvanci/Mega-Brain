@@ -112,16 +112,16 @@ Windows → WSL é `npm run tauri:dev`.
 
 ## Comandos úteis
 
-| Comando | Finalidade |
-| --- | --- |
-| `npm run dev` | Inicia React/Vite em modo web. |
-| `npm run build` | Executa o TypeScript e gera o frontend de produção. |
-| `npm test` | Executa a suíte Vitest. |
-| `npm run server:dev` | Inicia o backend Node com recarga automática. |
-| `npm run server:build` | Gera o bundle independente do backend. |
-| `npm run server:test` | Executa apenas os testes do backend. |
-| `npm run tauri:dev` | Abre o aplicativo desktop em desenvolvimento. |
-| `npm run tauri:build` | Gera o aplicativo Tauri; o instalador final deve ser produzido no Windows. |
+| Comando                | Finalidade                                                                 |
+| ---------------------- | -------------------------------------------------------------------------- |
+| `npm run dev`          | Inicia React/Vite em modo web.                                             |
+| `npm run build`        | Executa o TypeScript e gera o frontend de produção.                        |
+| `npm test`             | Executa a suíte Vitest.                                                    |
+| `npm run server:dev`   | Inicia o backend Node com recarga automática.                              |
+| `npm run server:build` | Gera o bundle independente do backend.                                     |
+| `npm run server:test`  | Executa apenas os testes do backend.                                       |
+| `npm run tauri:dev`    | Abre o aplicativo desktop em desenvolvimento.                              |
+| `npm run tauri:build`  | Gera o aplicativo Tauri; o instalador final deve ser produzido no Windows. |
 
 Para executar um teste específico:
 
@@ -143,16 +143,16 @@ restrito e nunca é devolvido nas respostas da API. Variáveis de ambiente
 continuam disponíveis para integrações e automação e têm precedência sobre as
 credenciais salvas:
 
-| Variável | Uso |
-| --- | --- |
-| `WORKSPACE_DIR` | Diretório padrão dos cards. |
-| `MEGA_BRAIN_WORKTREES_DIR` | Diretório das worktrees gerenciadas. |
-| `JIRA_SITE` | URL da instância Jira. |
-| `JIRA_EMAIL` | Conta usada na API do Jira. |
-| `JIRA_API_TOKEN` | Token da API do Jira. |
-| `MEGA_BRAIN_CLAUDE_BIN` | Caminho alternativo para Claude Code. |
-| `MEGA_BRAIN_CODEX_BIN` | Caminho alternativo para Codex CLI. |
-| `MEGA_BRAIN_GIT_BIN` | Caminho alternativo para Git. |
+| Variável                   | Uso                                   |
+| -------------------------- | ------------------------------------- |
+| `WORKSPACE_DIR`            | Diretório padrão dos cards.           |
+| `MEGA_BRAIN_WORKTREES_DIR` | Diretório das worktrees gerenciadas.  |
+| `JIRA_SITE`                | URL da instância Jira.                |
+| `JIRA_EMAIL`               | Conta usada na API do Jira.           |
+| `JIRA_API_TOKEN`           | Token da API do Jira.                 |
+| `MEGA_BRAIN_CLAUDE_BIN`    | Caminho alternativo para Claude Code. |
+| `MEGA_BRAIN_CODEX_BIN`     | Caminho alternativo para Codex CLI.   |
+| `MEGA_BRAIN_GIT_BIN`       | Caminho alternativo para Git.         |
 
 Não versione `.env.local`, tokens, credenciais, conteúdo de `~/.claude` nem
 dados pessoais de workspaces. Novas configurações sensíveis também não devem
@@ -218,16 +218,16 @@ Builds do instalador NSIS devem ser feitos no Windows nativo. Consulte
 
 ### Onde alterar
 
-| Área | Diretório ou arquivo principal |
-| --- | --- |
-| Interface React | `src/` |
-| Estilos globais | `src/index.css` |
-| Cliente HTTP/SSE | `src/apiClient.ts` |
-| Backend Node | `server/` |
-| Regras de worktree e etapas | `scripts/` |
-| Orquestração dos ambientes locais | `devEnv.ts` |
-| Shell e supervisor desktop | `src-tauri/` |
-| Decisões e validações arquiteturais | `docs/` |
+| Área                                | Diretório ou arquivo principal |
+| ----------------------------------- | ------------------------------ |
+| Interface React                     | `src/`                         |
+| Estilos globais                     | `src/index.css`                |
+| Cliente HTTP/SSE                    | `src/apiClient.ts`             |
+| Backend Node                        | `server/`                      |
+| Regras de worktree e etapas         | `scripts/`                     |
+| Orquestração dos ambientes locais   | `devEnv.ts`                    |
+| Shell e supervisor desktop          | `src-tauri/`                   |
+| Decisões e validações arquiteturais | `docs/`                        |
 
 ## Alterações por vibe coding
 

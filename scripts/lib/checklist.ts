@@ -40,7 +40,10 @@ export function parseChecklist(md: string): Item[] {
       const title = heading[1].trim()
       discardedSection = STRUCK.test(title)
       skipping = discardedSection
-      repo = title.replace(/^~~|~~$/g, '').trim().replace(/^.*\//, '')
+      repo = title
+        .replace(/^~~|~~$/g, '')
+        .trim()
+        .replace(/^.*\//, '')
       continue
     }
     const match = parseLine(line)
@@ -165,9 +168,7 @@ export function resetUnfinished(file: string): void {
 
 export function widenFiles(file: string, item: Item, touched: string[]): string[] {
   if (!item.files.length) return []
-  const added = touched.filter(
-    (path) => !item.files.some((pattern) => matchesPattern(path, pattern)),
-  )
+  const added = touched.filter((path) => !item.files.some((pattern) => matchesPattern(path, pattern)))
   if (!added.length) return []
   const lines = readFileSync(file, 'utf8').split('\n')
   const index = locate(lines, item)

@@ -45,15 +45,17 @@ test('taskInfo prompt mode', () => {
 })
 
 test('registeredWorktreePaths considera somente worktrees declaradas pelo Git', () => {
-  const paths = registeredWorktreePaths([
-    'worktree /tmp/repo',
-    'HEAD 0123456789012345678901234567890123456789',
-    'branch refs/heads/master',
-    '',
-    'worktree /tmp/repo-feature',
-    'HEAD 1234567890123456789012345678901234567890',
-    'branch refs/heads/feature/x',
-  ].join('\n'))
+  const paths = registeredWorktreePaths(
+    [
+      'worktree /tmp/repo',
+      'HEAD 0123456789012345678901234567890123456789',
+      'branch refs/heads/master',
+      '',
+      'worktree /tmp/repo-feature',
+      'HEAD 1234567890123456789012345678901234567890',
+      'branch refs/heads/feature/x',
+    ].join('\n'),
+  )
 
   expect(paths).toEqual(['/tmp/repo', '/tmp/repo-feature'])
 })
@@ -228,8 +230,9 @@ test('addDetachedWorktree cria um checkout detached em origin/master com node_mo
   addDetachedWorktree(real, path)
 
   expect(currentBranch(path)).toBe('HEAD')
-  expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path, encoding: 'utf8' }))
-    .toBe(execFileSync('git', ['rev-parse', 'origin/master'], { cwd: real, encoding: 'utf8' }))
+  expect(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path, encoding: 'utf8' })).toBe(
+    execFileSync('git', ['rev-parse', 'origin/master'], { cwd: real, encoding: 'utf8' }),
+  )
   expect(lstatSync(join(path, 'node_modules')).isSymbolicLink()).toBe(true)
 })
 

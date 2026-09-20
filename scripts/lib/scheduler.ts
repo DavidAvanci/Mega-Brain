@@ -71,9 +71,7 @@ export async function runChecklist(options: SchedulerOptions): Promise<Scheduler
         result = { status: 'failed', note: error instanceof Error ? error.message : String(error) }
       }
       if (result.status === 'done' && options.afterDone) {
-        const others = [...runningItems.values()].filter(
-          (other) => other.id !== item.id && other.repo === item.repo,
-        )
+        const others = [...runningItems.values()].filter((other) => other.id !== item.id && other.repo === item.repo)
         try {
           const adjusted = await options.afterDone(item, others)
           if (adjusted) result = absorb(adjusted)

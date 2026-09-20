@@ -15,10 +15,8 @@ describe('desktop window chrome', () => {
     const capabilityUrl = new URL('../src-tauri/capabilities/desktop-backend.json', sourceDir)
     const capability = JSON.parse(await readFile(capabilityUrl, 'utf8')) as { permissions?: string[] }
 
-    expect(capability.permissions).toEqual(expect.arrayContaining([
-      'autostart:allow-enable',
-      'autostart:allow-disable',
-      'autostart:allow-is-enabled',
-    ]))
+    expect(capability.permissions).toEqual(
+      expect.arrayContaining(['autostart:allow-enable', 'autostart:allow-disable', 'autostart:allow-is-enabled']),
+    )
   })
 })

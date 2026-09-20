@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { consumeUserInitiatedStatusChange } from './cards'
-import type { AgentStatus, Card, Status } from './types'
+import { consumeUserInitiatedStatusChange } from './features/cards/model/card-commands'
+import type { AgentStatus } from '../shared/domain/agents'
+import type { Card, Status } from '../shared/domain/cards'
 
 export const ATTENTION_STATUSES: ReadonlySet<Status> = new Set(['revisao-de-plano', 'code-review'])
 
@@ -24,11 +25,7 @@ function playSound(event: AttentionEvent): void {
     gain.gain.setValueAtTime(0.001, ctx.currentTime)
     gain.gain.exponentialRampToValueAtTime(event === 'error' ? 0.26 : 0.2, ctx.currentTime + 0.02)
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.75)
-    const notes = event === 'review'
-      ? [660, 880]
-      : event === 'error'
-        ? [440, 330, 220]
-        : [523, 659, 784]
+    const notes = event === 'review' ? [660, 880] : event === 'error' ? [440, 330, 220] : [523, 659, 784]
     notes.forEach((frequency, index) => {
       const osc = ctx.createOscillator()
       osc.type = event === 'error' ? 'triangle' : 'sine'
@@ -102,7 +99,8 @@ export function useAttention(cards: Card[], loaded: boolean): void {
           ATTENTION_STATUSES.has(current.status) &&
           before.status !== current.status &&
           !consumeUserInitiatedStatusChange(card.id, current.status)
-        ) notify('review', card)
+        )
+          notify('review', card)
         if (current.hasError && !before.hasError) notify('error', card)
         if (shouldNotifyInput(before, current)) notify('input', card)
       }

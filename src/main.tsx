@@ -1,7 +1,7 @@
 import { Component, StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
-import { bootstrapWebApiClient } from './apiClient'
+import { bootstrapWebApiClient } from './shared/api/api-client'
 import { DesktopConnectionBoundary } from './DesktopConnectionBoundary'
 import { startDesktopConnection } from './desktopConnection'
 import { isTauriDesktop } from './desktopBootstrap'
@@ -34,7 +34,9 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { error?: Err
         <main className="flex h-screen items-center justify-center p-6">
           <section className="w-full max-w-md rounded-lg border bg-card p-6 shadow-sm">
             <h1 className="text-base font-semibold">Mega Brain não pôde iniciar</h1>
-            <p className="mt-2 text-sm text-muted-foreground">{this.state.error.message || 'Falha inesperada ao renderizar a interface.'}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {this.state.error.message || 'Falha inesperada ao renderizar a interface.'}
+            </p>
           </section>
         </main>
       )
@@ -57,7 +59,13 @@ function renderApp(desktop: boolean) {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <RootErrorBoundary>
-        {desktop ? <DesktopConnectionBoundary><App /></DesktopConnectionBoundary> : <App />}
+        {desktop ? (
+          <DesktopConnectionBoundary>
+            <App />
+          </DesktopConnectionBoundary>
+        ) : (
+          <App />
+        )}
       </RootErrorBoundary>
     </StrictMode>,
   )

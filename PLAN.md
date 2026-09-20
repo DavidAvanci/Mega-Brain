@@ -229,16 +229,16 @@ Cada commit deve deixar `npm run dev`, `npm test` e `npm run build` funcionais. 
 
 ## Principais riscos e mitigação
 
-| Risco | Mitigação |
-|---|---|
-| Tauri Windows e backend WSL terem ciclos de vida diferentes | Supervisor Rust, handshake versionado, health check e encerramento explícito |
-| API loopback ser chamada por outro processo/página local | Bind em `127.0.0.1`, porta aleatória, token efêmero, CORS estrito e CSP |
-| Empacotador Node não suportar imports/assets/processos dinâmicos | Começar com bundle JS + Node do WSL; tornar runtime autocontido uma otimização validada |
-| Alterações quebrarem o app atualmente em uso | Adaptadores compatíveis, portas distintas, testes de contrato e cutover gradual |
-| Build Windows a partir do WSL ser frágil | Gerar instalador em Windows nativo ou CI Windows |
-| Encerramento do desktop matar agentes que devem continuar | Catalogar ownership de cada processo e encerrar apenas filhos explicitamente gerenciados |
-| Upgrade danificar o runtime WSL | Diretórios versionados, checksum, troca atômica e rollback |
-| Credenciais vazarem no bundle ou logs | Configuração somente no WSL, redaction e inspeção do artefato final |
+| Risco                                                            | Mitigação                                                                                |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Tauri Windows e backend WSL terem ciclos de vida diferentes      | Supervisor Rust, handshake versionado, health check e encerramento explícito             |
+| API loopback ser chamada por outro processo/página local         | Bind em `127.0.0.1`, porta aleatória, token efêmero, CORS estrito e CSP                  |
+| Empacotador Node não suportar imports/assets/processos dinâmicos | Começar com bundle JS + Node do WSL; tornar runtime autocontido uma otimização validada  |
+| Alterações quebrarem o app atualmente em uso                     | Adaptadores compatíveis, portas distintas, testes de contrato e cutover gradual          |
+| Build Windows a partir do WSL ser frágil                         | Gerar instalador em Windows nativo ou CI Windows                                         |
+| Encerramento do desktop matar agentes que devem continuar        | Catalogar ownership de cada processo e encerrar apenas filhos explicitamente gerenciados |
+| Upgrade danificar o runtime WSL                                  | Diretórios versionados, checksum, troca atômica e rollback                               |
+| Credenciais vazarem no bundle ou logs                            | Configuração somente no WSL, redaction e inspeção do artefato final                      |
 
 ## Referências técnicas
 

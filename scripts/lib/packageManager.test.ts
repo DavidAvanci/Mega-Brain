@@ -34,7 +34,10 @@ test('yarn.lock sozinho marca yarn', () => {
 
 test('npm precisa de -- para repassar flags ao script', () => {
   const dir = repo({ 'package.json': '{}' })
-  expect(runScriptCommand(dir, 'dev', ['--port', '3000'])).toEqual({ cmd: 'npm', args: ['run', 'dev', '--', '--port', '3000'] })
+  expect(runScriptCommand(dir, 'dev', ['--port', '3000'])).toEqual({
+    cmd: 'npm',
+    args: ['run', 'dev', '--', '--port', '3000'],
+  })
   expect(runScriptCommand(dir, 'build')).toEqual({ cmd: 'npm', args: ['run', 'build'] })
   expect(installCommand(dir)).toEqual({ cmd: 'npm', args: ['install'] })
 })

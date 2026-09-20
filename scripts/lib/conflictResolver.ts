@@ -44,12 +44,14 @@ export function advanceCherryPick(cwd: string): { complete: boolean; skipped: nu
 }
 
 function prompt(repo: string, operation: 'cherry-pick' | 'rebase', base: string, branch: string): string {
-  const action = operation === 'cherry-pick'
-    ? 'Há um cherry-pick em conflito já iniciado.'
-    : `Há um rebase em conflito da branch ${branch} sobre origin/${base}.`
-  const finish = operation === 'cherry-pick'
-    ? 'Conclua o cherry-pick com `git cherry-pick --continue`.'
-    : 'Conclua o rebase com `git rebase --continue`.'
+  const action =
+    operation === 'cherry-pick'
+      ? 'Há um cherry-pick em conflito já iniciado.'
+      : `Há um rebase em conflito da branch ${branch} sobre origin/${base}.`
+  const finish =
+    operation === 'cherry-pick'
+      ? 'Conclua o cherry-pick com `git cherry-pick --continue`.'
+      : 'Conclua o rebase com `git rebase --continue`.'
   return [
     `Resolva o conflito Git no repositório ${repo}. ${action}`,
     'Trabalhe somente nos arquivos que fazem parte do conflito e preserve as duas intenções quando forem compatíveis.',
@@ -89,7 +91,8 @@ export async function resolveCherryPickConflict(
 
 function assertAllCommitsApplied(cwd: string, repo: string, baseRef: string, expected: number): void {
   const applied = Number(git(cwd, 'rev-list', '--count', `${baseRef}..HEAD`))
-  if (applied < expected) throw new Error(`${repo}: o cherry-pick não contém todos os commits esperados (${applied}/${expected})`)
+  if (applied < expected)
+    throw new Error(`${repo}: o cherry-pick não contém todos os commits esperados (${applied}/${expected})`)
 }
 
 export async function resolveRebaseConflict(cwd: string, repo: string, base: string, branch: string): Promise<void> {

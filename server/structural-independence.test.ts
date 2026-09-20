@@ -3,7 +3,8 @@ import { describe, expect, test } from 'vitest'
 import { createServerRuntime } from './runtime'
 
 const SERVER_DIRECTORY = new URL('.', import.meta.url)
-const FORBIDDEN_IMPORTS = /(?:from\s+['"](?:vite|react|react-dom)|import\s*\(\s*['"](?:vite|react|react-dom))/u
+const FORBIDDEN_IMPORTS =
+  /(?:from\s+['"](?:vite|react|react-dom)|import\s*\(\s*['"](?:vite|react|react-dom)|from\s+['"](?:\.\.\/)+src(?:\/|['"]))/u
 
 function serverSourceFiles(directory: URL): URL[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -18,15 +19,17 @@ describe('server boundary', () => {
     const runtime = createServerRuntime()
     runtime.register('GET', '/health', async () => ({ status: 200, body: { ok: true } }))
 
-    await expect(runtime.handle({
-      method: 'GET',
-      path: '/health',
-      query: new URLSearchParams(),
-      headers: {},
-    })).resolves.toEqual({ status: 200, body: { ok: true } })
+    await expect(
+      runtime.handle({
+        method: 'GET',
+        path: '/health',
+        query: new URLSearchParams(),
+        headers: {},
+      }),
+    ).resolves.toEqual({ status: 200, body: { ok: true } })
   })
 
-  test('does not import Vite or React', () => {
+  test('does not import frontend frameworks or frontend source', () => {
     const imports = serverSourceFiles(SERVER_DIRECTORY).map((file) => ({
       file: file.pathname,
       source: readFileSync(file, 'utf8'),

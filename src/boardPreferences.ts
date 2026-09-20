@@ -28,10 +28,10 @@ function readPreferences(): BoardPreferences {
       view: saved.view === 'list' ? 'list' : 'board',
       attentionOnly: saved.attentionOnly ?? DEFAULT_PREFERENCES.attentionOnly,
       flow: ['all', 'simples', 'medio', 'dificil'].includes(saved.flow ?? '')
-        ? saved.flow as BoardFlowFilter
+        ? (saved.flow as BoardFlowFilter)
         : DEFAULT_PREFERENCES.flow,
       state: ['all', 'running', 'waiting', 'error', 'pr'].includes(saved.state ?? '')
-        ? saved.state as BoardStateFilter
+        ? (saved.state as BoardStateFilter)
         : DEFAULT_PREFERENCES.state,
     }
   } catch {

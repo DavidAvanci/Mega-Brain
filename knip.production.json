@@ -1,0 +1,28 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": ["src/main.tsx", "server/main.ts", "vite.config.ts", "scripts/commands/*.{ts,mjs}"],
+  "project": ["src/**/*.{ts,tsx}", "server/**/*.ts", "scripts/**/*.{ts,mjs}", "*.ts", "*.mjs"],
+  "ignoreExportsUsedInFile": true,
+  "includeEntryExports": true,
+  "ignoreDependencies": [
+    "@base-ui/react",
+    "@dnd-kit/core",
+    "@fontsource-variable/jetbrains-mono",
+    "@git-diff-view/react",
+    "@hugeicons/core-free-icons",
+    "@hugeicons/react",
+    "@tanstack/react-virtual",
+    "@tauri-apps/plugin-autostart",
+    "@tauri-apps/plugin-dialog",
+    "@vitest/coverage-v8",
+    "class-variance-authority",
+    "clsx",
+    "marked",
+    "react-scan",
+    "shadcn",
+    "tailwind-merge",
+    "tw-animate-css"
+  ],
+  "vite": true,
+  "vitest": false
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { matchesQuery, matchesState, needsAttention } from './boardFilters'
-import type { Card } from './types'
+import type { Card } from '../shared/domain/cards'
 
 function card(patch: Partial<Card> = {}): Card {
   return {
@@ -33,6 +33,8 @@ describe('board filters', () => {
     const now = new Date('2026-09-13T12:00:01.000Z').getTime()
     expect(needsAttention(card(), now)).toBe(true)
     expect(needsAttention(card({ status: 'a-fazer' }), now)).toBe(false)
-    expect(needsAttention(card({ createdAt: '2026-09-13T11:00:00.000Z', agents: [{ status: 'erro' }] }), now)).toBe(true)
+    expect(needsAttention(card({ createdAt: '2026-09-13T11:00:00.000Z', agents: [{ status: 'erro' }] }), now)).toBe(
+      true,
+    )
   })
 })

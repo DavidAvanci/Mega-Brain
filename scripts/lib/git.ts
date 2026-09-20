@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { nodeProcessRunner, type ProcessRunner } from '../../server/process.ts'
 
 export class CmdError extends Error {
   readonly raw: string
@@ -9,18 +9,22 @@ export class CmdError extends Error {
   }
 }
 
-function runRaw(cwd: string, cmd: string, ...args: string[]): string {
+function runRaw(cwd: string, cmd: string, args: readonly string[], runner: ProcessRunner = nodeProcessRunner): string {
   try {
-    return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-  } catch (error: any) {
-    const output = `${String(error?.stdout ?? '')}\n${String(error?.stderr ?? '')}`.trim()
-    const where = error?.code === 'ENOENT' && !existsSync(cwd) ? ` (cwd inexistente: ${cwd})` : ''
-    throw new CmdError(`${cmd} ${args.slice(0, 3).join(' ')}`, `${output || String(error?.message ?? error)}${where}`)
+    return String(runner.execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }))
+  } catch (error: unknown) {
+    const detail =
+      error && typeof error === 'object'
+        ? (error as { stdout?: unknown; stderr?: unknown; code?: unknown; message?: unknown })
+        : undefined
+    const output = `${String(detail?.stdout ?? '')}\n${String(detail?.stderr ?? '')}`.trim()
+    const where = detail?.code === 'ENOENT' && !existsSync(cwd) ? ` (cwd inexistente: ${cwd})` : ''
+    throw new CmdError(`${cmd} ${args.slice(0, 3).join(' ')}`, `${output || String(detail?.message ?? error)}${where}`)
   }
 }
 
 export function run(cwd: string, cmd: string, ...args: string[]): string {
-  return runRaw(cwd, cmd, ...args).trim()
+  return runRaw(cwd, cmd, args).trim()
 }
 
 export const git = (cwd: string, ...args: string[]): string => run(cwd, 'git', ...args)
@@ -40,7 +44,9 @@ export function currentBranch(cwd: string): string {
 }
 
 export function changedFiles(cwd: string): string[] {
-  const entries = runRaw(cwd, 'git', 'status', '--porcelain', '--untracked-files=all', '-z').split('\0').filter(Boolean)
+  const entries = runRaw(cwd, 'git', ['status', '--porcelain', '--untracked-files=all', '-z'])
+    .split('\0')
+    .filter(Boolean)
   const paths: string[] = []
   for (let i = 0; i < entries.length; i++) {
     paths.push(entries[i].slice(3))
@@ -52,7 +58,21 @@ export function changedFiles(cwd: string): string[] {
 
 export function existingPrUrl(cwd: string, head: string, base: string): string | null {
   try {
-    const out = gh(cwd, 'pr', 'list', '--head', head, '--base', base, '--state', 'open', '--json', 'url', '-q', '.[0].url')
+    const out = gh(
+      cwd,
+      'pr',
+      'list',
+      '--head',
+      head,
+      '--base',
+      base,
+      '--state',
+      'open',
+      '--json',
+      'url',
+      '-q',
+      '.[0].url',
+    )
     return out || null
   } catch {
     return null

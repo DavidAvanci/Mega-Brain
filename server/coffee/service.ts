@@ -23,25 +23,58 @@ try {
 }
 `
 
-export const COFFEE_ARGS = ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]
+export const COFFEE_ARGS = [
+  '-NoProfile',
+  '-NonInteractive',
+  '-EncodedCommand',
+  Buffer.from(script, 'utf16le').toString('base64'),
+]
 export type SpawnProcess = (command: string, args: string[]) => ChildProcess
 
-export interface CoffeeService { start(): void; stop(): void; active(): boolean }
-export function createCoffeeService(runner: ProcessRunner | SpawnProcess = nodeProcessRunner, powershell?: string, owner?: ProcessOwner): CoffeeService {
+export interface CoffeeService {
+  start(): void
+  stop(): void
+  active(): boolean
+}
+export function createCoffeeService(
+  runner: ProcessRunner | SpawnProcess = nodeProcessRunner,
+  powershell?: string,
+  owner?: ProcessOwner,
+): CoffeeService {
   let session: ChildProcess | null = null
-  const spawnProcess: SpawnProcess = typeof runner === 'function'
-    ? runner
-    : (command, args) => runner.spawn(command, args, { stdio: 'ignore' })
+  const spawnProcess: SpawnProcess =
+    typeof runner === 'function' ? runner : (command, args) => runner.spawn(command, args, { stdio: 'ignore' })
   return {
-    stop() { const child = session; session = null; try { child?.kill() } catch { /* It may have exited already. */ } },
+    stop() {
+      const child = session
+      session = null
+      try {
+        child?.kill()
+      } catch {
+        /* It may have exited already. */
+      }
+    },
     start() {
       if (session) return
-      const command = resolveOptionalExecutable({ configured: powershell, candidates: wslDesktopCandidates('powershell'), label: 'PowerShell' })
+      const command = resolveOptionalExecutable({
+        configured: powershell,
+        candidates: wslDesktopCandidates('powershell'),
+        label: 'PowerShell',
+      })
       let child: ChildProcess
-      try { child = spawnProcess(command, COFFEE_ARGS) } catch (error) { session = null; throw error }
-      owner?.own(child, { label: 'coffee' }); session = child
-      const release = () => { if (session === child) session = null }
-      child.on('exit', release); child.on('error', release)
+      try {
+        child = spawnProcess(command, COFFEE_ARGS)
+      } catch (error) {
+        session = null
+        throw error
+      }
+      owner?.own(child, { label: 'coffee' })
+      session = child
+      const release = () => {
+        if (session === child) session = null
+      }
+      child.on('exit', release)
+      child.on('error', release)
     },
     active: () => session !== null,
   }

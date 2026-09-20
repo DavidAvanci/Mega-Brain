@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { FLOW_LEVELS, type FlowLevel } from '../../src/types.ts'
+import { FLOW_LEVELS, type FlowLevel } from '../../shared/domain/cards.ts'
 
 const CARD_ID = /^MB-(\d+)$/i
 const SEQUENCE_FILE = '.mega-brain-sequence'
@@ -8,9 +8,7 @@ const SEQUENCE_FILE = '.mega-brain-sequence'
 export const DEFAULT_FLOW: FlowLevel = 'dificil'
 
 export function readFlow(value: unknown): FlowLevel {
-  return typeof value === 'string' && FLOW_LEVELS.includes(value as FlowLevel)
-    ? value as FlowLevel
-    : DEFAULT_FLOW
+  return typeof value === 'string' && FLOW_LEVELS.includes(value as FlowLevel) ? (value as FlowLevel) : DEFAULT_FLOW
 }
 
 export function formatCardId(sequence: number): string {

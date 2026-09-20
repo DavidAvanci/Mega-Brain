@@ -1,4 +1,12 @@
-import { execFile, execFileSync, spawn, type ChildProcess, type ExecFileOptions, type ExecFileSyncOptions, type SpawnOptions } from 'node:child_process'
+import {
+  execFile,
+  execFileSync,
+  spawn,
+  type ChildProcess,
+  type ExecFileOptions,
+  type ExecFileSyncOptions,
+  type SpawnOptions,
+} from 'node:child_process'
 
 /**
  * Boundary for every child process owned by the HTTP services.  Keeping this
@@ -8,14 +16,25 @@ import { execFile, execFileSync, spawn, type ChildProcess, type ExecFileOptions,
 export interface ProcessRunner {
   spawn(command: string, args: readonly string[], options?: SpawnOptions): ChildProcess
   execFileSync(command: string, args: readonly string[], options?: ExecFileSyncOptions): string | Buffer
-  execFile(command: string, args: readonly string[], options: ExecFileOptions, callback: (error: Error | null, stdout: string, stderr: string) => void): void
+  execFile(
+    command: string,
+    args: readonly string[],
+    options: ExecFileOptions,
+    callback: (error: Error | null, stdout: string, stderr: string) => void,
+  ): void
 }
 
 export const nodeProcessRunner: ProcessRunner = {
-  spawn(command, args, options) { return options ? spawn(command, [...args], options) : spawn(command, [...args]) },
-  execFileSync(command, args, options) { return execFileSync(command, [...args], options) },
+  spawn(command, args, options) {
+    return options ? spawn(command, [...args], options) : spawn(command, [...args])
+  },
+  execFileSync(command, args, options) {
+    return execFileSync(command, [...args], options)
+  },
   execFile(command, args, options, callback) {
-    execFile(command, [...args], options, (error, stdout, stderr) => callback(error, String(stdout ?? ''), String(stderr ?? '')))
+    execFile(command, [...args], options, (error, stdout, stderr) =>
+      callback(error, String(stdout ?? ''), String(stderr ?? '')),
+    )
   },
 }
 
@@ -45,17 +64,30 @@ export function createProcessOwner(options: ProcessOwnerOptions = {}): ProcessOw
   const timeoutMs = options.timeoutMs ?? 5_000
   const schedule = options.setTimeout ?? globalThis.setTimeout
   let closing: Promise<void> | undefined
-  const forget = (child: ProcessChild) => { children.delete(child) }
-  const waitForExit = (child: ProcessChild) => new Promise<void>((resolve) => {
-    if (
-      (child.exitCode !== null && child.exitCode !== undefined)
-      || (child.signalCode !== null && child.signalCode !== undefined)
-    ) return resolve()
-    const timer = schedule(() => resolve(), timeoutMs)
-    child.once('exit', () => { clearTimeout(timer); resolve() })
-    child.once('close', () => { clearTimeout(timer); resolve() })
-    child.once('error', () => { clearTimeout(timer); resolve() })
-  })
+  const forget = (child: ProcessChild) => {
+    children.delete(child)
+  }
+  const waitForExit = (child: ProcessChild) =>
+    new Promise<void>((resolve) => {
+      if (
+        (child.exitCode !== null && child.exitCode !== undefined) ||
+        (child.signalCode !== null && child.signalCode !== undefined)
+      )
+        return resolve()
+      const timer = schedule(() => resolve(), timeoutMs)
+      child.once('exit', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+      child.once('close', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+      child.once('error', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+    })
   const signal = (child: ProcessChild, value: NodeJS.Signals) => {
     const entry = children.get(child)
     try {
@@ -64,7 +96,9 @@ export function createProcessOwner(options: ProcessOwnerOptions = {}): ProcessOw
       // persisted state file or attach to a pre-existing process.
       if (entry?.tree && child.pid && options.signalTree) options.signalTree(child.pid, value)
       else child.kill(value)
-    } catch { /* A child can disappear between snapshot and signal. */ }
+    } catch {
+      /* A child can disappear between snapshot and signal. */
+    }
   }
   return {
     own(child, metadata = {}) {
@@ -74,7 +108,9 @@ export function createProcessOwner(options: ProcessOwnerOptions = {}): ProcessOw
       child.once('error', () => forget(child))
       return child
     },
-    get size() { return children.size },
+    get size() {
+      return children.size
+    },
     async stop(child) {
       if (!children.has(child)) return
       signal(child, 'SIGTERM')

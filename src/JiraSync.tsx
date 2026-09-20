@@ -4,7 +4,7 @@ import { ArrowReloadHorizontalIcon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
-import { syncJiraCards } from './cards'
+import { syncJiraCards } from './features/cards/model/card-commands'
 import { Tip } from './Tip'
 
 export function JiraSync() {

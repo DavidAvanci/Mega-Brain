@@ -3,5 +3,18 @@
   "identifier": "desktop-backend",
   "description": "The main WebView may request its authenticated loopback backend configuration, manage desktop autostart, choose a detected WSL distribution, normalize a directory selected by the native picker, set one validated WSL workspace path, and open the app-owned diagnostics folder.",
   "windows": ["main"],
-  "permissions": ["allow-backend-config", "allow-list-wsl-distributions", "allow-select-wsl-distribution", "allow-set-wsl-workspace-dir", "allow-normalize-wsl-directory", "allow-open-diagnostics-folder", "allow-window-controls", "autostart:allow-enable", "autostart:allow-disable", "autostart:allow-is-enabled", "core:window:allow-start-dragging", "dialog:allow-open"]
+  "permissions": [
+    "allow-backend-config",
+    "allow-list-wsl-distributions",
+    "allow-select-wsl-distribution",
+    "allow-set-wsl-workspace-dir",
+    "allow-normalize-wsl-directory",
+    "allow-open-diagnostics-folder",
+    "allow-window-controls",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
+    "core:window:allow-start-dragging",
+    "dialog:allow-open"
+  ]
 }

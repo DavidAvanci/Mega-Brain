@@ -75,7 +75,13 @@ function parseFile(chunk: string): FileDiff {
     if (match) oldName = newName = match[1]
   }
   const status: FileStatus =
-    added || (!oldName && newName) ? 'added' : deleted || (oldName && !newName) ? 'deleted' : renamed ? 'renamed' : 'modified'
+    added || (!oldName && newName)
+      ? 'added'
+      : deleted || (oldName && !newName)
+        ? 'deleted'
+        : renamed
+          ? 'renamed'
+          : 'modified'
   if (status === 'added') oldName = ''
   if (status === 'deleted') newName = ''
   return { oldName, newName, status, binary, hasHunks: inHunk, additions, deletions, maxLine, raw: chunk }

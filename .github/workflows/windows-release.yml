@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 permissions:
   contents: write
@@ -37,7 +37,7 @@ jobs:
         shell: pwsh
         run: |
           npm run server:build
-          node scripts/validate-wsl-runtime.mjs
+          node scripts/commands/validate-wsl-runtime.mjs
 
       - name: Test backend contracts
         run: npm run server:test
@@ -64,7 +64,7 @@ jobs:
           npm run tauri:build -- --bundles nsis --target x86_64-pc-windows-msvc
 
       - name: Verify embedded WSL runtime after Tauri build
-        run: node scripts/validate-wsl-runtime.mjs
+        run: node scripts/commands/validate-wsl-runtime.mjs
 
       - name: Create immutable artifact manifest
         shell: pwsh

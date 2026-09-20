@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { groupOpenMasterPrs } from './deployPrs'
-import type { Card } from './types'
+import type { Card } from '../shared/domain/cards'
 
 function card(overrides: Partial<Card>): Card {
   return {

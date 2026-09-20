@@ -14,14 +14,13 @@ prontidão, chama `/health` com o token efêmero e envia `SIGTERM`. Foram feitas
 dez execuções consecutivas em 2026-09-01. O tempo `ready` vai do spawn do Node
 até a linha de prontidão; `usable` inclui o `GET /health` autenticado.
 
-| Medida | Mínimo | Mediana | P95 | Máximo |
-| --- | ---: | ---: | ---: | ---: |
-| `ready` | 75.0 ms | 78.0 ms | 114.2 ms | 114.2 ms |
+| Medida   |  Mínimo | Mediana |      P95 |   Máximo |
+| -------- | ------: | ------: | -------: | -------: |
+| `ready`  | 75.0 ms | 78.0 ms | 114.2 ms | 114.2 ms |
 | `usable` | 81.8 ms | 88.1 ms | 122.8 ms | 122.8 ms |
 
 Esses números medem o bootstrap do backend no WSL, não o cold start completo
-do executável Tauri/WebView no Windows; essa medida de produto pertence à Fase
-8. Cada processo temporário foi encerrado ao fim da amostra.
+do executável Tauri/WebView no Windows; essa medida de produto pertence à Fase 8. Cada processo temporário foi encerrado ao fim da amostra.
 
 Para repetir no WSL:
 
@@ -38,12 +37,12 @@ O supervisor do spike agora aguarda a prontidão por até 10 segundos, captura
 stderr do `wsl.exe`/backend e encerra o filho quando a prontidão falha. Ele
 classifica os casos abaixo sem expor token algum:
 
-| Caso | Mensagem exibida |
-| --- | --- |
-| WSL ausente ou indisponível | `O WSL não está disponível. Instale ou repare o WSL, reinicie o Windows e abra o Mega Brain novamente.` |
-| Node ausente na distribuição selecionada | `O Node.js não está disponível na distribuição WSL selecionada. Instale o Node.js 18.19 ou superior no WSL e abra o Mega Brain novamente.` |
-| Backend encerra, emite prontidão inválida ou falha internamente | `O backend do Mega Brain falhou antes de ficar pronto. Consulte os logs de diagnóstico e confirme o runtime e o bundle do backend.` |
-| Não há prontidão em 10 segundos | `O backend do Mega Brain demorou demais para iniciar. Consulte os logs de diagnóstico e tente abrir o app novamente.` |
+| Caso                                                            | Mensagem exibida                                                                                                                           |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| WSL ausente ou indisponível                                     | `O WSL não está disponível. Instale ou repare o WSL, reinicie o Windows e abra o Mega Brain novamente.`                                    |
+| Node ausente na distribuição selecionada                        | `O Node.js não está disponível na distribuição WSL selecionada. Instale o Node.js 18.19 ou superior no WSL e abra o Mega Brain novamente.` |
+| Backend encerra, emite prontidão inválida ou falha internamente | `O backend do Mega Brain falhou antes de ficar pronto. Consulte os logs de diagnóstico e confirme o runtime e o bundle do backend.`        |
+| Não há prontidão em 10 segundos                                 | `O backend do Mega Brain demorou demais para iniciar. Consulte os logs de diagnóstico e tente abrir o app novamente.`                      |
 
 O detalhe técnico do stderr é anexado apenas ao diagnóstico do processo. O
 produto deverá direcionar esse detalhe para os logs, mantendo a primeira frase

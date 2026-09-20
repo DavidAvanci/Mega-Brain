@@ -19,7 +19,9 @@ describe('render', () => {
 
   it('turns metadata lines after the title into a definition list', () => {
     const { html } = render('# PLAN\nissue: ESTR-1\ntitle: X\nestimate: 2h\n\n## Resumo\ntexto')
-    expect(html).toContain('<dl class="meta"><div><dt>issue</dt><dd>ESTR-1</dd></div><div><dt>estimate</dt><dd>2h</dd></div></dl>')
+    expect(html).toContain(
+      '<dl class="meta"><div><dt>issue</dt><dd>ESTR-1</dd></div><div><dt>estimate</dt><dd>2h</dd></div></dl>',
+    )
     expect(html).not.toContain('title: X')
   })
 

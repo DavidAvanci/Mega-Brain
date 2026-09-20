@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'vitest'
 import { createServer } from 'node:http'
-import { createReleaseFixture } from './release-fixture'
+import { createReleaseFixture } from '../test/support/server/release-fixture'
 import type { StandaloneServer } from './main'
 
 describe('release hardening fixture', () => {
@@ -59,7 +59,7 @@ describe('release hardening fixture', () => {
       await expect(backend.start()).rejects.toMatchObject({ code: 'EADDRINUSE' })
       expect(backend.httpServer.listening).toBe(false)
     } finally {
-      await new Promise<void>((resolve, reject) => blocker.close((error) => error ? reject(error) : resolve()))
+      await new Promise<void>((resolve, reject) => blocker.close((error) => (error ? reject(error) : resolve())))
     }
   })
 })

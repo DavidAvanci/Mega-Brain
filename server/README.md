@@ -39,7 +39,7 @@ WSL. Depois de escutar em `127.0.0.1` numa porta dinâmica, ele escreve
 **exatamente uma** linha JSON no stdout:
 
 ```json
-{"type":"mega-brain-ready","version":1,"port":43123,"sessionId":"..."}
+{ "type": "mega-brain-ready", "version": 1, "port": 43123, "sessionId": "..." }
 ```
 
 `version` é a versão do protocolo de handshake e `sessionId` identifica a

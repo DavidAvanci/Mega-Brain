@@ -33,12 +33,12 @@ são verificados pelo supervisor na execução.
 Os caminhos devem ser obtidos por `AppHandle::path()` no Rust, nunca montados
 a partir de um nome de usuário. Em Windows, a política é:
 
-| Tipo | Diretório Tauri | Conteúdo |
-| --- | --- | --- |
-| Configuração | `app_config_dir()` | `window-state.json`, `wsl-distro.json` e futuras preferências não secretas |
-| Logs | `app_log_dir()` | logs JSONL rotacionados/redigidos quando o logger de produção for habilitado |
-| Cache | `app_cache_dir()` | dados reconstituíveis; nunca tokens, workspaces ou credenciais |
-| Dados de aplicação | `app_data_dir()` | somente estado local que não seja cache; não usar para o workspace WSL |
+| Tipo               | Diretório Tauri    | Conteúdo                                                                     |
+| ------------------ | ------------------ | ---------------------------------------------------------------------------- |
+| Configuração       | `app_config_dir()` | `window-state.json`, `wsl-distro.json` e futuras preferências não secretas   |
+| Logs               | `app_log_dir()`    | logs JSONL rotacionados/redigidos quando o logger de produção for habilitado |
+| Cache              | `app_cache_dir()`  | dados reconstituíveis; nunca tokens, workspaces ou credenciais               |
+| Dados de aplicação | `app_data_dir()`   | somente estado local que não seja cache; não usar para o workspace WSL       |
 
 Em instalações padrão esses diretórios ficam sob os perfis AppData do usuário
 e são identificados pelo app Tauri. Os caminhos exatos podem variar conforme a

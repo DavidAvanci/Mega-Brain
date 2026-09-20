@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { apiClient, bootstrapWebApiClient } from './apiClient'
-import { DesktopBootstrapError, bootstrapDesktopApiClient, isTauriDesktop, pickDesktopWslDirectory, setDesktopWslWorkspaceDir, type DesktopWindow } from './desktopBootstrap'
+import { apiClient, bootstrapWebApiClient } from './shared/api/api-client'
+import {
+  DesktopBootstrapError,
+  bootstrapDesktopApiClient,
+  isTauriDesktop,
+  pickDesktopWslDirectory,
+  setDesktopWslWorkspaceDir,
+  type DesktopWindow,
+} from './desktopBootstrap'
 
 const { openDirectoryDialog } = vi.hoisted(() => ({ openDirectoryDialog: vi.fn() }))
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: openDirectoryDialog }))
@@ -28,7 +35,10 @@ describe('desktop API bootstrap', () => {
       await apiClient().json('/api/health')
 
       expect(bridge.__TAURI__!.core.invoke).toHaveBeenCalledWith('backend_config')
-      expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:43123/api/health', expect.objectContaining({ headers: expect.any(Headers) }))
+      expect(fetch).toHaveBeenCalledWith(
+        'http://127.0.0.1:43123/api/health',
+        expect.objectContaining({ headers: expect.any(Headers) }),
+      )
       expect(new Headers(fetch.mock.calls[0][1].headers).get('Authorization')).toBe(`Bearer ${session.token}`)
       expect(storage.getItem).not.toHaveBeenCalled()
       expect(storage.setItem).not.toHaveBeenCalled()
@@ -42,7 +52,9 @@ describe('desktop API bootstrap', () => {
 
   it('does not issue an API request before the supervisor handshake resolves', async () => {
     let resolve!: (value: unknown) => void
-    const pending = new Promise<unknown>((done) => { resolve = done })
+    const pending = new Promise<unknown>((done) => {
+      resolve = done
+    })
     const bridge = desktop(pending)
     const fetch = vi.fn()
     bootstrapWebApiClient(fetch)
@@ -61,13 +73,17 @@ describe('desktop API bootstrap', () => {
     { ...session, port: 99 },
     { ...session, token: '' },
   ])('rejects invalid supervisor payload without exposing it', async (payload) => {
-    await expect(bootstrapDesktopApiClient(desktop(payload))).rejects.toEqual(expect.objectContaining({ name: 'DesktopBootstrapError', failure: 'invalid-session' }))
+    await expect(bootstrapDesktopApiClient(desktop(payload))).rejects.toEqual(
+      expect.objectContaining({ name: 'DesktopBootstrapError', failure: 'invalid-session' }),
+    )
   })
 
   it('returns a typed failure when the supervisor invoke fails', async () => {
     const bridge = desktop()
     vi.mocked(bridge.__TAURI__!.core.invoke).mockRejectedValueOnce(new Error(session.token))
-    await expect(bootstrapDesktopApiClient(bridge)).rejects.toEqual(expect.objectContaining({ name: 'DesktopBootstrapError', failure: 'supervisor-failed' }))
+    await expect(bootstrapDesktopApiClient(bridge)).rejects.toEqual(
+      expect.objectContaining({ name: 'DesktopBootstrapError', failure: 'supervisor-failed' }),
+    )
   })
 
   it('preserves a secret-free actionable supervisor failure code', async () => {
@@ -75,24 +91,35 @@ describe('desktop API bootstrap', () => {
       __TAURI_INTERNALS__: {},
       __TAURI__: { core: { invoke: vi.fn().mockRejectedValue(new Error('distribution-not-found')) } },
     }
-    await expect(bootstrapDesktopApiClient(bridge)).rejects.toEqual(expect.objectContaining({
-      name: 'DesktopBootstrapError', failure: 'distribution-not-found',
-    }))
+    await expect(bootstrapDesktopApiClient(bridge)).rejects.toEqual(
+      expect.objectContaining({
+        name: 'DesktopBootstrapError',
+        failure: 'distribution-not-found',
+      }),
+    )
   })
 
   it('keeps ordinary web pages out of desktop mode when the bridge is absent or incomplete', async () => {
     expect(isTauriDesktop({})).toBe(false)
     expect(isTauriDesktop({ __TAURI__: desktop().__TAURI__ })).toBe(false)
-    await expect(bootstrapDesktopApiClient({})).rejects.toEqual(expect.objectContaining({ name: 'DesktopBootstrapError', failure: 'bridge-unavailable' }))
+    await expect(bootstrapDesktopApiClient({})).rejects.toEqual(
+      expect.objectContaining({ name: 'DesktopBootstrapError', failure: 'bridge-unavailable' }),
+    )
     expect(DesktopBootstrapError).toBeTypeOf('function')
   })
 
   it('sends only a validated absolute WSL workspace path through the narrow IPC command', async () => {
     const bridge = desktop()
     await setDesktopWslWorkspaceDir(' /home/alice/brain ', bridge)
-    expect(bridge.__TAURI__!.core.invoke).toHaveBeenCalledWith('set_wsl_workspace_dir', { workspaceDir: '/home/alice/brain' })
-    await expect(setDesktopWslWorkspaceDir('C:\\brain', bridge)).rejects.toEqual(expect.objectContaining({ failure: 'invalid-workspace' }))
-    await expect(setDesktopWslWorkspaceDir('/tmp/../etc', bridge)).rejects.toEqual(expect.objectContaining({ failure: 'invalid-workspace' }))
+    expect(bridge.__TAURI__!.core.invoke).toHaveBeenCalledWith('set_wsl_workspace_dir', {
+      workspaceDir: '/home/alice/brain',
+    })
+    await expect(setDesktopWslWorkspaceDir('C:\\brain', bridge)).rejects.toEqual(
+      expect.objectContaining({ failure: 'invalid-workspace' }),
+    )
+    await expect(setDesktopWslWorkspaceDir('/tmp/../etc', bridge)).rejects.toEqual(
+      expect.objectContaining({ failure: 'invalid-workspace' }),
+    )
   })
 
   it('normalizes only a directory explicitly returned by the native picker', async () => {
@@ -100,7 +127,9 @@ describe('desktop API bootstrap', () => {
     openDirectoryDialog.mockResolvedValueOnce('C:\\Users\\alice\\brain')
     await expect(pickDesktopWslDirectory('workspace', bridge)).resolves.toBe('/home/alice/brain')
     expect(openDirectoryDialog).toHaveBeenCalledWith(expect.objectContaining({ directory: true, multiple: false }))
-    expect(bridge.__TAURI__!.core.invoke).toHaveBeenCalledWith('normalize_wsl_directory', { path: 'C:\\Users\\alice\\brain' })
+    expect(bridge.__TAURI__!.core.invoke).toHaveBeenCalledWith('normalize_wsl_directory', {
+      path: 'C:\\Users\\alice\\brain',
+    })
 
     openDirectoryDialog.mockResolvedValueOnce(null)
     await expect(pickDesktopWslDirectory('worktrees', bridge)).resolves.toBeNull()

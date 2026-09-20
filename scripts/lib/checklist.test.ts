@@ -78,7 +78,9 @@ test('ready respects deps, running and overlap', () => {
 })
 
 test('blockedByDeps cascades', () => {
-  const items = parseChecklist('- [!] T1 Falhou\n- [ ] T2 Depende {deps: T1}\n- [ ] T3 Depende {deps: T2}\n- [ ] T4 Livre')
+  const items = parseChecklist(
+    '- [!] T1 Falhou\n- [ ] T2 Depende {deps: T1}\n- [ ] T3 Depende {deps: T2}\n- [ ] T4 Livre',
+  )
   const blocked = blockedByDeps(items)
   expect(blocked.get('T2')).toBe('T1')
   expect(blocked.get('T3')).toBe('T2')
@@ -119,12 +121,14 @@ test('resetUnfinished keeps scenario sub-bullets, drops only notes', () => {
   const file = join(dir, 'TEST-CHECKLIST.md')
   writeFileSync(
     file,
-    ['- [!] S1 Dividir conta {app: operation-takeat}',
-     '  > Observado: erro / Esperado: sucesso',
-     '  - Dado: mesa aberta',
-     '  - Quando: abrir divisão',
-     '  - Então: parcelas visíveis',
-     '- [ ] S2 Outro cenário'].join('\n'),
+    [
+      '- [!] S1 Dividir conta {app: operation-takeat}',
+      '  > Observado: erro / Esperado: sucesso',
+      '  - Dado: mesa aberta',
+      '  - Quando: abrir divisão',
+      '  - Então: parcelas visíveis',
+      '- [ ] S2 Outro cenário',
+    ].join('\n'),
   )
   resetUnfinished(file)
   const updated = readFileSync(file, 'utf8')

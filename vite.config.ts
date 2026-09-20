@@ -8,11 +8,7 @@ import { loadMegaBrainConfig } from './server/config'
 export default defineConfig(({ mode }) => {
   const config = loadMegaBrainConfig({ env: loadEnv(mode, process.cwd(), '') })
   return {
-    plugins: [
-      react(),
-      tailwindcss(),
-      megaBrainVitePlugin(config),
-    ],
+    plugins: [react(), tailwindcss(), megaBrainVitePlugin(config)],
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),

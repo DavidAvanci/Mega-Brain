@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs'
 import { basename, delimiter, isAbsolute, join } from 'node:path'
-import type { DetectedEditor, EditorPreference, EditorDiscovery } from '../src/types'
+import type { DetectedEditor, EditorPreference, EditorDiscovery } from '../shared/domain/settings'
 import type { ConfigEnvironment, MegaBrainConfig } from './config'
 
 type BuiltInEditor = Exclude<EditorPreference, 'custom'>
@@ -59,14 +59,60 @@ export function detectEditors(config: MegaBrainConfig, options: DetectEditorsOpt
   const profiles = [...new Set([profile, inferredProfile].filter((value): value is string => Boolean(value)))]
   const localPrograms = profiles.map((home) => join(home, 'AppData', 'Local', 'Programs'))
   const definitions: EditorDefinition[] = [
-    { id: 'cursor', label: 'Cursor', commands: [config.executables.cursor ?? '', 'cursor', 'cursor.exe'].filter(Boolean), windowsPaths: localPrograms.map((root) => join(root, 'cursor', 'Cursor.exe')) },
-    { id: 'vscode', label: 'VS Code', commands: [config.executables.code ?? '', 'code', 'code.exe'].filter(Boolean), windowsPaths: [...localPrograms.map((root) => join(root, 'Microsoft VS Code', 'Code.exe')), '/mnt/c/Program Files/Microsoft VS Code/Code.exe'] },
-    { id: 'windsurf', label: 'Windsurf', commands: ['windsurf', 'windsurf.exe'], windowsPaths: localPrograms.map((root) => join(root, 'Windsurf', 'Windsurf.exe')) },
-    { id: 'zed', label: 'Zed', commands: ['zed', 'zed.exe'], windowsPaths: localPrograms.map((root) => join(root, 'Zed', 'Zed.exe')) },
-    { id: 'sublime', label: 'Sublime Text', commands: ['subl', 'sublime_text', 'sublime_text.exe'], windowsPaths: ['/mnt/c/Program Files/Sublime Text/sublime_text.exe'] },
-    { id: 'intellij', label: 'IntelliJ IDEA', commands: ['idea', 'idea64.exe'], windowsPaths: [], executableNames: ['idea64.exe', 'idea.sh'] },
-    { id: 'webstorm', label: 'WebStorm', commands: ['webstorm', 'webstorm64.exe'], windowsPaths: [], executableNames: ['webstorm64.exe', 'webstorm.sh'] },
-    { id: 'pycharm', label: 'PyCharm', commands: ['pycharm', 'pycharm64.exe'], windowsPaths: [], executableNames: ['pycharm64.exe', 'pycharm.sh'] },
+    {
+      id: 'cursor',
+      label: 'Cursor',
+      commands: [config.executables.cursor ?? '', 'cursor', 'cursor.exe'].filter(Boolean),
+      windowsPaths: localPrograms.map((root) => join(root, 'cursor', 'Cursor.exe')),
+    },
+    {
+      id: 'vscode',
+      label: 'VS Code',
+      commands: [config.executables.code ?? '', 'code', 'code.exe'].filter(Boolean),
+      windowsPaths: [
+        ...localPrograms.map((root) => join(root, 'Microsoft VS Code', 'Code.exe')),
+        '/mnt/c/Program Files/Microsoft VS Code/Code.exe',
+      ],
+    },
+    {
+      id: 'windsurf',
+      label: 'Windsurf',
+      commands: ['windsurf', 'windsurf.exe'],
+      windowsPaths: localPrograms.map((root) => join(root, 'Windsurf', 'Windsurf.exe')),
+    },
+    {
+      id: 'zed',
+      label: 'Zed',
+      commands: ['zed', 'zed.exe'],
+      windowsPaths: localPrograms.map((root) => join(root, 'Zed', 'Zed.exe')),
+    },
+    {
+      id: 'sublime',
+      label: 'Sublime Text',
+      commands: ['subl', 'sublime_text', 'sublime_text.exe'],
+      windowsPaths: ['/mnt/c/Program Files/Sublime Text/sublime_text.exe'],
+    },
+    {
+      id: 'intellij',
+      label: 'IntelliJ IDEA',
+      commands: ['idea', 'idea64.exe'],
+      windowsPaths: [],
+      executableNames: ['idea64.exe', 'idea.sh'],
+    },
+    {
+      id: 'webstorm',
+      label: 'WebStorm',
+      commands: ['webstorm', 'webstorm64.exe'],
+      windowsPaths: [],
+      executableNames: ['webstorm64.exe', 'webstorm.sh'],
+    },
+    {
+      id: 'pycharm',
+      label: 'PyCharm',
+      commands: ['pycharm', 'pycharm64.exe'],
+      windowsPaths: [],
+      executableNames: ['pycharm64.exe', 'pycharm.sh'],
+    },
   ]
   const jetBrainsRoots = [
     '/mnt/c/Program Files/JetBrains',
@@ -76,8 +122,8 @@ export function detectEditors(config: MegaBrainConfig, options: DetectEditorsOpt
   const editors: DetectedEditor[] = []
 
   for (const definition of definitions) {
-    let command = findOnPath(definition.commands, path, exists)
-      ?? definition.windowsPaths.find((candidate) => exists(candidate))
+    let command =
+      findOnPath(definition.commands, path, exists) ?? definition.windowsPaths.find((candidate) => exists(candidate))
     if (!command && definition.executableNames) {
       const names = new Set(definition.executableNames.map((name) => name.toLowerCase()))
       for (const root of jetBrainsRoots) {
@@ -92,6 +138,8 @@ export function detectEditors(config: MegaBrainConfig, options: DetectEditorsOpt
 
   const scope = env.WSL_DISTRO_NAME
     ? 'Windows e WSL'
-    : config.mode === 'desktop' ? 'este computador' : 'máquina do backend'
+    : config.mode === 'desktop'
+      ? 'este computador'
+      : 'máquina do backend'
   return { editors, scope }
 }

@@ -33,7 +33,11 @@ test('shutdown owns only registered children and uses TERM before removing liste
   const external = new FakeChild()
   const signals = new FakeSignals()
   const steps: string[] = []
-  const server = { stop: async () => { steps.push('server') } } as StandaloneServer
+  const server = {
+    stop: async () => {
+      steps.push('server')
+    },
+  } as StandaloneServer
   installShutdownHandlers({ server, owner, signals })
 
   signals.emit('SIGTERM')
@@ -43,7 +47,10 @@ test('shutdown owns only registered children and uses TERM before removing liste
   expect(steps).toEqual(['server'])
   expect(chat.signals).toEqual(['SIGTERM'])
   expect(stage.signals).toEqual([]) // group signalling is injected above
-  expect(signalTree).toEqual([[42, 'SIGTERM'], [42, 'SIGKILL']])
+  expect(signalTree).toEqual([
+    [42, 'SIGTERM'],
+    [42, 'SIGKILL'],
+  ])
   expect(external.signals).toEqual([])
   expect(owner.size).toBe(0)
   expect(signals.listenerCount('SIGTERM')).toBe(0)

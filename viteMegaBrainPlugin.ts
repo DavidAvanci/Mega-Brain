@@ -22,9 +22,9 @@ export function vitePluginForRouteTable(routes: ProductionRouteTable): Plugin {
 /** Shared-route lookup kept separate so parity tests can prevent drift. */
 export function createViteRouteHandler(routes: ProductionRouteTable) {
   return async (request: Parameters<NonNullable<Parameters<typeof viteApiPlugin>[2]['fallback']>>[0]) => {
-      const handler = resolveViteRouteHandler(routes, request.method, request.path)
-      if (!handler) return { status: 404, body: { error: 'Rota não encontrada' } }
-      return handler(request)
+    const handler = resolveViteRouteHandler(routes, request.method, request.path)
+    if (!handler) return { status: 404, body: { error: 'Rota não encontrada' } }
+    return handler(request)
   }
 }
 

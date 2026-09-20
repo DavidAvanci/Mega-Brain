@@ -27,7 +27,7 @@ Backend bundle: dist/server/main.mjs (89905 bytes)
 O artefato executado diretamente pelo Node publicou uma única ready line:
 
 ```json
-{"type":"mega-brain-ready","version":1,"port":38965,"sessionId":"bundleproofsessionid20260902"}
+{ "type": "mega-brain-ready", "version": 1, "port": 38965, "sessionId": "bundleproofsessionid20260902" }
 ```
 
 Com `Authorization: Bearer <token-de-teste>`, os diagnósticos retornaram:

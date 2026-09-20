@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import type { ChildProcess } from 'node:child_process'
 import { expect, test } from 'vitest'
-import { COFFEE_ARGS, createCoffee } from './coffeePlugin'
+import { COFFEE_ARGS, createCoffeeService } from './server/coffee/service'
 
 function fakeChild() {
   const child = new EventEmitter() as ChildProcess & { killed: boolean }
@@ -15,7 +15,7 @@ function fakeChild() {
 
 test('createCoffee mantém uma sessão por vez', () => {
   const spawned: ReturnType<typeof fakeChild>[] = []
-  const coffee = createCoffee(() => {
+  const coffee = createCoffeeService(() => {
     const child = fakeChild()
     spawned.push(child)
     return child
@@ -34,7 +34,7 @@ test('createCoffee mantém uma sessão por vez', () => {
 
 test('createCoffee desativa quando o powershell termina', () => {
   const spawned: ReturnType<typeof fakeChild>[] = []
-  const coffee = createCoffee(() => {
+  const coffee = createCoffeeService(() => {
     const child = fakeChild()
     spawned.push(child)
     return child

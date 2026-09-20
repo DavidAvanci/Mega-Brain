@@ -4,7 +4,7 @@ import { Coffee02Icon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Tip } from './Tip'
-import { apiClient } from './apiClient'
+import { apiClient } from './shared/api/api-client'
 
 const POLL_INTERVAL = 3_000
 

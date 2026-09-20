@@ -16,12 +16,19 @@ test('fails closed for a real workspace, Claude, shell, unsafe Git and Jira', ()
   expect(() => assertSafeTestWorkspace('/home/david/real-workspace')).toThrow('TEST SAFETY')
   expect(() => assertSafeTestProcess('claude', ['-p', 'do work'])).toThrow('refused to spawn Claude')
   expect(() => assertSafeTestProcess('sh', ['-lc', 'claude -p x'])).toThrow('unsafe executable')
-  expect(() => assertSafeTestProcess('git', ['status'], { cwd: '/home/david/real-workspace' })).toThrow('temporary test directory')
-  expect(() => assertSafeTestFetch('https://example.atlassian.net/rest/api/3/search')).toThrow('refused real Jira fetch')
+  expect(() => assertSafeTestProcess('git', ['status'], { cwd: '/home/david/real-workspace' })).toThrow(
+    'temporary test directory',
+  )
+  expect(() => assertSafeTestFetch('https://example.atlassian.net/rest/api/3/search')).toThrow(
+    'refused real Jira fetch',
+  )
 })
 
-test('the installed setup guards block process, workspace and fetch boundaries', () => {
+test('the installed setup guards block process, workspace and fetch boundaries', async () => {
   expect(() => execFileSync('claude', ['--version'])).toThrow('refused to spawn Claude')
-  expect(() => createWorkspaceService({ workspaceDir: '/home/david/real-workspace', executables: {} })).toThrow('workspace must be inside')
+  const workspace = createWorkspaceService({ workspaceDir: '/home/david/real-workspace', executables: {} })
+  await expect(workspace.handle('/', 'GET', new URLSearchParams(), undefined)).rejects.toThrow(
+    'workspace must be inside',
+  )
   expect(() => fetch('https://example.atlassian.net/rest/api/3/search')).toThrow('refused real Jira fetch')
 })
