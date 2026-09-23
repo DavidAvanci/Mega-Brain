@@ -27,6 +27,45 @@ export class RepositoryRegistry {
     return (await this.read()).repositories
   }
 
+  async readEnvironmentVariables(id: unknown, environment: unknown): Promise<Record<string, string>> {
+    const repo = await this.getRepository(id)
+    const filename = envFilename(environment)
+    const content = await readFile(join(repo.path, filename), 'utf8').catch(async (error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error
+      return readFile(join(repo.path, '.env.example'), 'utf8').catch((exampleError: NodeJS.ErrnoException) => {
+        if (exampleError.code === 'ENOENT') return ''
+        throw exampleError
+      })
+    })
+    return parseEnv(content)
+  }
+
+  async writeEnvironmentVariables(id: unknown, environment: unknown, input: unknown): Promise<Record<string, string>> {
+    const repo = await this.getRepository(id)
+    const filename = envFilename(environment)
+    if (!isRecord(input)) throw new Error('Variáveis inválidas')
+    const entries: [string, string][] = []
+    for (const [key, value] of Object.entries(input)) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error(`Nome de variável inválido: ${key}`)
+      if (typeof value !== 'string' || /[\r\n\0]/.test(value)) throw new Error(`Valor inválido para ${key}`)
+      entries.push([key, value])
+    }
+    const file = join(repo.path, filename)
+    const contents = entries.map(([key, value]) => `${key}=${quoteEnv(value)}`).join('\n')
+    await writeFile(file, contents ? `${contents}\n` : '', { mode: 0o600 })
+    await chmod(file, 0o600)
+    return Object.fromEntries(entries)
+  }
+
+  private async getRepository(id: unknown): Promise<Repository> {
+    if (typeof id !== 'string' || !id) throw new Error('Repositório não encontrado')
+    const repo = (await this.list()).find((item) => item.id === id)
+    if (!repo) throw new Error('Repositório não encontrado')
+    const path = await this.validatePath(repo.path)
+    if (path !== repo.path) throw new Error('Caminho do repositório foi alterado')
+    return repo
+  }
+
   async preview(value: unknown): Promise<{ path: string; displayName: string; alias: string; origin?: string; duplicateId?: string }> {
     const path = await this.validatePath(value)
     const name = path.split(/[\\/]/).filter(Boolean).at(-1) ?? 'repository'
@@ -288,3 +327,24 @@ function validateCompanions(repository: Repository, others: Repository[]): void 
 function slug(value: string): string { return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63) || 'repository' }
 function isRecord(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value) }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+
+function envFilename(value: unknown): string {
+  if (value === 'local') return '.env.local'
+  if (value === 'staging') return '.env.staging'
+  if (value === 'prod') return '.env.prod'
+  throw new Error('Ambiente inválido')
+}
+function parseEnv(content: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const line of content.split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
+    if (!match) continue
+    let value = match[2]
+    if (value.startsWith('"') && value.endsWith('"')) {
+      try { value = JSON.parse(value) as string } catch { value = value.slice(1, -1) }
+    } else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1)
+    result[match[1]] = value
+  }
+  return result
+}
+function quoteEnv(value: string): string { return /[\s#\"'\\]/.test(value) ? JSON.stringify(value) : value }

@@ -10,6 +10,11 @@ export function repositoriesHttp(registry: RepositoryRegistry): ApiHandler {
       if (request.path === '/api/repositories/discover' && request.method === 'POST') return json(200, await registry.discover(record(request.body).path))
       if (request.path === '/api/repositories' && request.method === 'POST') return json(201, await registry.create(request.body))
       if (request.path === '/api/repositories' && request.method === 'PATCH') return json(200, await registry.update(id, request.body))
+      if (request.path === '/api/repositories/env' && request.method === 'GET') return json(200, await registry.readEnvironmentVariables(id, request.query.get('environment')))
+      if (request.path === '/api/repositories/env' && request.method === 'PUT') {
+        const body = record(request.body)
+        return json(200, await registry.writeEnvironmentVariables(id, body.environment, body.variables))
+      }
       if (request.path === '/api/repositories/status' && request.method === 'GET') return json(200, await registry.status(id))
       if (request.path === '/api/repositories/switch-master' && request.method === 'POST') {
         const body = record(request.body)
