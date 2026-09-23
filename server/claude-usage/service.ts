@@ -34,6 +34,7 @@ export interface ClaudeUsageService {
 
 export interface ClaudeUsageDependencies {
   clock?: Clock
+  warn?: (message: string) => void
   files?: TextFileReader
 }
 
@@ -47,25 +48,56 @@ export function createClaudeUsageService(
 ): ClaudeUsageService {
   const clock = dependencies.clock ?? systemClock
   const files = dependencies.files ?? nodeTextFiles
+  const warn = dependencies.warn ?? console.warn
   let cached: { value: ClaudeUsage; expires: number } | undefined
+  let lastSuccess: ClaudeUsage | undefined
+  let pending: Promise<ClaudeUsage> | undefined
+
+  async function refresh(): Promise<ClaudeUsage> {
+    let failure = 'credentials_unreadable'
+    let value: ClaudeUsage | undefined
+    let token: unknown
+    try {
+      token = JSON.parse(files.readText(credentialsFile))?.claudeAiOauth?.accessToken
+      failure = 'credentials_missing_token'
+    } catch {
+      // Report only a safe reason, never credentials or response bodies.
+    }
+    if (typeof token === 'string' && token) {
+      failure = 'network_or_timeout'
+      try {
+        const response = await request('https://api.anthropic.com/api/oauth/usage', {
+          headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20' },
+          signal: AbortSignal.timeout(10_000),
+        })
+        failure = `http_${response.status}`
+        if (response.ok) {
+          failure = 'invalid_response'
+          const parsed = parseUsage(await response.json())
+          if (parsed.fiveHour || parsed.sevenDay || parsed.fable) {
+            value = { ...parsed, stale: false, updatedAt: new Date(clock.now()).toISOString() }
+            lastSuccess = value
+          }
+        }
+      } catch {
+        // The reason above identifies the stage that failed.
+      }
+    }
+    if (!value) {
+      warn(`[claude-usage] Refresh failed: ${failure}`)
+      value = { ...(lastSuccess ?? EMPTY), stale: true, updatedAt: lastSuccess?.updatedAt ?? null }
+    }
+    cached = { value, expires: clock.now() + 60_000 }
+    return value
+  }
+
   return {
     async getUsage() {
       if (cached && cached.expires > clock.now()) return cached.value
-      let token: unknown
-      try {
-        token = JSON.parse(files.readText(credentialsFile))?.claudeAiOauth?.accessToken
-      } catch {}
-      let value = EMPTY
-      if (typeof token === 'string' && token) {
-        try {
-          const response = await request('https://api.anthropic.com/api/oauth/usage', {
-            headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20' },
-          })
-          if (response.ok) value = parseUsage(await response.json())
-        } catch {}
-      }
-      cached = { value, expires: clock.now() + 60_000 }
-      return value
+      pending ??= refresh().finally(() => {
+        pending = undefined
+      })
+      return pending
     },
   }
 }

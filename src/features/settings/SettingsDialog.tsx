@@ -1,5 +1,6 @@
 import { HugeiconsIcon } from '@hugeicons/react'
 import { PaintBrush01Icon, ToolsIcon } from '@hugeicons/core-free-icons'
+import type { CSSProperties } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,7 +12,16 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import type { BoardSettings, Effort } from '../../../shared/domain/settings'
-import { setTheme, useThemePreference } from '@/theme'
+import {
+  setColorMode,
+  setPalette,
+  setShape,
+  setThemePreset,
+  setTypography,
+  useTheme,
+  useThemeSettings,
+  type ThemeSettings,
+} from '@/theme'
 import { GeneralSettingsForm } from '@/GeneralSettingsForm'
 import { isTauriDesktop } from '@/desktopBootstrap'
 import { useSettingsDialog } from './useSettingsDialog'
@@ -29,6 +39,69 @@ const CHATGPT_MODELS = [
   { value: 'gpt-5.6-terra', label: 'Terra' },
   { value: 'gpt-5.6-luna', label: 'Luna' },
   { value: 'gpt-5.5', label: 'GPT-5.5' },
+]
+
+type ThemeChoice = {
+  value: string
+  label: string
+  description: string
+  colors?: [string, string, string, string]
+  darkColors?: [string, string, string, string]
+  fontFamily?: string
+  radius?: string
+  cornerShape?: string
+}
+
+const THEME_CATEGORIES: {
+  key: 'palette' | 'typography' | 'shape' | 'preset'
+  title: string
+  description: string
+  options: ThemeChoice[]
+}[] = [
+  {
+    key: 'palette',
+    title: 'Paleta de cores',
+    description: 'Muda somente as cores usadas no aplicativo.',
+    options: [
+      { value: 'classic', label: 'Clássica', description: 'Neutros, segue o modo do sistema.', colors: ['#ffffff', '#f1f1f1', '#29707a', '#222222'], darkColors: ['#171717', '#292929', '#29707a', '#eeeeee'] },
+      { value: 'takeat', label: 'Takeat', description: 'Vermelho, branco e cinza.', colors: ['#ffffff', '#f6f6f6', '#c8131b', '#545454'], darkColors: ['#181719', '#222023', '#ff6872', '#f5f1f2'] },
+      { value: 'ocean', label: 'Oceano', description: 'Azuis frios e ciano.', colors: ['#f2f7fb', '#ffffff', '#397bd8', '#70c7dc'], darkColors: ['#111a26', '#192535', '#73adff', '#70d2e3'] },
+      { value: 'terracotta', label: 'Terracota', description: 'Creme, coral e âmbar.', colors: ['#fbf4e6', '#fffaf1', '#d5573f', '#eca34a'], darkColors: ['#211a17', '#2c231e', '#ff977f', '#ffc16f'] },
+      { value: 'berry', label: 'Frutas silvestres', description: 'Malva, ameixa e rosa.', colors: ['#f8f1f7', '#fffaff', '#a44f91', '#916de0'], darkColors: ['#211823', '#2b202f', '#e88bd2', '#b19aff'] },
+    ],
+  },
+  {
+    key: 'typography',
+    title: 'Tipografia',
+    description: 'Muda somente as famílias tipográficas e o ritmo do texto.',
+    options: [
+      { value: 'classic', label: 'Clássica', description: 'JetBrains Mono, compacta e técnica.', fontFamily: "'JetBrains Mono Variable', monospace" },
+      { value: 'takeat', label: 'Poppins', description: 'Poppins, geométrica e amigável.', fontFamily: "'Poppins', sans-serif" },
+      { value: 'editorial', label: 'Editorial', description: 'Georgia, serifada e espaçosa.', fontFamily: "Georgia, 'Times New Roman', serif" },
+      { value: 'technical', label: 'Técnica', description: 'JetBrains Mono com mais espaçamento.', fontFamily: "'JetBrains Mono Variable', monospace" },
+    ],
+  },
+  {
+    key: 'shape',
+    title: 'Formatos',
+    description: 'Muda somente o raio e a forma dos cantos.',
+    options: [
+      { value: 'classic', label: 'Clássico', description: 'Cantos arredondados discretos.', radius: '0.625rem', cornerShape: 'round' },
+      { value: 'takeat', label: 'Takeat', description: 'Arredondamento suave de 12 px.', radius: '0.75rem', cornerShape: 'round' },
+      { value: 'squircle', label: 'Squircle', description: 'Superelipse com curva acentuada.', radius: '1.75rem', cornerShape: 'superellipse(1.5)' },
+      { value: 'soft', label: 'Suave', description: 'Curvas amplas e orgânicas.', radius: '1.25rem', cornerShape: 'superellipse(1.2)' },
+      { value: 'angular', label: 'Angular', description: 'Cantos pequenos e geométricos.', radius: '0.3rem', cornerShape: 'superellipse(4)' },
+    ],
+  },
+  {
+    key: 'preset',
+    title: 'Presets',
+    description: 'Aplica paleta, tipografia e formatos em conjunto.',
+    options: [
+      { value: 'takeat', label: 'Takeat', description: 'Identidade Takeat completa.', colors: ['#ffffff', '#f6f6f6', '#c8131b', '#545454'], darkColors: ['#181719', '#222023', '#ff6872', '#f5f1f2'] },
+      { value: 'classic', label: 'Clássico', description: 'Aparência original do Mega Brain.', colors: ['#ffffff', '#f1f1f1', '#29707a', '#222222'], darkColors: ['#171717', '#292929', '#29707a', '#eeeeee'] },
+    ],
+  },
 ]
 
 const EFFORTS: { value: Effort; label: string; activeClass: string }[] = [
@@ -150,7 +223,8 @@ function EffortScale({
 }
 
 export function SettingsDialog({ onClose }: { onClose: () => void }) {
-  const theme = useThemePreference()
+  const theme = useThemeSettings()
+  const colorMode = useTheme()
   const desktop = isTauriDesktop()
   const {
     settings,
@@ -194,31 +268,95 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 <section className="grid gap-2">
                   <div>
                     <h3 className="text-sm font-medium">Aparência</h3>
-                    <p className="text-xs text-muted-foreground">Tema compartilhado entre web e desktop.</p>
+                    <p className="text-xs text-muted-foreground">Tema compartilhado entre web e desktop. Personalize cada aspecto ou aplique um preset.</p>
                   </div>
-                  <div
-                    className="grid grid-cols-3 rounded-lg border bg-muted p-1"
-                    role="group"
-                    aria-label="Tema da interface"
-                  >
-                    {(
-                      [
+                  <section className="grid gap-2" aria-label="Modo de cores">
+                    <div>
+                      <h4 className="text-xs font-semibold">Modo</h4>
+                      <p className="text-[10px] text-muted-foreground">Use a preferência do sistema ou escolha claro/escuro.</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/50 p-1" role="radiogroup" aria-label="Modo de cores">
+                      {([
                         ['system', 'Sistema'],
                         ['light', 'Claro'],
                         ['dark', 'Escuro'],
-                      ] as const
-                    ).map(([value, label]) => (
-                      <Button
-                        key={value}
-                        type="button"
-                        size="sm"
-                        variant={theme === value ? 'default' : 'ghost'}
-                        aria-pressed={theme === value}
-                        className={theme === value ? 'shadow-sm' : 'text-muted-foreground'}
-                        onClick={() => setTheme(value)}
-                      >
-                        {label}
-                      </Button>
+                      ] as const).map(([value, label]) => {
+                        const selected = theme.mode === value
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                            onClick={() => setColorMode(value)}
+                          >
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </section>
+                  <div className="grid gap-4" aria-label="Categorias de tema">
+                    {THEME_CATEGORIES.map((category) => (
+                      <section key={category.title} className="grid gap-2" aria-label={category.title}>
+                        <div>
+                          <h4 className="text-xs font-semibold">{category.title}</h4>
+                          <p className="text-[10px] text-muted-foreground">{category.description}</p>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={category.title}>
+                          {category.options.map((option) => {
+                            const selected = theme[category.key] === option.value
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                aria-pressed={selected}
+                                className={`grid grid-cols-[auto_1fr] items-center gap-3 rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'border-primary bg-primary/8 ring-1 ring-primary/25' : 'border-border hover:bg-muted/60'}`}
+                                onClick={() => {
+                                  if (category.key === 'palette') setPalette(option.value as ThemeSettings['palette'])
+                                  else if (category.key === 'typography') {
+                                    setTypography(option.value as ThemeSettings['typography'])
+                                  } else if (category.key === 'shape') setShape(option.value as ThemeSettings['shape'])
+                                  else setThemePreset(option.value as Exclude<ThemeSettings['preset'], null>)
+                                }}
+                              >
+                                {option.colors ? (
+                                  <span
+                                    className="grid size-10 grid-cols-2 overflow-hidden rounded-md border border-black/10 shadow-sm"
+                                    aria-hidden="true"
+                                  >
+                                    {(colorMode === 'dark' ? option.darkColors ?? option.colors : option.colors).map((color) => (
+                                      <span key={color} style={{ backgroundColor: color }} />
+                                    ))}
+                                  </span>
+                                ) : category.key === 'typography' ? (
+                                  <span
+                                    className="grid size-10 place-items-center rounded-md border bg-muted text-lg font-semibold"
+                                    style={{ fontFamily: option.fontFamily }}
+                                    aria-hidden="true"
+                                  >
+                                    Aa
+                                  </span>
+                                ) : (
+                                  <span className="grid size-10 place-items-center rounded-md border bg-muted" aria-hidden="true">
+                                    <span
+                                      className="size-7 border-2 border-primary bg-primary/15"
+                                      style={{ borderRadius: option.radius, cornerShape: option.cornerShape } as CSSProperties}
+                                    />
+                                  </span>
+                                )}
+                                <span className="min-w-0">
+                                  <span className="block text-xs font-semibold">{option.label}</span>
+                                  <span className="block truncate text-[10px] text-muted-foreground">
+                                    {option.description}
+                                  </span>
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </section>
                     ))}
                   </div>
                 </section>

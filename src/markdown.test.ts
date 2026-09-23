@@ -42,4 +42,24 @@ describe('render', () => {
   it('opens links in a new tab', () => {
     expect(render('[x](https://a.b)').html).toContain('target="_blank"')
   })
+
+  it('escapes raw HTML and removes unsafe link and image protocols', () => {
+    const { html } = render(
+      '<img src=x onerror=alert(1)>\n\n[run](javascript:alert(1))\n\n![pixel](data:image/svg+xml,<svg>)',
+    )
+    expect(html).toContain('&lt;img')
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain('javascript:')
+    expect(html).not.toContain('data:image')
+    expect(html).toContain('pixel')
+  })
+
+  it('allows same-origin-relative and safe web links while preventing protocol-relative URLs', () => {
+    const { html } = render('[relative](./file.md) [external](https://example.com) [bad](//example.com)')
+    expect(html).toContain('href="./file.md"')
+    expect(html).toContain('href="https://example.com"')
+    expect(html).not.toContain('href="//example.com"')
+    expect(html).toContain('rel="noopener noreferrer"')
+  })
 })

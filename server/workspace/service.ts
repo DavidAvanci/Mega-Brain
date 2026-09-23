@@ -118,6 +118,7 @@ export function createWorkspaceService(
             cardPath,
             data.frontend ? String(data.frontend) : undefined,
             owner ? createOwnedProcessRunner(runner, owner) : runner,
+            config.preferences.settingsFile,
           ),
         }
       if (path === '/update') {

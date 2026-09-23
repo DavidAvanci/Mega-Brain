@@ -38,7 +38,7 @@ processo temporário foi encerrado.
 Em PowerShell nativo:
 
 ```powershell
-Set-Location \\wsl.localhost\Ubuntu\home\david\mega-brain\spikes\tauri-loopback-auth
+Set-Location \\wsl.localhost\Ubuntu\home\user\mega-brain\spikes\tauri-loopback-auth
 $env:CARGO_INCREMENTAL = "0"
 $env:CARGO_TARGET_DIR = Join-Path $env:LOCALAPPDATA "MegaBrain\tauri-spike-target"
 cargo run --bin tauri-wsl-supervisor-spike

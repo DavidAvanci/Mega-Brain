@@ -49,7 +49,7 @@ export function CoffeeButton({ className }: { className?: string }) {
     >
       <Button
         variant="ghost"
-        size="icon-xs"
+        size="icon-sm"
         aria-label="Cafézinho"
         aria-pressed={active}
         className={cn(active ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground', className)}

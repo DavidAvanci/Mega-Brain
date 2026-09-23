@@ -4,6 +4,8 @@ export interface UsageWindow {
 }
 
 export interface ClaudeUsage {
+  stale?: boolean
+  updatedAt?: string | null
   fiveHour: UsageWindow | null
   sevenDay: UsageWindow | null
   fable: UsageWindow | null

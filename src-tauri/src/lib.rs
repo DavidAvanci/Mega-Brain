@@ -256,7 +256,12 @@ pub fn run() {
             if let Some(path) = wsl_preference_path(&app.handle()) {
                 supervisor.set_wsl_preference_path(path);
             }
-            std::thread::spawn(move || { let _ = supervisor.start_once(); });
+            std::thread::spawn(move || {
+                if supervisor.start_once().is_err() {
+                    let failure = supervisor.backend_config().err().unwrap_or_else(|| "backend-failed".to_owned());
+                    eprintln!("Mega Brain backend startup failed: {failure}");
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

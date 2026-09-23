@@ -81,13 +81,16 @@ function parseResult(stdout: string): ItemResult | null {
     if (result) return result
   }
   if (data.is_error || data.subtype !== 'success') {
-    const detail =
+    const detail = String(
       typeof data.result === 'string' && data.result.trim()
         ? data.result.trim().replace(/\s+/g, ' ').slice(0, 300)
-        : (data.subtype ?? 'desconhecido')
+        : (data.subtype ?? 'desconhecido'),
+    )
     return {
       status: 'failed',
-      note: `Agente terminou com erro: ${detail}`,
+      note: /max[_ -]?turns|turn limit|limite de rodadas/i.test(detail)
+        ? `Limite de rodadas atingido: ${detail}`
+        : `Agente terminou com erro: ${detail}`,
       costUsd,
       rateLimited: data.error === 'rate_limit' || data.api_error_status === 429,
     }
@@ -177,9 +180,13 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
     const child = spawn(command, args, { cwd: options.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
+    let timedOut = false
     child.stdout.on('data', (chunk) => (stdout += chunk))
     child.stderr.on('data', (chunk) => (stderr += chunk))
-    const timer = setTimeout(() => child.kill('SIGKILL'), options.timeoutMs)
+    const timer = setTimeout(() => {
+      timedOut = true
+      child.kill('SIGKILL')
+    }, options.timeoutMs)
     child.on('error', (error) => {
       clearTimeout(timer)
       settle({
@@ -187,9 +194,9 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
         note: `Falha ao iniciar ${provider === 'chatgpt' ? 'ChatGPT' : 'Claude'}: ${error.message}`,
       })
     })
-    child.on('close', (code, signal) => {
+    child.on('close', (code) => {
       clearTimeout(timer)
-      if (signal === 'SIGKILL') {
+      if (timedOut) {
         settle({ status: 'failed', note: `Timeout após ${Math.round(options.timeoutMs / 60000)}min` })
         return
       }

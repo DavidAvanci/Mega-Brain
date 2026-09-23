@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { runsAsCommand } from '../lib/env.ts'
 import { markItem, matchesPattern, parseChecklist, resetUnfinished, type Item } from '../lib/checklist.ts'
 import { CmdError, changedFiles, git } from '../lib/git.ts'
 import { activity, finish } from '../lib/log.ts'
@@ -17,6 +17,11 @@ import {
   isInjected,
   itemBranch,
   orphanItemBranches,
+  prepareRequiredBases,
+  projectEnvironmentIssue,
+  recordPreparedBases,
+  readRequiredBases,
+  recordAttempt,
   stageItemChanges,
   realRepoPath,
   repoLinkPath,
@@ -35,6 +40,20 @@ const AGENT = {
   model: process.env.CHECKLIST_MODEL ?? 'fable',
   effort: process.env.CHECKLIST_EFFORT ?? 'low',
   tools: 'Read,Edit,Write,Grep,Glob,Bash',
+}
+
+function positiveInt(value: string | undefined, fallback: number, label: string): number {
+  if (!value?.trim()) return fallback
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${label} deve ser um inteiro positivo`)
+  return parsed
+}
+
+function limitsFor(item: Item): { maxTurns: number; timeoutMs: number; maxAttempts: number } {
+  const maxTurns = item.maxTurns ?? positiveInt(process.env.CHECKLIST_MAX_TURNS, 40, 'CHECKLIST_MAX_TURNS')
+  const timeoutMinutes = item.timeoutMinutes ?? positiveInt(process.env.CHECKLIST_TIMEOUT_MINUTES, 20, 'CHECKLIST_TIMEOUT_MINUTES')
+  const maxAttempts = item.maxAttempts ?? positiveInt(process.env.CHECKLIST_MAX_ATTEMPTS, 3, 'CHECKLIST_MAX_ATTEMPTS')
+  return { maxTurns, timeoutMs: timeoutMinutes * 60_000, maxAttempts }
 }
 
 function buildPrompt(item: Item, planRaw: string): string {
@@ -119,8 +138,13 @@ async function commitItem(
   if (!cwd) return null
   const touched = changedFiles(cwd).filter((path) => !isInjected(path))
   if (!touched.length) {
+    const integration = await withRepoLock(item.repo, () => integrateItemBranch(main, branch))
+    if (!integration.ok) {
+      unrecovered.set(item.id, branch)
+      return { status: 'failed', note: `Trabalho preservado em \`${branch}\`; conflito de integração: ${integration.conflict}.` }
+    }
     discard()
-    return null
+    return integration.commits ? { status: 'done', note: `${integration.commits} commit(s) existentes foram integrados.` } : null
   }
 
   let repair: ItemOutcome | undefined
@@ -130,7 +154,6 @@ async function commitItem(
   } catch (error) {
     const output = error instanceof CmdError ? error.raw : String(error)
     if (!HOOK_FAILURE.test(output)) {
-      discard()
       return { status: 'failed', note: `Commit falhou: ${output.split('\n').slice(-3).join(' | ')}` }
     }
     activity('Item', `${item.id} pre-commit reprovou — tentando reparo automático`)
@@ -140,15 +163,14 @@ async function commitItem(
       model: AGENT.model,
       effort: AGENT.effort,
       tools: AGENT.tools,
-      maxTurns: 25,
-      timeoutMs: 10 * 60_000,
+      maxTurns: limitsFor(item).maxTurns,
+      timeoutMs: limitsFor(item).timeoutMs,
     })
     try {
       stageItemChanges(cwd)
       git(cwd, ...commitMessage(task, item))
     } catch (retry) {
       const detail = retry instanceof CmdError ? retry.raw : String(retry)
-      discard()
       return {
         status: 'failed',
         note: `Pre-commit reprovou mesmo após o reparo automático: ${detail.split('\n').slice(-3).join(' | ')}`,
@@ -166,7 +188,7 @@ async function commitItem(
     unrecovered.set(item.id, branch)
     return {
       status: 'failed',
-      note: `Trabalho preservado em \`${branch}\` (${integration.commits} commit(s)) — o cherry-pick para \`${task.branch}\` conflitou em: ${integration.conflict}. Nada foi perdido; resolva o conflito ou rode de novo e o scheduler tenta reaplicar antes de gastar agente.`,
+      note: `Trabalho preservado em \`${branch}\` (${integration.commits} commit(s)) — a integração para \`${task.branch}\` conflitou em: ${integration.conflict}. Nada foi perdido; resolva o conflito ou rode de novo e o scheduler tenta reaplicar antes de gastar agente.`,
       costUsd: repair?.costUsd,
       durationMs: repair?.durationMs,
     }
@@ -243,9 +265,6 @@ async function repairFailedTests(task: ReturnType<typeof taskInfo>): Promise<Ite
         status: 'failed',
         note: `${item.id}: O reparo não gerou alterações para commitar.`,
       }
-    } else {
-      itemCwd.delete(item.id)
-      dropItemWorktree(repoPath(item.repo), task.id, item.repo, worktreeId)
     }
     outcomes.push(outcome)
   }
@@ -338,7 +357,12 @@ export async function runDevStage(): Promise<void> {
   for (const repo of repos) {
     activity('Worktree', `Preparando ${repo}`)
     try {
-      ensureWorktree(wsPath, repo, task.id, task.branch)
+      const worktree = ensureWorktree(wsPath, repo, task.id, task.branch)
+      const bases = prepareRequiredBases(worktree, repo, readRequiredBases(wsPath, repo))
+      if (bases.length) recordPreparedBases(wsPath, repo, bases)
+      const environment = projectEnvironmentIssue(worktree)
+      if (environment) throw new Error(environment)
+      if (bases.length) activity('Worktree', `${repo}: base obrigatória conferida (${bases.join(', ')})`)
       prepared.push(repo)
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
@@ -354,9 +378,25 @@ export async function runDevStage(): Promise<void> {
     finish(
       false,
       [
-        'Worktree de integração suja — o cherry-pick dos itens seria recusado. Nenhum agente foi gasto:',
+        'Worktree de integração suja — a integração dos itens seria recusada. Nenhum agente foi gasto:',
         ...dirty.map((entry) => `${entry.repo}: ${entry.files.join(', ')}`),
         'Commite ou descarte essas alterações e rode de novo.',
+      ].join('\n'),
+    )
+    process.exit(1)
+  }
+
+  const missingRequirements = parsed.flatMap((item) =>
+    item.repo && prepared.includes(item.repo)
+      ? item.requires.filter((pattern) => !existsSync(join(repoPath(item.repo), pattern.replace(/\/?\*+$/, '')))).map((pattern) => `${item.id}: ${pattern}`)
+      : [],
+  )
+  if (missingRequirements.length) {
+    finish(
+      false,
+      [
+        'Pré-condições ausentes na worktree já preparada — nenhum agente foi gasto:',
+        ...missingRequirements.map((entry) => `requires: ${entry}`),
       ].join('\n'),
     )
     process.exit(1)
@@ -391,19 +431,61 @@ export async function runDevStage(): Promise<void> {
         }
       }
       itemCwd.set(item.id, cwd)
+      const limits = limitsFor(item)
+      let previousAttempts = 0
+      try {
+        const saved: unknown = JSON.parse(readFileSync(join(wsPath, 'execution-attempts.json'), 'utf8'))
+        if (Array.isArray(saved)) previousAttempts = saved.filter((entry) => (entry as { itemId?: unknown }).itemId === item.id).length
+      } catch {}
+      if (previousAttempts >= limits.maxAttempts) {
+        return {
+          status: 'blocked' as const,
+          note: `Teto de ${limits.maxAttempts} tentativas atingido; trabalho salvo em \`${itemBranch(task.id, item.id)}\`. Corrija a causa ou divida o item antes de retomar.`,
+        }
+      }
+      const attemptId = `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const startedAt = new Date().toISOString()
+      recordAttempt(wsPath, {
+        id: attemptId,
+        itemId: item.id,
+        repo: item.repo,
+        status: 'running',
+        startedAt,
+        model: AGENT.model,
+        maxTurns: limits.maxTurns,
+        timeoutMs: limits.timeoutMs,
+        branch: itemBranch(task.id, item.id),
+        worktree: cwd,
+        commitBefore: git(cwd, 'rev-parse', 'HEAD'),
+        environment: process.version,
+      })
       const result = await runClaudeItem({
         cwd,
         prompt: buildPrompt(item, plan.raw),
         model: AGENT.model,
         effort: AGENT.effort,
         tools: AGENT.tools,
-        maxTurns: 40,
-        timeoutMs: 20 * 60_000,
+        maxTurns: limits.maxTurns,
+        timeoutMs: limits.timeoutMs,
       })
-      if (result.status !== 'done') {
-        itemCwd.delete(item.id)
-        dropItemWorktree(repoPath(item.repo), task.id, item.repo, item.id)
-      }
+      recordAttempt(wsPath, {
+        id: attemptId,
+        itemId: item.id,
+        repo: item.repo,
+        status: result.status,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        model: AGENT.model,
+        maxTurns: limits.maxTurns,
+        timeoutMs: limits.timeoutMs,
+        durationMs: result.durationMs,
+        costUsd: result.costUsd,
+        note: result.note,
+        branch: itemBranch(task.id, item.id),
+        worktree: cwd,
+        commitAfter: git(cwd, 'rev-parse', 'HEAD'),
+        environment: process.version,
+      })
       return result
     },
     afterDone: (item) => commitItem(task, item),
@@ -437,7 +519,7 @@ export async function runDevStage(): Promise<void> {
   process.exit(summary.ok ? 0 : 1)
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+if (runsAsCommand(import.meta.url)) {
   void runDevStage().catch((error) => {
     finish(false, error instanceof Error ? error.message : String(error))
     process.exit(1)

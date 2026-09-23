@@ -1,5 +1,3 @@
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 
 export interface FrontendConfig {
   apiVar?: string
@@ -11,11 +9,8 @@ export interface FrontendConfig {
   port: number
 }
 
-export const TAKEAT = join(homedir(), 'takeat')
 export const AGD = 'api-garcom-digital'
 export const CLUBE = 'api-clube'
-export const CANONICAL_AGD = join(TAKEAT, 'backend', AGD)
-export const CANONICAL_CLUBE = join(TAKEAT, 'clube', CLUBE)
 export const BACKEND_LIBS = new Set(['api-core', 'takeat-services'])
 export const BACKEND_PORT = Number(process.env.DEVENV_BACKEND_PORT || 3333)
 export const CLUBE_PORT = Number(process.env.DEVENV_CLUBE_PORT || 3334)

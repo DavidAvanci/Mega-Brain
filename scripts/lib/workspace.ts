@@ -12,7 +12,8 @@ import {
 } from 'node:fs'
 import { appendFileSync, mkdirSync, rmdirSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { TAKEAT, WORKTREES } from './env.ts'
+import { WORKTREES } from './env.ts'
+import { activeRepositoryPath, assertRegisteredWorktree } from '../../server/repositories/catalog.ts'
 import { currentBranch, defaultBranch, git, hasRef } from './git.ts'
 import { JIRA_KEY } from './jira.ts'
 import { installCommand } from './packageManager.ts'
@@ -24,6 +25,60 @@ export interface TaskInfo {
   title: string
   type: 'fix' | 'feature'
   branch: string
+}
+
+export interface PreservedAttempt {
+  id: string
+  itemId: string
+  repo: string
+  status: 'running' | 'done' | 'failed' | 'blocked'
+  startedAt: string
+  finishedAt?: string
+  model?: string
+  maxTurns?: number
+  timeoutMs?: number
+  durationMs?: number
+  costUsd?: number
+  note?: string
+  branch?: string
+  worktree?: string
+  commitBefore?: string
+  commitAfter?: string
+  environment?: string
+}
+
+const ATTEMPTS_FILE = 'execution-attempts.json'
+
+export function recordAttempt(wsPath: string, attempt: PreservedAttempt): void {
+  const file = join(wsPath, ATTEMPTS_FILE)
+  let attempts: PreservedAttempt[] = []
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))
+    if (Array.isArray(parsed)) attempts = parsed as PreservedAttempt[]
+  } catch {}
+  const index = attempts.findIndex((entry) => entry.id === attempt.id)
+  if (index === -1) attempts.push(attempt)
+  else attempts[index] = { ...attempts[index], ...attempt }
+  writeFileSync(file, `${JSON.stringify(attempts, null, 2)}\n`)
+}
+
+export function readRequiredBases(wsPath: string, repo: string): string[] {
+  const card = readCardRecord(join(wsPath, 'card.json'))
+  const raw = card?.requiredBases ?? card?.bases
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+  const value = (raw as Record<string, unknown>)[repo]
+  if (typeof value === 'string') return value.trim() ? [value.trim()] : []
+  return Array.isArray(value) ? value.filter((ref): ref is string => typeof ref === 'string' && Boolean(ref.trim())).map((ref) => ref.trim()) : []
+}
+
+export function recordPreparedBases(wsPath: string, repo: string, resolved: string[]): void {
+  const file = join(wsPath, 'card.json')
+  const card = readCardRecord(file) ?? {}
+  const current = card.preparedBases && typeof card.preparedBases === 'object' && !Array.isArray(card.preparedBases)
+    ? (card.preparedBases as Record<string, unknown>)
+    : {}
+  card.preparedBases = { ...current, [repo]: { refs: resolved, preparedAt: new Date().toISOString() } }
+  writeFileSync(file, `${JSON.stringify(card, null, 2)}\n`)
 }
 
 export function slugify(title: string): string {
@@ -62,10 +117,7 @@ export function taskInfo(wsPath: string): TaskInfo {
 }
 
 export function realRepoPath(repo: string): string {
-  for (const candidate of [join(TAKEAT, repo), join(TAKEAT, 'backend', repo), join(TAKEAT, 'clube', repo)]) {
-    if (existsSync(join(candidate, '.git'))) return candidate
-  }
-  throw new Error(`Repo não encontrado em ~/takeat: ${repo}`)
+  return activeRepositoryPath(repo)
 }
 
 export function repoLinks(wsPath: string): { name: string; path: string }[] {
@@ -75,9 +127,12 @@ export function repoLinks(wsPath: string): { name: string; path: string }[] {
     .flatMap((entry) => {
       try {
         const path = realpathSync(join(linksRoot, entry.name))
-        return existsSync(join(path, '.git')) ? [{ name: entry.name, path }] : []
-      } catch {
-        return []
+        if (!existsSync(join(path, '.git'))) return []
+        assertRegisteredWorktree(entry.name, path)
+        return [{ name: entry.name, path }]
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+        throw error
       }
     })
 }
@@ -226,6 +281,70 @@ export function ensureWorktree(wsPath: string, repo: string, taskId: string, bra
   return worktree
 }
 
+/** Brings explicitly declared migration/base refs into the card branch once. */
+export function prepareRequiredBases(worktree: string, repo: string, refs: string[]): string[] {
+  const resolved: string[] = []
+  for (const requested of refs) {
+    let ref = requested
+    try {
+      git(worktree, 'rev-parse', '--verify', '--quiet', ref)
+    } catch {
+      // A short branch name normally belongs to origin.  Do not silently use a
+      // similarly named local branch from an unrelated task.
+      const remote = requested.startsWith('origin/') ? requested : `origin/${requested}`
+      try {
+        git(worktree, 'rev-parse', '--verify', '--quiet', remote)
+        ref = remote
+      } catch {
+        throw new Error(`${repo}: base obrigatória ausente: ${requested}`)
+      }
+    }
+    const hash = git(worktree, 'rev-parse', ref)
+    try {
+      git(worktree, 'merge-base', '--is-ancestor', hash, 'HEAD')
+    } catch {
+      try {
+        git(worktree, 'merge', '--no-edit', hash)
+      } catch {
+        const conflict = git(worktree, 'diff', '--name-only', '--diff-filter=U') || 'conflito de integração'
+        try {
+          git(worktree, 'merge', '--abort')
+        } catch {}
+        throw new Error(`${repo}: conflito ao integrar base obrigatória ${requested}: ${conflict}`)
+      }
+    }
+    resolved.push(`${requested}@${hash}`)
+  }
+  return resolved
+}
+
+export function projectEnvironmentIssue(dir: string): string | null {
+  if (!existsSync(join(dir, 'package.json'))) return null
+  let pkg: { engines?: { node?: unknown }; packageManager?: unknown } = {}
+  try {
+    pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+  } catch {
+    return 'package.json inválido'
+  }
+  const manager = installCommand(dir).cmd
+  const lockfile = manager === 'yarn' ? 'yarn.lock' : 'package-lock.json'
+  if (!existsSync(join(dir, lockfile))) return `Dependências não verificáveis: falta ${lockfile} para ${manager}`
+  // O Node do executor só decide o install; com node_modules vinculado o repo roda sob o Node do agente.
+  if (!existsSync(join(dir, 'node_modules'))) {
+    let expected = typeof pkg.engines?.node === 'string' ? pkg.engines.node : ''
+    try {
+      const nvm = readFileSync(join(dir, '.nvmrc'), 'utf8').trim()
+      if (nvm) expected = nvm
+    } catch {}
+    const requiredMajor = /^(?:\^|~|v)?(\d+)/.exec(expected.trim())?.[1]
+    const actualMajor = /v?(\d+)/.exec(process.version)?.[1]
+    if (requiredMajor && actualMajor && requiredMajor !== actualMajor)
+      return `Node incompatível: projeto exige ${expected}, executor usa ${process.version}`
+    return `Dependências indisponíveis: node_modules ausente após preparar ${manager}`
+  }
+  return null
+}
+
 export function checkoutTaskBranch(worktree: string, branch: string): void {
   if (currentBranch(worktree) !== 'HEAD') return
   if (hasRef(worktree, `refs/heads/${branch}`)) git(worktree, 'checkout', branch)
@@ -346,9 +465,20 @@ export function itemWorktreePath(taskId: string, repo: string, itemId: string): 
 export function ensureItemWorktree(mainPath: string, taskId: string, repo: string, itemId: string): string {
   const path = itemWorktreePath(taskId, repo, itemId)
   const branch = itemBranch(taskId, itemId)
-  dropItemWorktree(mainPath, taskId, repo, itemId)
+  // A failed or interrupted run is deliberately resumable.  Never remove an
+  // existing item checkout merely because a new executor process started.
+  if (existsSync(path) && isRegisteredWorktree(mainPath, path)) {
+    if (currentBranch(path) !== branch)
+      throw new Error(`${itemId}: worktree preservada está em ${currentBranch(path)}, não em ${branch}`)
+    linkProjectRuntimeFiles(mainPath, path)
+    return path
+  }
+  if (existsSync(path)) {
+    throw new Error(`${itemId}: worktree residual não registrada em ${path}; preserve-a e corrija o registro Git antes de retomar`)
+  }
   mkdirSync(dirname(path), { recursive: true })
-  git(mainPath, 'worktree', 'add', '--quiet', '-b', branch, path, 'HEAD')
+  if (hasRef(mainPath, `refs/heads/${branch}`)) git(mainPath, 'worktree', 'add', '--quiet', path, branch)
+  else git(mainPath, 'worktree', 'add', '--quiet', '-b', branch, path, 'HEAD')
   const modules = join(mainPath, 'node_modules')
   if (existsSync(modules) && !existsSync(join(path, 'node_modules'))) {
     try {
@@ -392,16 +522,30 @@ export interface Integration {
 }
 
 export function integrateItemBranch(mainPath: string, branch: string): Integration {
+  // `--ancestry-path` accounts for ordinary and merge commits alike.  The old
+  // cherry-pick implementation attempted to apply merge commits without a
+  // mainline parent and could report success before the card branch had them.
+  try {
+    git(mainPath, 'merge-base', '--is-ancestor', branch, 'HEAD')
+    return { ok: true, commits: 0 }
+  } catch {}
   const base = git(mainPath, 'merge-base', 'HEAD', branch)
   const commits = git(mainPath, 'rev-list', '--reverse', `${base}..${branch}`).split('\n').filter(Boolean)
   if (!commits.length) return { ok: true, commits: 0 }
   try {
-    git(mainPath, 'cherry-pick', ...commits)
+    // Fast-forward keeps the simple case linear.  A real merge is used when
+    // sibling items have advanced the card branch, so merge commits remain
+    // valid Git history instead of being replayed as ordinary commits.
+    try {
+      git(mainPath, 'merge', '--ff-only', branch)
+    } catch {
+      git(mainPath, 'merge', '--no-ff', '--no-edit', branch)
+    }
     return { ok: true, commits: commits.length }
   } catch (error) {
-    const conflict = git(mainPath, 'diff', '--name-only', '--diff-filter=U') || 'conflito no cherry-pick'
+    const conflict = git(mainPath, 'diff', '--name-only', '--diff-filter=U') || 'conflito na integração'
     try {
-      git(mainPath, 'cherry-pick', '--abort')
+      git(mainPath, 'merge', '--abort')
     } catch {}
     return { ok: false, commits: commits.length, conflict: conflict.split('\n').filter(Boolean).join(', ') }
   }

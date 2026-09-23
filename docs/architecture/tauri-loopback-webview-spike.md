@@ -30,7 +30,7 @@ encerrado após o teste. A porta 5173 não foi usada.
 ## Evidência WebView2 no Windows nativo
 
 Em 2026-09-01, o spike foi executado em PowerShell nativo a partir de
-`\\wsl.localhost\Ubuntu\home\david\mega-brain\spikes\tauri-loopback-auth`.
+`\\wsl.localhost\Ubuntu\home\user\mega-brain\spikes\tauri-loopback-auth`.
 A janela WebView2 exibiu:
 
 ```text

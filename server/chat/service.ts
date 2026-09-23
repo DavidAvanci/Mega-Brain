@@ -136,16 +136,13 @@ function transcript(path: string, projectsRoot: string): { entries: ChatEntry[];
   return { entries: parseTranscript(content).slice(-HISTORY_LIMIT), settings: parseChatSettings(content) }
 }
 
-const running = new Map<string, ProcessChild>()
-const aborted = new WeakSet<ProcessChild>()
-
 function terminalOpen(path: string): boolean {
   const real = realpathSync(path)
   for (const cwd of agentCwds()) if (cwd === real) return true
   return false
 }
 
-function busyReason(path: string): string | undefined {
+function busyReason(path: string, running: Map<string, ProcessChild>): string | undefined {
   if (running.has(path)) return 'Já há uma mensagem em andamento'
   if (readAgent(path)?.status === 'rodando') return 'O agente da etapa está rodando; espere ele terminar'
   if (terminalOpen(path)) return 'Há um Claude aberto no terminal dessa pasta; feche antes de usar o chat'
@@ -164,7 +161,8 @@ function chatArgs(text: string, session: string | undefined): string[] {
     '--strict-mcp-config',
     '--mcp-config',
     '{"mcpServers":{}}',
-    '--dangerously-skip-permissions',
+    '--permission-mode',
+    'bypassPermissions',
   ]
 }
 
@@ -175,6 +173,8 @@ function streamChat(
   projectsRoot: string,
   executable: string | undefined,
   runner: ProcessRunner,
+  running: Map<string, ProcessChild>,
+  aborted: WeakSet<ProcessChild>,
   owner?: ProcessOwner,
 ): void {
   const child = runner.spawn(claudeBin(executable), chatArgs(text, resolveSession(path, projectsRoot)), {
@@ -188,7 +188,6 @@ function streamChat(
   const finish = (event: ChatEvent) => {
     if (settled) return
     settled = true
-    running.delete(path)
     emit(event)
   }
   child.stdout!.on('data', (chunk) => {
@@ -204,13 +203,14 @@ function streamChat(
       else emit(event)
     }
   })
-  let stderr = ''
-  child.stderr!.on('data', (chunk) => (stderr += chunk))
-  child.on('error', (error) => finish({ type: 'done', error: `Falha ao spawnar claude: ${error.message}` }))
+  child.stderr!.on('data', () => {
+    // stderr may contain user prompts, local paths, or provider diagnostics; never retain it.
+  })
+  child.on('error', () => finish({ type: 'done', error: 'Falha ao iniciar o agente Claude.' }))
   child.on('close', (code, signal) => {
+    if (running.get(path) === child) running.delete(path)
     if (signal || aborted.has(child)) return finish({ type: 'done', error: 'Interrompido' })
-    const tail = stderr.trim().split('\n').slice(-2).join(' | ').slice(0, 200)
-    finish({ type: 'done', error: `O agente saiu sem responder (exit ${code})${tail ? `: ${tail}` : ''}` })
+    finish({ type: 'done', error: `O agente saiu sem responder (exit ${code ?? 'desconhecido'}).` })
   })
 }
 
@@ -220,25 +220,25 @@ function streamCodexChat(
   emit: (event: ChatEvent) => void,
   executable: string | undefined,
   runner: ProcessRunner,
+  running: Map<string, ProcessChild>,
+  aborted: WeakSet<ProcessChild>,
   owner?: ProcessOwner,
 ): void {
-  const child = runner.spawn(
-    codexBin(executable),
-    ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', text],
-    {
-      cwd: path,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    },
-  )
+  const args = ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', text]
+  const child = runner.spawn(codexBin(executable), args, {
+    cwd: path,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
   owner?.own(child, { label: 'chat' })
   running.set(path, child)
   let buffer = ''
-  let stderr = ''
+  child.stderr!.on('data', () => {
+    // Never retain raw provider stderr in process memory or surface it to the UI.
+  })
   let settled = false
   const finish = (event: ChatEvent) => {
     if (settled) return
     settled = true
-    running.delete(path)
     emit(event)
   }
   child.stdout!.on('data', (chunk) => {
@@ -260,13 +260,12 @@ function streamCodexChat(
       } catch {}
     }
   })
-  child.stderr!.on('data', (chunk) => (stderr += chunk))
-  child.on('error', (error) => finish({ type: 'done', error: `Falha ao iniciar ChatGPT: ${error.message}` }))
+  child.on('error', () => finish({ type: 'done', error: 'Falha ao iniciar a CLI do Codex.' }))
   child.on('close', (code, signal) => {
+    if (running.get(path) === child) running.delete(path)
     if (signal || aborted.has(child)) return finish({ type: 'done', error: 'Interrompido' })
     if (settled) return
-    const tail = stderr.trim().split('\n').slice(-2).join(' | ').slice(0, 200)
-    finish({ type: 'done', error: `O ChatGPT saiu sem responder (exit ${code})${tail ? `: ${tail}` : ''}` })
+    finish({ type: 'done', error: `O ChatGPT saiu sem responder (exit ${code ?? 'desconhecido'}).` })
   })
 }
 
@@ -276,6 +275,7 @@ export interface ChatService {
   ): Promise<{ sessionId: string | null; entries: ChatEntry[]; settings?: ChatAgentSettings | null }>
   send(name: string, text: string, emit: (event: ChatEvent) => void): void
   abort(name: string): boolean
+  shutdown?(): Promise<void>
 }
 
 export function createChatService(
@@ -284,6 +284,9 @@ export function createChatService(
   runner: ProcessRunner = nodeProcessRunner,
   owner?: ProcessOwner,
 ): ChatService {
+  const running = new Map<string, ProcessChild>()
+  const aborted = new WeakSet<ProcessChild>()
+  let closing = false
   const folderPath = (name: unknown): string => {
     const root = resolve(config.workspaceDir)
     assertTestWorkspace(root)
@@ -294,18 +297,29 @@ export function createChatService(
       const path = folderPath(name)
       if (config.preferences?.llmProvider === 'chatgpt') return { sessionId: null, entries: [], settings: null }
       const projectsRoot = config.directories.claudeProjects
-      const history = transcript(path, projectsRoot)
-      return { sessionId: resolveSession(path, projectsRoot) ?? null, ...history }
+      return { sessionId: resolveSession(path, projectsRoot) ?? null, ...transcript(path, projectsRoot) }
     },
     send(name, text, emit) {
+      if (closing) throw new Error('O serviço de chat está encerrando.')
       const path = folderPath(name)
       const message = String(text ?? '').trim()
       if (!message) throw new Error('Mensagem vazia')
-      const busy = busyReason(path)
+      const busy = busyReason(path, running)
       if (busy) throw new Error(busy)
       if (config.preferences?.llmProvider === 'chatgpt')
-        streamCodexChat(path, message, emit, config.executables.codex, runner, owner)
-      else streamChat(path, message, emit, config.directories.claudeProjects, config.executables.claude, runner, owner)
+        streamCodexChat(path, message, emit, config.executables.codex, runner, running, aborted, owner)
+      else
+        streamChat(
+          path,
+          message,
+          emit,
+          config.directories.claudeProjects,
+          config.executables.claude,
+          runner,
+          running,
+          aborted,
+          owner,
+        )
     },
     abort(name) {
       const child = running.get(folderPath(name))
@@ -314,6 +328,19 @@ export function createChatService(
         child.kill('SIGTERM')
       }
       return true
+    },
+    async shutdown() {
+      if (closing) return
+      closing = true
+      const children = [...running.values()]
+      running.clear()
+      await Promise.allSettled(
+        children.map(async (child) => {
+          aborted.add(child)
+          if (owner) await owner.stop(child)
+          else child.kill('SIGTERM')
+        }),
+      )
     },
   }
 }

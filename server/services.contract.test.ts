@@ -82,7 +82,18 @@ test('workspace service opens only the requested project PR', async () => {
       project: 'web',
     }),
   ).resolves.toEqual({ ok: true })
-  expect(calls).toEqual([{ command: browser, args: ['--new-window', 'https://github.test/web/pull/2'] }])
+  expect(calls).toEqual([{ command: browser, args: ['https://github.test/web/pull/2'] }])
+
+  await expect(
+    service.handle('/prs/open', 'POST', new URLSearchParams(), {
+      name: 'card',
+      env: 'master',
+    }),
+  ).resolves.toEqual({ ok: true })
+  expect(calls[1]).toEqual({
+    command: browser,
+    args: ['--new-window', 'https://github.test/api/pull/1', 'https://github.test/web/pull/2'],
+  })
 
   await expect(
     service.handle('/prs/open', 'POST', new URLSearchParams(), {
@@ -91,7 +102,7 @@ test('workspace service opens only the requested project PR', async () => {
       project: 'unknown',
     }),
   ).rejects.toThrow('Sem PR de master para unknown')
-  expect(calls).toHaveLength(1)
+  expect(calls).toHaveLength(2)
 })
 
 test('workspace service opens a running dev environment in the configured browser', async () => {
@@ -122,7 +133,7 @@ test('workspace service opens a running dev environment in the configured browse
   await expect(
     service.handle('/dev-env/open', 'POST', new URLSearchParams(), { name: 'card', repo: 'web' }),
   ).resolves.toEqual({ ok: true })
-  expect(calls).toEqual([{ command: browser, args: ['--new-window', 'http://localhost:5180'] }])
+  expect(calls).toEqual([{ command: browser, args: ['http://localhost:5180'] }])
 
   await expect(
     service.handle('/dev-env/open', 'POST', new URLSearchParams(), { name: 'card', repo: 'api' }),

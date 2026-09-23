@@ -38,7 +38,7 @@ describe('production runtime composition', () => {
       execFile: (_command, _args, _options, callback) => callback(null, '', ''),
     }
     const config = loadMegaBrainConfig({
-      env: { WORKSPACE_DIR: workspace, MEGA_BRAIN_CLAUDE_HOME: claude, MEGA_BRAIN_POWERSHELL_BIN: '/bin/sh' },
+      env: { WORKSPACE_DIR: workspace, MEGA_BRAIN_CLAUDE_HOME: claude, MEGA_BRAIN_POWERSHELL_BIN: process.execPath },
       homeDir: base,
     })
     const runtime = createServerRuntime({ config, processRunner: runner })
@@ -57,8 +57,28 @@ describe('production runtime composition', () => {
     ).toBe(200)
     expect(((await runtime.handle(request('GET', '/api/jira/ready'))) as any)?.body).toEqual([])
     expect((await runtime.handle(request('GET', '/api/claude/usage')))?.status).toBe(200)
+    expect(await runtime.handle(request('GET', '/api/coffee'))).toMatchObject({
+      status: 200,
+      body: { active: false },
+    })
+    expect(spawns).toBe(0)
     expect(((await runtime.handle(request('POST', '/api/coffee'))) as any)?.body).toEqual({ active: true })
+    expect(await runtime.handle(request('GET', '/api/coffee'))).toMatchObject({
+      status: 200,
+      body: { active: true },
+    })
     expect(spawns).toBe(1)
+
+    // The PowerShell worker exits after the workstation is unlocked. The
+    // button polls this route to clear its active indicator.
+    child.emit('exit', 0, null)
+    expect(await runtime.handle(request('GET', '/api/coffee'))).toMatchObject({
+      status: 200,
+      body: { active: false },
+    })
+    expect(spawns).toBe(1)
+    expect(((await runtime.handle(request('POST', '/api/coffee'))) as any)?.body).toEqual({ active: true })
+    expect(spawns).toBe(2)
     expect(((await runtime.handle(request('DELETE', '/api/coffee'))) as any)?.body).toEqual({ active: false })
   })
 })

@@ -68,6 +68,7 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void) {
         saveMegaBrainSettings(settings),
         desktop ? setDesktopAutostartEnabled(autostartEnabled) : Promise.resolve(),
       ])
+      window.dispatchEvent(new Event('megabrain-settings-changed'))
       await refresh()
       onClose()
     } catch (cause) {

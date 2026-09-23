@@ -29,12 +29,8 @@ describe('board filters', () => {
     expect(matchesState(card({ prs: { staging: { app: 'https://example.test/pr/1' } } }), 'pr')).toBe(true)
   })
 
-  it('flags actionable states and old active work without treating backlog as stale', () => {
-    const now = new Date('2026-09-13T12:00:01.000Z').getTime()
-    expect(needsAttention(card(), now)).toBe(true)
-    expect(needsAttention(card({ status: 'a-fazer' }), now)).toBe(false)
-    expect(needsAttention(card({ createdAt: '2026-09-13T11:00:00.000Z', agents: [{ status: 'erro' }] }), now)).toBe(
-      true,
-    )
+  it('flags actionable states but does not flag an old inactive card', () => {
+    expect(needsAttention(card())).toBe(false)
+    expect(needsAttention(card({ agents: [{ status: 'erro' }] }))).toBe(true)
   })
 })

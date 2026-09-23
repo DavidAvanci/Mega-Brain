@@ -5,8 +5,8 @@ import { expect, test } from 'vitest'
 import { chatEvent, parseTranscript, resolveSession, sessionDir } from './server/chat/service'
 
 test('sessionDir', () => {
-  expect(sessionDir('/home/david/takeat/workspace/ESTR-426', '/projects')).toBe(
-    '/projects/-home-david-takeat-workspace-ESTR-426',
+  expect(sessionDir('/home/user/takeat/workspace/ESTR-426', '/projects')).toBe(
+    '/projects/-home-user-takeat-workspace-ESTR-426',
   )
 })
 

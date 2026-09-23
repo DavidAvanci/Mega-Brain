@@ -17,6 +17,29 @@ export interface CardData {
   flow?: FlowLevel
   prs?: { staging?: Record<string, string>; master?: Record<string, string> }
   worktrees?: Record<string, WorktreeOrigin>
+  /** Refs that must be integrated into the card branch before item agents run. */
+  requiredBases?: Record<string, string[]>
+  preparedBases?: Record<string, { refs: string[]; preparedAt: string }>
+}
+
+function readRefMap(value: unknown): Record<string, string[]> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const entries = Object.entries(value).flatMap(([repo, refs]) => {
+    const list = typeof refs === 'string' ? [refs] : Array.isArray(refs) ? refs.filter((ref): ref is string => typeof ref === 'string') : []
+    return list.length ? [[repo, list] as const] : []
+  })
+  return entries.length ? Object.fromEntries(entries) : undefined
+}
+
+function readPreparedBases(value: unknown): CardData['preparedBases'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const entries = Object.entries(value).flatMap(([repo, entry]) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return []
+    const { refs, preparedAt } = entry as Record<string, unknown>
+    if (!Array.isArray(refs) || !refs.every((ref) => typeof ref === 'string') || typeof preparedAt !== 'string') return []
+    return [[repo, { refs, preparedAt }] as const]
+  })
+  return entries.length ? Object.fromEntries(entries) : undefined
 }
 
 function readPrEnv(value: unknown): Record<string, string> | undefined {
@@ -70,6 +93,8 @@ export function readCard(folderPath: string, name: string): CardData {
     flow: readFlow(data.flow),
     prs: readPrs(data.prs),
     worktrees: readWorktrees(data.worktrees),
+    requiredBases: readRefMap(data.requiredBases ?? (data as Record<string, unknown>).bases),
+    preparedBases: readPreparedBases(data.preparedBases),
   }
 }
 

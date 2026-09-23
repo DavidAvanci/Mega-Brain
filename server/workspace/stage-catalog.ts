@@ -17,6 +17,11 @@ const TASK_CHECKLIST_SCOPE = [
   'Regra obrigatória para TASK-CHECKLIST.md: inclua somente ações de implementação.',
   'Não crie tasks de testes de qualquer tipo, criação ou alteração de arquivos de teste, validação, conferência, QA, smoke test, revisão visual, screenshots ou verificações manuais/automatizadas.',
   'Toda atividade de teste ou verificação pertence exclusivamente à TEST-CHECKLIST.md quando esse artefato fizer parte do fluxo; nos demais fluxos, apenas não a inclua na TASK-CHECKLIST.md.',
+  'Cada item deve ser uma entrega pequena e verificável. Divida páginas extensas em estrutura, filtros, ações e integração; dê a cada parte um critério de conclusão próprio e deps explícitas. Itens substituídos devem ser riscados, com os novos itens dependentes preservando o histórico.',
+  'Orçamento obrigatório do executor de desenvolvimento: cada item deve caber em no máximo 40 turns. Planeje para concluir confortavelmente dentro desse orçamento; se estimar mais, decomponha em itens menores, independentes quando possível, e conecte-os com deps. Nunca declare turns: acima de 40.',
+  'Quando o fluxo gerar TEST-CHECKLIST.md, cada cenário também deve caber no executor de testes (máximo de 60 turns); se exceder, divida-o em cenários menores. Nunca declare turns: acima de 60 nesse arquivo.',
+  'Declare arquivos compartilhados (helpers, exports e rotas) em files para serializar itens que os alterem. Para pré-condições use requires: e para arquivos novos use creates:, nunca trate uma criação prevista como requisito existente.',
+  'Quando uma migração ou base for obrigatória, registre em card.json requiredBases por repositório e use deps no item; não dependa só da descrição. Limites específicos podem ser declarados como turns:, timeoutMin: e attempts:.',
 ]
 
 function planningPrompt(card: CardData): string {

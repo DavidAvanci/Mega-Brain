@@ -4,6 +4,11 @@ import { stderrJsonlLogger, type StructuredLogger } from '../logger'
 
 export type LauncherLogger = Pick<StructuredLogger, 'event'>
 
+interface BrowserLaunchOptions {
+  newWindow?: boolean
+  logger?: LauncherLogger
+}
+
 function reportLaunchFailure(logger: LauncherLogger | undefined, target: string): void {
   ;(logger ?? stderrJsonlLogger(process.stderr)).event('workspace.launch.error', { target })
 }
@@ -12,17 +17,16 @@ export function openBrowser(
   urls: string[],
   browser: string | undefined,
   runner: ProcessRunner,
-  logger?: LauncherLogger,
+  options: BrowserLaunchOptions = {},
 ): void {
   const command = resolveOptionalExecutable({
     configured: browser,
     candidates: wslDesktopCandidates('browser'),
     label: 'Chrome ou outro navegador',
   })
-  const child = process.env.WSL_DISTRO_NAME
-    ? runner.spawn(command, ['--new-window', ...urls], { detached: true, stdio: 'ignore' })
-    : runner.spawn(command, ['--new-window', ...urls], { detached: true, stdio: 'ignore' })
-  child.on('error', () => reportLaunchFailure(logger, 'browser'))
+  const args = options.newWindow ? ['--new-window', ...urls] : urls
+  const child = runner.spawn(command, args, { detached: true, stdio: 'ignore' })
+  child.on('error', () => reportLaunchFailure(options.logger, 'browser'))
   child.unref()
 }
 

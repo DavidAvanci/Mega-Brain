@@ -1,5 +1,4 @@
 import { nextDeploySlot } from '../../shared/lib/deploy-window.ts'
-import { pathToFileURL } from 'node:url'
 import {
   countCommits,
   currentBranch,
@@ -10,6 +9,7 @@ import {
   git,
   hasRef,
 } from '../lib/git.ts'
+import { runsAsCommand } from '../lib/env.ts'
 import { jiraEnv, prsCommentAdf, textCommentAdf, transitionTo, upsertComment } from '../lib/jira.ts'
 import { activity, finish } from '../lib/log.ts'
 import { planSection, readPlan } from '../lib/plan.ts'
@@ -182,7 +182,7 @@ export async function runMasterPrStage(): Promise<void> {
   process.exit(ok ? 0 : 1)
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+if (runsAsCommand(import.meta.url)) {
   void runMasterPrStage().catch((error) => {
     finish(false, error instanceof Error ? error.message : String(error))
     process.exit(1)

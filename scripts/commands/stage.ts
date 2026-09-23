@@ -6,9 +6,10 @@ import {
   gh,
   git,
   hasRef,
+  restoreBranch,
   stagingBranchOf,
 } from '../lib/git.ts'
-import { pathToFileURL } from 'node:url'
+import { runsAsCommand } from '../lib/env.ts'
 import { jiraEnv, prsCommentAdf, transitionTo, upsertComment } from '../lib/jira.ts'
 import { activity, finish } from '../lib/log.ts'
 import { planSection, readPlan } from '../lib/plan.ts'
@@ -41,11 +42,16 @@ async function stageRepo(
     throw new Error(`${repo.name}: worktree está em ${checkedOut}, não numa feature branch`)
   const branch = featureBranch(cwd, repo.name)
 
+  // A branch de staging é descartável, então desfazer um cherry-pick interrompido nela não perde trabalho.
+  if (checkedOut === stagingBranchOf(branch) && !restoreBranch(cwd, branch))
+    throw new Error(`${repo.name}: não foi possível devolver a worktree de ${checkedOut} para ${branch}`)
+
   const dirty = git(cwd, 'status', '--porcelain')
   if (dirty) {
-    if (checkedOut !== branch) {
+    const on = currentBranch(cwd)
+    if (on !== branch) {
       throw new Error(
-        `${repo.name}: há alterações não commitadas com a worktree em ${checkedOut} — volte para ${branch} e commite antes`,
+        `${repo.name}: há alterações não commitadas com a worktree em ${on} — volte para ${branch} e commite antes`,
       )
     }
     git(cwd, 'add', '-A')
@@ -68,27 +74,28 @@ async function stageRepo(
   git(cwd, 'cherry-pick', '--quit')
   git(cwd, 'checkout', '-B', stagingBranch, 'origin/staging')
   try {
-    git(cwd, '-c', 'rerere.enabled=true', '-c', 'rerere.autoUpdate=true', 'cherry-pick', ...commits)
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    if (!hasRef(cwd, 'CHERRY_PICK_HEAD')) {
-      git(cwd, 'checkout', branch)
-      throw new Error(`${repo.name}: falha ao aplicar commits em staging sem conflito Git. (${detail})`)
-    }
-    activity('Resolvendo conflito', repo.name)
     try {
-      await resolveCherryPickConflict(cwd, repo.name, 'origin/staging', commits.length)
-    } catch (resolutionError) {
+      git(cwd, '-c', 'rerere.enabled=true', '-c', 'rerere.autoUpdate=true', 'cherry-pick', ...commits)
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      if (!hasRef(cwd, 'CHERRY_PICK_HEAD'))
+        throw new Error(`${repo.name}: falha ao aplicar commits em staging sem conflito Git. (${detail})`)
+      activity('Resolvendo conflito', repo.name)
       try {
-        git(cwd, 'cherry-pick', '--abort')
-      } catch {}
-      git(cwd, 'checkout', branch)
-      throw new Error(
-        `${repo.name}: conflito no cherry-pick para staging. ${resolutionError instanceof Error ? resolutionError.message : resolutionError} (${detail})`,
-      )
+        await resolveCherryPickConflict(cwd, repo.name, 'origin/staging', commits.length)
+      } catch (resolutionError) {
+        throw new Error(
+          `${repo.name}: conflito no cherry-pick para staging. ${resolutionError instanceof Error ? resolutionError.message : resolutionError} (${detail})`,
+        )
+      }
     }
+    git(cwd, 'push', '-u', 'origin', stagingBranch, '--force-with-lease')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!restoreBranch(cwd, branch))
+      throw new Error(`${message} — worktree ficou em ${currentBranch(cwd)}, limpe antes de repetir`)
+    throw error
   }
-  git(cwd, 'push', '-u', 'origin', stagingBranch, '--force-with-lease')
   git(cwd, 'checkout', branch)
 
   const existing = existingPrUrl(cwd, stagingBranch, 'staging')
@@ -157,7 +164,7 @@ export async function runStagingStage(): Promise<void> {
   process.exit(ok ? 0 : 1)
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+if (runsAsCommand(import.meta.url)) {
   void runStagingStage().catch((error) => {
     finish(false, error instanceof Error ? error.message : String(error))
     process.exit(1)

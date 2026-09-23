@@ -3,19 +3,27 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ComputerTerminal01Icon,
   Copy01Icon,
+  Delete02Icon,
   Folder01Icon,
   LinkSquare02Icon,
   Tick02Icon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { AppSelect } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { moveCard, openFolder, openPrs, openTerminal, setCardFlow } from '../model/card-commands'
+import { deleteCard, moveCard, openFolder, openPrs, openTerminal, setCardFlow } from '../model/card-commands'
 import { type WorktreeRepoInfo } from '../api/card-detail-api'
 import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 import { PrChip, StageResetButton } from './CardView'
@@ -290,7 +298,54 @@ function ReposList({ repos }: { repos: WorktreeRepoInfo[] }) {
   )
 }
 
-function ActionBar({ card }: { card: Card }) {
+function DeleteCardButton({ card, onDeleted }: { card: Card; onDeleted: () => void }) {
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const confirmDelete = async () => {
+    setDeleting(true)
+    setError(null)
+    try {
+      await deleteCard(card.id)
+      onDeleted()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <>
+      <Button variant="destructive" size="xs" className="ml-auto" onClick={() => setConfirming(true)}>
+        <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+        Excluir
+      </Button>
+      <Dialog open={confirming} onOpenChange={(open) => !open && !deleting && setConfirming(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir "{card.title}"?</DialogTitle>
+            <DialogDescription>
+              A pasta <code className="text-foreground">{card.folder}</code> e todos os arquivos dela e as worktrees
+              vinculadas serão apagados do disco. Essa ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          <DialogFooter>
+            <Button variant="ghost" disabled={deleting} onClick={() => setConfirming(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" disabled={deleting} onClick={confirmDelete}>
+              {deleting ? 'Excluindo…' : 'Excluir definitivamente'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function ActionBar({ card, onDeleted }: { card: Card; onDeleted: () => void }) {
   const [openingFolder, setOpeningFolder] = useState(false)
 
   const handleOpenFolder = async () => {
@@ -321,6 +376,7 @@ function ActionBar({ card }: { card: Card }) {
               <PrChip key={env} env={env} links={card.prs[env]} states={card.prStates} cardId={card.id} />
             ),
         )}
+      <DeleteCardButton card={card} onDeleted={onDeleted} />
     </div>
   )
 }
@@ -328,6 +384,9 @@ function ActionBar({ card }: { card: Card }) {
 export function CardModal({ card, initialTab, onClose }: { card: Card; initialTab?: string; onClose: () => void }) {
   const { files, repos, error } = useCardDetail(card.id)
   const agents = activeAgents(card)
+  const [activeTab, setActiveTab] = useState(
+    initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description'),
+  )
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -342,7 +401,7 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
                 {card.jiraStatus && <span className="uppercase">Jira: {card.jiraStatus}</span>}
                 <span className="tabular-nums">criado {relativeTime(card.createdAt)}</span>
               </div>
-              <DialogTitle className="font-sans text-lg leading-snug">{card.title}</DialogTitle>
+              <DialogTitle className="text-lg leading-snug">{card.title}</DialogTitle>
               {agents.map((agent) => {
                 const progress = agent.status === 'rodando' ? agent.progress : undefined
                 return (
@@ -367,15 +426,10 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
                   </div>
                 )
               })}
-              <ActionBar card={card} />
+              <ActionBar card={card} onDeleted={onClose} />
               {error && <p className="text-xs text-destructive">{error}</p>}
             </DialogHeader>
-            <Tabs
-              defaultValue={
-                initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description')
-              }
-              className="min-h-0 flex-1 gap-0"
-            >
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 gap-0">
               <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b px-3">
                 <TabsTrigger value="description" className="flex-none px-2.5">
                   Descrição
