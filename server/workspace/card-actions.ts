@@ -33,7 +33,7 @@ export function openPullRequests(
   const urls = candidates.filter((url): url is string => typeof url === 'string' && /^https?:\/\//.test(url))
   if (!urls.length)
     throw new Error(selectedProject ? `Sem PR de ${environment} para ${selectedProject}` : `Sem PRs de ${environment}`)
-  openBrowser(urls, config.executables.browser, runner)
+  openBrowser(urls, config.executables.browser, runner, { newWindow: !selectedProject })
 }
 
 export function openDevEnvironment(cardPath: string, repo: unknown, config: ActionConfig, runner: ProcessRunner): void {

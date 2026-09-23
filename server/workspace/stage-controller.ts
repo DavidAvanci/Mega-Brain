@@ -24,6 +24,8 @@ export function createStageController(
   const runningStages = new Map<string, { stage: string; child: ProcessChild }>()
 
   const start = (path: string, stage: Stage, card: CardData, model?: string) => {
+    // Duas execuções no mesmo card disputam as worktrees dos itens e uma apaga a da outra
+    if (runningStages.has(path) || readAgent(path)?.status === 'rodando') return
     runStageAgent(
       path,
       stage,
@@ -45,6 +47,8 @@ export function createStageController(
       config.worktreesDir,
       config.preferences.llmProvider,
       config.executables.codex,
+      undefined,
+      config.preferences.settingsFile,
     )
   }
 

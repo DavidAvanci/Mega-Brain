@@ -13,13 +13,13 @@ function StartupTitlebar() {
   return (
     <header
       data-tauri-drag-region
-      className="flex min-h-9 shrink-0 items-center gap-2 border-b bg-card pl-4"
+      className="flex min-h-11 shrink-0 items-center gap-2.5 border-b bg-card pl-4"
       onDoubleClick={(event) => {
         if (!(event.target as Element).closest('button')) void invokeDesktopWindowCommand('toggle_maximize_main_window')
       }}
     >
-      <img src="/brain.svg" alt="" aria-hidden="true" className="size-5" />
-      <span data-tauri-drag-region className="font-sans text-sm font-semibold">
+      <img src="/brain.svg" alt="" aria-hidden="true" className="size-6" />
+      <span data-tauri-drag-region className="font-sans text-base font-semibold">
         Mega Brain
       </span>
       <span data-tauri-drag-region className="flex-1" />
@@ -42,6 +42,8 @@ function message(phase: ReturnType<typeof useDesktopConnection>['phase']): strin
     return 'O workspace configurado não é válido. Verifique se o diretório existe e tente novamente.'
   if (phase === 'backend-incompatible')
     return 'O backend instalado é incompatível com esta versão do Mega Brain. Atualize ou reinstale o aplicativo e tente novamente.'
+  if (phase === 'backend-failed')
+    return 'O processo do backend encerrou durante a inicialização. Consulte a saída do PowerShell e tente novamente.'
   return 'O backend local está indisponível. Verifique o WSL e tente novamente.'
 }
 

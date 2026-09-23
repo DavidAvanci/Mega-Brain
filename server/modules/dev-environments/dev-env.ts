@@ -13,6 +13,7 @@ import {
 } from 'node:fs'
 import { connect } from 'node:net'
 import { dirname, join } from 'node:path'
+import { activeRepositoryPath, assertRegisteredWorktree, repositoryCatalogFile } from '../../repositories/catalog'
 import { installCommand, lockfilesMatch, runScriptCommand, type Command } from '../../../scripts/lib/packageManager.ts'
 import type { DevEnvApp, DevEnvInfo } from '../../../shared/domain/agents'
 import { nodeProcessRunner, type ProcessChild, type ProcessRunner } from '../../process'
@@ -20,14 +21,11 @@ import {
   AGD,
   BACKEND_LIBS,
   BACKEND_PORT,
-  CANONICAL_AGD,
-  CANONICAL_CLUBE,
   CLUBE,
   CLUBE_PORT,
   FRONTENDS,
   LOCAL_API,
   LOCAL_CLUBE_API,
-  TAKEAT,
   type FrontendConfig,
 } from './dev-env-config'
 const STATE_DIR = '.dev-env'
@@ -82,27 +80,30 @@ function isTouched(dir: string, runner: ProcessRunner): boolean {
   return (branch !== 'master' && branch !== 'main') || git(dir, runner, 'status', '--porcelain') !== ''
 }
 
-function touchedRepos(cardPath: string, runner: ProcessRunner): RepoRef[] {
+function touchedRepos(cardPath: string, runner: ProcessRunner, catalogFile: string): RepoRef[] {
   const linksRoot = existsSync(join(cardPath, 'repos')) ? join(cardPath, 'repos') : cardPath
   return readdirSync(linksRoot, { withFileTypes: true })
     .filter((entry) => entry.isSymbolicLink())
     .flatMap((entry) => {
+      let dir: string
       try {
-        const dir = realpathSync(join(linksRoot, entry.name))
-        return existsSync(join(dir, '.git')) && isTouched(dir, runner) ? [{ name: entry.name, dir }] : []
+        dir = realpathSync(join(linksRoot, entry.name))
       } catch {
         return []
       }
+      if (!existsSync(join(dir, '.git'))) return []
+      assertRegisteredWorktree(entry.name, dir, catalogFile)
+      return isTouched(dir, runner) ? [{ name: entry.name, dir }] : []
     })
 }
 
 export interface DevEnvPlan {
   localBackend: boolean
   localClube: boolean
-  backend?: { dir: string; createWorktree: boolean }
-  clube?: { dir: string }
+  backend?: { dir: string; createWorktree: boolean; canonical: string }
+  clube?: { dir: string; canonical: string }
   libs: RepoRef[]
-  fronts: { repo: string; dir: string; source: 'worktree' | 'master'; config: FrontendConfig; preferred: number }[]
+  fronts: { repo: string; dir: string; canonical: string; source: 'worktree' | 'master'; config: FrontendConfig; preferred: number }[]
   warnings: string[]
 }
 
@@ -110,8 +111,10 @@ export function planDevEnv(
   cardPath: string,
   frontendChoice?: string,
   runner: ProcessRunner = nodeProcessRunner,
+  settingsFile?: string,
 ): DevEnvPlan | { needsFrontend: string[] } {
-  const touched = touchedRepos(cardPath, runner)
+  const catalogFile = repositoryCatalogFile(settingsFile)
+  const touched = touchedRepos(cardPath, runner, catalogFile)
   const byName = new Map(touched.map((repo) => [repo.name, repo]))
   const { agd, clube, libs, fronts, unknown } = classifyRepos(touched.map((repo) => repo.name))
   const warnings = unknown.map((name) => `Repo não suportado pelo ambiente dev: ${name}`)
@@ -120,35 +123,39 @@ export function planDevEnv(
 
   let backend: DevEnvPlan['backend']
   if (localBackend) {
-    if (agd) backend = { dir: byName.get(AGD)!.dir, createWorktree: false }
+    const canonical = activeRepositoryPath(AGD, catalogFile)
+    if (agd) backend = { dir: byName.get(AGD)!.dir, createWorktree: false, canonical }
     else {
       const sibling = join(dirname(byName.get(libs[0])!.dir), AGD)
-      backend = { dir: sibling, createWorktree: !existsSync(sibling) }
+      backend = { dir: sibling, createWorktree: !existsSync(sibling), canonical }
     }
   }
 
-  let frontRepos: { repo: string; dir: string; source: 'worktree' | 'master' }[]
+  let frontRepos: { repo: string; dir: string; canonical: string; source: 'worktree' | 'master' }[]
   if (fronts.length) {
-    frontRepos = fronts.map((repo) => ({ repo, dir: byName.get(repo)!.dir, source: 'worktree' as const }))
+    frontRepos = fronts.map((repo) => ({ repo, dir: byName.get(repo)!.dir, canonical: activeRepositoryPath(repo, catalogFile), source: 'worktree' as const }))
   } else {
     if (!frontendChoice) {
-      return { needsFrontend: Object.keys(FRONTENDS).filter((repo) => existsSync(join(TAKEAT, repo))) }
+      const available = Object.keys(FRONTENDS).filter((repo) => {
+        try { activeRepositoryPath(repo, catalogFile); return true } catch { return false }
+      })
+      if (!available.length) throw new Error('Cadastre e ative um frontend em Repositórios para subir o ambiente local')
+      return { needsFrontend: available }
     }
     if (!FRONTENDS[frontendChoice]) throw new Error(`Frontend desconhecido: ${frontendChoice}`)
-    const dir = join(TAKEAT, frontendChoice)
-    if (!existsSync(dir)) throw new Error(`Repo canônico não encontrado: ${dir}`)
+    const dir = activeRepositoryPath(frontendChoice, catalogFile)
     const branch = git(dir, runner, 'rev-parse', '--abbrev-ref', 'HEAD')
     if (branch !== 'master' && branch !== 'main') {
       warnings.push(`${frontendChoice} canônico não está na master (branch atual: ${branch})`)
     }
-    frontRepos = [{ repo: frontendChoice, dir, source: 'master' }]
+    frontRepos = [{ repo: frontendChoice, dir, canonical: dir, source: 'master' }]
   }
 
   return {
     localBackend,
     localClube: clube,
     backend,
-    clube: clube ? { dir: byName.get(CLUBE)!.dir } : undefined,
+    clube: clube ? { dir: byName.get(CLUBE)!.dir, canonical: activeRepositoryPath(CLUBE, catalogFile) } : undefined,
     libs: libs.map((name) => byName.get(name)!),
     fronts: frontRepos.map((front) => ({
       ...front,
@@ -403,7 +410,7 @@ async function orchestrate(
         update()
         await step(
           run,
-          CANONICAL_AGD,
+          plan.backend.canonical,
           join(logDir, 'worktree.log'),
           'git',
           ['worktree', 'add', '--detach', plan.backend.dir, 'master'],
@@ -419,9 +426,9 @@ async function orchestrate(
         await step(run, lib.dir, join(logDir, `${lib.name}.log`), ...argv(runScriptCommand(lib.dir, 'build')), runner)
       }
       const envFile = join(plan.backend.dir, '.env')
-      if (!existsSync(envFile)) copyFileSync(join(CANONICAL_AGD, '.env'), envFile)
+      if (!existsSync(envFile)) copyFileSync(join(plan.backend.canonical, '.env'), envFile)
       state.phase = undefined
-      if (prepareDependencies(plan.backend.dir, CANONICAL_AGD)) {
+      if (prepareDependencies(plan.backend.dir, plan.backend.canonical)) {
         app.status = 'instalando'
         update()
         await step(run, plan.backend.dir, join(logDir, `${AGD}.log`), ...argv(installCommand(plan.backend.dir)), runner)
@@ -463,9 +470,9 @@ async function orchestrate(
         throw new Error(`Porta ${CLUBE_PORT} já está ocupada — outro api-clube rodando?`)
       }
       const envFile = join(plan.clube.dir, '.env')
-      if (!existsSync(envFile)) copyFileSync(join(CANONICAL_CLUBE, '.env'), envFile)
+      if (!existsSync(envFile)) copyFileSync(join(plan.clube.canonical, '.env'), envFile)
       state.phase = undefined
-      if (prepareDependencies(plan.clube.dir, CANONICAL_CLUBE)) {
+      if (prepareDependencies(plan.clube.dir, plan.clube.canonical)) {
         app.status = 'instalando'
         update()
         await step(run, plan.clube.dir, join(logDir, `${CLUBE}.log`), ...argv(installCommand(plan.clube.dir)), runner)
@@ -493,7 +500,7 @@ async function orchestrate(
       checkAborted(run)
       const app = state.apps.find((a) => a.repo === front.repo)!
       current = app
-      const canonicalFront = front.source === 'worktree' ? join(TAKEAT, front.repo) : front.dir
+      const canonicalFront = front.canonical
       if (prepareDependencies(front.dir, canonicalFront)) {
         app.status = 'instalando'
         update()
@@ -545,6 +552,7 @@ export function startDevEnv(
   cardPath: string,
   frontendChoice?: string,
   runner: ProcessRunner = nodeProcessRunner,
+  settingsFile?: string,
 ): { needsFrontend?: string[] } {
   const key = activeKey(cardPath)
   const current = readDevEnv(cardPath)?.status
@@ -552,7 +560,7 @@ export function startDevEnv(
   if (current === 'rodando') {
     throw new Error('O ambiente já está rodando — pare antes de subir de novo')
   }
-  const plan = planDevEnv(cardPath, frontendChoice, runner)
+  const plan = planDevEnv(cardPath, frontendChoice, runner, settingsFile)
   if ('needsFrontend' in plan) return plan
   const handle: Run = { aborted: false }
   active.set(key, handle)

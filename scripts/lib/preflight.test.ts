@@ -46,6 +46,16 @@ test('path inexistente em files é aviso, não erro', () => {
   ])
 })
 
+test('requisito ausente bloqueia, mas arquivo declarado para criação não', () => {
+  const issues = preflight(parseChecklist('## repo\n- [ ] T1 A {requires: src/base.ts; creates: src/new.ts}\n'), {
+    repoExists: () => true,
+    pathExists: () => false,
+  })
+  expect(issues).toEqual([
+    { level: 'error', where: 'T1', message: 'requires: src/base.ts — requisito obrigatório não existe na base preparada' },
+  ])
+})
+
 test('checklist só com seções descartadas não é executável', () => {
   expect(errors('## ~~descartados~~\n- [ ] T1 Nada {files: a.ts}\n')[0].message).toContain('Nenhum item executável')
 })

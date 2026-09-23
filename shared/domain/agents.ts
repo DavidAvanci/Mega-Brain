@@ -11,6 +11,27 @@ export interface AgentInfo {
   progress?: { done: number; total: number }
 }
 
+export type AgentProvider = 'claude' | 'codex'
+
+export interface AgentSession {
+  id: string
+  provider: AgentProvider
+  status: AgentStatus
+  cardId?: string
+  cwd: string
+  title: string
+  name?: string
+  startedAt: string
+  updatedAt: string
+  activity?: string
+  pid?: number
+}
+
+export interface AgentSessionsResponse {
+  sessions: AgentSession[]
+  scannedAt: string
+}
+
 export type DevEnvAppStatus = 'aguardando' | 'instalando' | 'subindo' | 'rodando' | 'erro' | 'parado'
 
 export interface DevEnvApp {

@@ -315,7 +315,10 @@ impl BackendSupervisor {
         self.verify_node_runtime(&distro)
             .map_err(|_| self.fail_before_spawn(StartupFailure::RuntimeUnavailable))?;
         let (backend_path, candidate_version) = self.materialize_runtime(&distro)
-            .map_err(|failure| self.fail_before_spawn(failure))?;
+            .map_err(|failure| {
+                eprintln!("Mega Brain backend startup stage: runtime install ({})", failure.code());
+                self.fail_before_spawn(failure)
+            })?;
         let workspace_dir = self.workspace_dir(&distro)
             .map_err(|_| self.fail_before_spawn(StartupFailure::InvalidWorkspace))?;
         // WSL only imports selected Windows environment variables. The session
@@ -466,7 +469,9 @@ impl BackendSupervisor {
         // established default while remaining an absolute WSL path.
         let home = self.wsl_home(distro)?;
         let path = wsl_environment_value(distro, "WORKSPACE_DIR")
-            .unwrap_or_else(|_| format!("{}/mega-brain-files/workspace", home.display()));
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| format!("{}/mega-brain-files/workspace", home.display()));
         validate_wsl_workspace_path(&path).ok_or(())
     }
 
@@ -580,8 +585,11 @@ fn install_runtime_in_wsl(distro: &str, root: &str, manifest: &RuntimeManifest, 
         .env("WSLENV", wslenv)
         .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null())
         .spawn().map_err(|_| ())?;
-    child.stdin.take().ok_or(())?.write_all(&runtime_install_script(artifact)).map_err(|_| ())?;
-    child.wait().map(|status| status.success()).map_err(|_| ())
+    // An already installed, valid version exits before consuming the heredoc.
+    // A broken pipe is harmless only when the installer itself succeeded.
+    let _ = child.stdin.take().ok_or(())?.write_all(&runtime_install_script(artifact));
+    let status = child.wait().map_err(|_| ())?;
+    Ok(status.success())
 }
 
 fn runtime_install_script(artifact: &[u8]) -> Vec<u8> {
@@ -792,7 +800,7 @@ mod tests {
             .env("MEGA_BRAIN_MODE", "desktop")
             .env("MEGA_BRAIN_SESSION_TOKEN", token)
             .env("MEGA_BRAIN_SESSION_ID", &session)
-            .env("MEGA_BRAIN_WORKSPACE_DIR", "/home/david/mega-brain")
+            .env("MEGA_BRAIN_WORKSPACE_DIR", "/home/user/mega-brain")
             .env("WSLENV", wslenv)
             .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         let line = BufReader::new(child.stdout.take().unwrap()).lines().next().unwrap().unwrap();

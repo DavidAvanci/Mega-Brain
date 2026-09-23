@@ -7,3 +7,7 @@ spikes/
 .playwright-cli
 mega-brain-files/
 *.tsbuildinfo
+
+# Local generated showcase media and editor backups
+brag-output*/
+*.orig

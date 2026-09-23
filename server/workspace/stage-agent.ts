@@ -77,6 +77,7 @@ export function runStageAgent(
   provider: LlmProvider = 'claude',
   codex?: string,
   logger?: StageLogger,
+  settingsFile?: string,
 ): void {
   const settings = settingsForStage(path, stage)
   const effectiveModel = model ?? settings.model
@@ -93,6 +94,7 @@ export function runStageAgent(
       CHECKLIST_MODEL: settings.model,
       CHECKLIST_EFFORT: settings.effort,
       MEGA_BRAIN_WORKTREES_DIR: worktreesDir ?? process.env.MEGA_BRAIN_WORKTREES_DIR,
+      MEGA_BRAIN_SETTINGS_FILE: settingsFile ?? process.env.MEGA_BRAIN_SETTINGS_FILE,
       MEGA_BRAIN_LLM_PROVIDER: provider,
       MEGA_BRAIN_STAGE_SCRIPT: stage.script ? stage.name : undefined,
       MEGA_BRAIN_CLAUDE_BIN: claudeBin(claude),

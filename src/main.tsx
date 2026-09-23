@@ -1,6 +1,7 @@
 import { Component, StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import { AppToaster } from './components/ui/app-toaster'
 import { bootstrapWebApiClient } from './shared/api/api-client'
 import { DesktopConnectionBoundary } from './DesktopConnectionBoundary'
 import { startDesktopConnection } from './desktopConnection'
@@ -66,6 +67,7 @@ function renderApp(desktop: boolean) {
         ) : (
           <App />
         )}
+        <AppToaster />
       </RootErrorBoundary>
     </StrictMode>,
   )

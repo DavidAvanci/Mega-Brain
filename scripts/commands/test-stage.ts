@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { readDevEnv, startDevEnv } from '../../server/modules/dev-environments/dev-env.ts'
+import { runsAsCommand } from '../lib/env.ts'
 import { resetUnfinished, type Item } from '../lib/checklist.ts'
 import { activity, finish } from '../lib/log.ts'
 import { formatDuration, runChecklist } from '../lib/scheduler.ts'
@@ -113,7 +113,7 @@ export async function runTestStage(): Promise<void> {
   process.exit(summary.ok ? 0 : 1)
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+if (runsAsCommand(import.meta.url)) {
   void runTestStage().catch((error) => {
     finish(false, error instanceof Error ? error.message : String(error))
     process.exit(1)

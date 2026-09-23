@@ -49,6 +49,37 @@ function escape(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+function safeMarkdownHtml(text: string): string {
+  const allowedTags = new Set(['<dl class="meta">', '</dl>', '<div>', '</div>', '<dt>', '</dt>', '<dd>', '</dd>', '</i>'])
+  const tags = /<\/?[a-z][^>]*>/gi
+  let result = ''
+  let cursor = 0
+  for (const match of text.matchAll(tags)) {
+    const index = match.index!
+    result += escape(text.slice(cursor, index))
+    const tag = match[0]
+    const taskTag = /^<i class="task (?:open|done|skipped|failed)">$/i.test(tag)
+    result += allowedTags.has(tag) || taskTag ? tag : escape(tag)
+    cursor = index + tag.length
+  }
+  return result + escape(text.slice(cursor))
+}
+
+function safeLink(href: string): string | undefined {
+  const value = href.trim()
+  if (
+    !value ||
+    [...value].some(
+      (character) => character.charCodeAt(0) <= 0x20 || character.charCodeAt(0) === 0x7f || character === '\\',
+    ) ||
+    value.startsWith('//')
+  )
+    return undefined
+  if (/^(?:https?:|mailto:)/i.test(value)) return value
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return undefined
+  return value
+}
+
 function extractMeta(lines: string[]): { meta: [string, string][]; rest: string[] } {
   const start = lines.findIndex((line) => line.trim() !== '')
   if (start < 0 || !lines[start].startsWith('# ')) return { meta: [], rest: lines }
@@ -96,7 +127,15 @@ export function render(text: string): Rendered {
         return `<h${depth} id="${id}">${this.parser.parseInline(tokens)}</h${depth}>\n`
       },
       link({ href, tokens }: Tokens.Link) {
-        return `<a href="${escape(href)}" target="_blank" rel="noreferrer">${this.parser.parseInline(tokens)}</a>`
+        const safe = safeLink(href)
+        const label = this.parser.parseInline(tokens)
+        return safe ? `<a href="${escape(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>` : label
+      },
+      html(token) {
+        return safeMarkdownHtml(token.text)
+      },
+      image({ text }: Tokens.Image) {
+        return `<span class="markdown-image-alt">${escape(text)}</span>`
       },
     },
   })

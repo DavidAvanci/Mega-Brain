@@ -3,10 +3,10 @@ import { useDraggable } from '@dnd-kit/core'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   CancelSquareIcon,
-  Delete02Icon,
   Folder01Icon,
   GitMergeIcon,
   GitPullRequestArrowIcon,
+  TriangleAlertIcon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -20,15 +20,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { deleteCard, openFolder, openPrs, resetAutomaticStage } from '../model/card-commands'
+import { openFolder, openPrs, resetAutomaticStage } from '../model/card-commands'
 import { isTauriDesktop } from '@/desktopBootstrap'
 import { DevEnvPanel } from '@/features/dev-environments/DevEnvPanel'
 import { Tip } from '@/Tip'
 import type { AgentInfo } from '../../../../shared/domain/agents'
-import { FLOW_LABELS, type Card, type PrState } from '../../../../shared/domain/cards'
+import type { Card, PrState } from '../../../../shared/domain/cards'
 import { relativeTime } from '@/relativeTime'
 import { attentionReason } from '@/boardFilters'
 import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
+import { FlowIndicator } from './FlowIndicator'
 export { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 
 export function StageResetButton({ agent, cardId }: { agent: AgentInfo; cardId: string }) {
@@ -230,27 +231,28 @@ export function CardBody({
   return (
     <>
       <div
-        className={cn(
-          'mb-1 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground',
-          interactive && 'pr-7',
-        )}
+        className="mb-1 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground"
       >
         <FolderName name={card.id} />
-        {attention && (
-          <Tip label={attention}>
-            <span className="rounded-sm bg-amber-500/10 px-1 py-px font-medium text-amber-700 uppercase dark:text-amber-400">
-              atenção
-            </span>
-          </Tip>
-        )}
-        <span className="ml-auto shrink-0 rounded-sm bg-muted px-1 py-px font-medium uppercase">
-          {FLOW_LABELS[card.flow]}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {attention && (
+            <Tip label={attention}>
+              <span
+                role="img"
+                aria-label={`Atenção: ${attention}`}
+                className="inline-flex size-4 shrink-0 items-center justify-center text-amber-700 dark:text-amber-400"
+              >
+                <HugeiconsIcon icon={TriangleAlertIcon} strokeWidth={2} className="size-3.5" aria-hidden="true" />
+              </span>
+            </Tip>
+          )}
+          <FlowIndicator flow={card.flow} />
         </span>
       </div>
       {interactive ? (
         <button
           type="button"
-          className="block w-full rounded-sm text-left font-sans leading-snug font-medium outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="block w-full rounded-sm text-left leading-snug font-medium outline-none hover:text-primary focus-visible:ring-2 focus-visible:ring-ring/50"
           onClick={(event) => {
             event.stopPropagation()
             onOpen?.()
@@ -259,7 +261,7 @@ export function CardBody({
           {card.title}
         </button>
       ) : (
-        <div className="font-sans leading-snug font-medium">{card.title}</div>
+        <div className="leading-snug font-medium">{card.title}</div>
       )}
       {agents.length > 0 && (
         <div className="mt-2 flex flex-col gap-1.5">
@@ -314,78 +316,30 @@ interface Props {
 export const CardView = memo(function CardView({ card, onOpen }: Props) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: card.id })
   const dragged = useRef(false)
-  const [confirming, setConfirming] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
   if (isDragging) dragged.current = true
 
-  const confirmDelete = async () => {
-    setDeleting(true)
-    setDeleteError(null)
-    try {
-      await deleteCard(card.id)
-    } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : String(e))
-      setDeleting(false)
-    }
-  }
-
   return (
-    <>
-      <div
-        ref={setNodeRef}
-        {...attributes}
-        {...listeners}
-        className={cn(
-          'kanban-card group relative touch-none cursor-grab rounded-md border border-transparent bg-card p-3 shadow-sm transition-[border-color,box-shadow] hover:border-primary/20 hover:shadow-md focus-within:border-primary/30 active:cursor-grabbing',
-          isDragging && 'opacity-40',
-        )}
-        onPointerDown={(event) => {
-          const interactiveTarget = (event.target as Element).closest(
-            'button, a, input, textarea, select, [role="button"]',
-          )
-          if (interactiveTarget && interactiveTarget !== event.currentTarget) return
-          dragged.current = false
-          listeners?.onPointerDown?.(event)
-        }}
-        onClick={() => {
-          if (!dragged.current) onOpen(card.id)
-        }}
-      >
-        <CardBody card={card} interactive onOpen={() => onOpen(card.id)} />
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Excluir card"
-          className="absolute top-1.5 right-1.5 text-muted-foreground opacity-70 hover:text-destructive focus-visible:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation()
-            setConfirming(true)
-          }}
-        >
-          <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
-        </Button>
-      </div>
-      <Dialog open={confirming} onOpenChange={(open) => !open && !deleting && setConfirming(false)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Excluir "{card.title}"?</DialogTitle>
-            <DialogDescription>
-              A pasta <code className="text-foreground">{card.folder}</code> e todos os arquivos dela e as worktrees
-              vinculadas serão apagados do disco. Essa ação não pode ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
-          {deleteError && <p className="text-xs text-destructive">{deleteError}</p>}
-          <DialogFooter>
-            <Button variant="ghost" disabled={deleting} onClick={() => setConfirming(false)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" disabled={deleting} onClick={confirmDelete}>
-              {deleting ? 'Excluindo…' : 'Excluir'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={cn(
+        'kanban-card group relative touch-none cursor-grab rounded-md border border-transparent bg-card p-3 shadow-sm transition-[border-color,box-shadow] hover:border-primary/20 hover:shadow-md focus-within:border-primary/30 active:cursor-grabbing',
+        isDragging && 'opacity-40',
+      )}
+      onPointerDown={(event) => {
+        const interactiveTarget = (event.target as Element).closest(
+          'button, a, input, textarea, select, [role="button"]',
+        )
+        if (interactiveTarget && interactiveTarget !== event.currentTarget) return
+        dragged.current = false
+        listeners?.onPointerDown?.(event)
+      }}
+      onClick={() => {
+        if (!dragged.current) onOpen(card.id)
+      }}
+    >
+      <CardBody card={card} interactive onOpen={() => onOpen(card.id)} />
+    </div>
   )
 })

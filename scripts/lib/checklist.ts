@@ -8,6 +8,13 @@ export interface Item {
   text: string
   repo: string
   files: string[]
+  /** Files that must exist before an agent may start this item. */
+  requires: string[]
+  /** Files this item is expected to create; unlike requires, these may be absent. */
+  creates: string[]
+  maxTurns?: number
+  timeoutMinutes?: number
+  maxAttempts?: number
   deps: string[]
   details: string[]
   state: ItemState
@@ -65,12 +72,21 @@ export function parseChecklist(md: string): Item[] {
         .split(',')
         .map((value) => value.trim())
         .filter((value) => value && value !== '-')
+    const positive = (key: string) => {
+      const value = Number(meta[key])
+      return Number.isInteger(value) && value > 0 ? value : undefined
+    }
     items.push({
       id: match[4] ?? `#${items.length + 1}`,
       explicitId: Boolean(match[4]),
       text: stripMeta(match[5]),
       repo: meta.app ?? repo,
       files: list('files'),
+      requires: list('requires'),
+      creates: list('creates'),
+      maxTurns: positive('turns'),
+      timeoutMinutes: positive('timeoutMin'),
+      maxAttempts: positive('attempts'),
       deps: list('deps'),
       details: [],
       state: STATES[match[2]] ?? 'pending',

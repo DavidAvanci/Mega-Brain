@@ -138,6 +138,15 @@ test('ensureItemWorktree isola o item numa worktree e branch próprios', () => {
   expect(currentBranch(main)).toBe('feature/x')
 })
 
+test('ensureItemWorktree retoma a worktree preservada sem apagar arquivo novo', () => {
+  const main = featureRepo()
+  const first = ensureItemWorktree(main, 'TAT-1', 'repo', 'T13')
+  writeFileSync(join(first, 'novo-sem-commit.txt'), 'preservado')
+  const resumed = ensureItemWorktree(main, 'TAT-1', 'repo', 'T13')
+  expect(resumed).toBe(first)
+  expect(readFileSync(join(resumed, 'novo-sem-commit.txt'), 'utf8')).toBe('preservado')
+})
+
 test('integrateItemBranch traz o commit do item para a branch da task', () => {
   const main = featureRepo()
   const cwd = ensureItemWorktree(main, 'TAT-1', 'repo', 'T13')

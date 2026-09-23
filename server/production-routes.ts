@@ -1,4 +1,7 @@
+import { basename, join } from 'node:path'
 import type { ApiHandler, SseHandler } from './contracts'
+import { agentsHttp } from './agents/http'
+import { createAgentSessionService } from './agents/service'
 import type { MegaBrainConfig } from './config'
 import { chatAbortHttp, chatHistoryHttp, chatSendHttp } from './chat/http'
 import { createChatService } from './chat/service'
@@ -12,6 +15,9 @@ import type { ProcessOwner, ProcessRunner } from './process'
 import { createProcessOwner, nodeProcessRunner } from './process'
 import { workspaceHttp } from './workspace/http'
 import { createWorkspaceService } from './workspace/service'
+import { RepositoryRegistry } from './repositories/registry'
+import { repositoryCatalogFile } from './repositories/catalog'
+import { repositoriesHttp } from './repositories/http'
 
 /** The one production composition root for both HTTP transports. */
 export type ProductionRouteHandler = ApiHandler | SseHandler
@@ -56,6 +62,21 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   const jira = createJiraService(config.jira)
   const usage = createClaudeUsageService(config.directories.claudeCredentials)
   const coffee = coffeeHttp(createCoffeeService(runner, config.executables.powershell, owner))
+  const repositories = repositoriesHttp(new RepositoryRegistry(repositoryCatalogFile(config.preferences.settingsFile), runner))
+  const windowsCodexHome = process.env.WSL_DISTRO_NAME
+    ? join('/mnt/c/Users', basename(config.directories.home), '.codex')
+    : undefined
+  const agents = agentsHttp(
+    createAgentSessionService({
+      home: config.directories.home,
+      claudeHome: config.directories.claudeHome,
+      claudeProjects: config.directories.claudeProjects,
+      codexHomes: [process.env.MEGA_BRAIN_CODEX_HOME, join(config.directories.home, '.codex'), windowsCodexHome].filter(
+        (value): value is string => Boolean(value),
+      ),
+      workspaceDir: config.workspaceDir,
+    }),
+  )
 
   for (const [method, path] of [
     ['GET', '/api/workspace'],
@@ -84,7 +105,17 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   add('GET', '/api/jira/statuses', jiraStatusesHttp(jira))
   add('POST', '/api/jira/transition', jiraTransitionHttp(jira))
   add('GET', '/api/claude/usage', claudeUsageHttp(usage))
+  add('GET', '/api/agents', agents)
+  add('POST', '/api/agents/stop', agents)
+  add('GET', '/api/coffee', coffee)
   add('POST', '/api/coffee', coffee)
   add('DELETE', '/api/coffee', coffee)
+  add('GET', '/api/repositories', repositories)
+  add('POST', '/api/repositories', repositories)
+  add('PATCH', '/api/repositories', repositories)
+  add('POST', '/api/repositories/preview', repositories)
+  add('POST', '/api/repositories/discover', repositories)
+  add('GET', '/api/repositories/status', repositories)
+  add('POST', '/api/repositories/switch-master', repositories)
   return routes
 }

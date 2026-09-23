@@ -26,6 +26,7 @@ export type DesktopBootstrapFailure =
   | 'runtime-unavailable'
   | 'invalid-workspace'
   | 'backend-incompatible'
+  | 'backend-failed'
 
 /**
  * Typed, secret-free failure that the next UI task can turn into a startup
@@ -54,6 +55,7 @@ function startupFailure(error: unknown): DesktopBootstrapFailure {
     'runtime-unavailable',
     'invalid-workspace',
     'backend-incompatible',
+    'backend-failed',
   ]
   return codes.find((code) => detail.includes(code)) ?? 'supervisor-failed'
 }
@@ -162,7 +164,7 @@ export async function setDesktopWslWorkspaceDir(
 }
 
 export async function pickDesktopWslDirectory(
-  kind: 'workspace' | 'worktrees',
+  kind: 'workspace' | 'worktrees' | 'repository' | 'repository-parent',
   target: DesktopWindow | undefined = currentWindow(),
 ): Promise<string | null> {
   if (!isTauriDesktop(target)) throw new DesktopBootstrapError('bridge-unavailable')
@@ -170,7 +172,7 @@ export async function pickDesktopWslDirectory(
   const selected = await open({
     directory: true,
     multiple: false,
-    title: kind === 'workspace' ? 'Escolher workspace dos cards' : 'Escolher raiz das worktrees',
+    title: kind === 'workspace' ? 'Escolher workspace dos cards' : kind === 'worktrees' ? 'Escolher raiz das worktrees' : kind === 'repository-parent' ? 'Escolher pasta com repositórios Git' : 'Escolher repositório Git',
   })
   if (selected === null) return null
   const normalized = await target.__TAURI__.core.invoke('normalize_wsl_directory', { path: selected })

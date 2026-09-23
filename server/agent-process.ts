@@ -1,28 +1,60 @@
 import { readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, isAbsolute, join, relative } from 'node:path'
 import type { AgentInfo } from '../shared/domain/agents'
 import { parseJsonRecord, readTail, record, summarizeAgentInput, toolUse } from './agent-log'
 
 const STREAM_TAIL_BYTES = 128 * 1024
 
-/** Finds Claude/Codex processes running from Linux-visible working directories. */
-export function agentCwds(): Set<string> {
-  const cwds = new Set<string>()
+export interface RunningAgentProcess {
+  pid: number
+  provider: 'claude' | 'codex'
+  cwd: string
+  startedAt?: string
+  /** Batch/print-mode agents are not interactive terminal sessions. */
+  interactive?: boolean
+}
+
+/** Finds the agent processes visible to the backend without invoking a shell. */
+export function agentProcesses(procRoot = '/proc'): RunningAgentProcess[] {
   let pids: string[]
   try {
-    pids = readdirSync('/proc').filter((entry) => /^\d+$/.test(entry))
+    pids = readdirSync(procRoot).filter((entry) => /^\d+$/.test(entry))
   } catch {
-    return cwds
+    return []
   }
-  for (const pid of pids) {
+  return pids.flatMap((pidValue) => {
     try {
-      const argv = readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0', 2)
-      if (!argv.some((arg) => ['claude', 'codex'].includes(basename(arg)))) continue
-      cwds.add(readlinkSync(`/proc/${pid}/cwd`))
-    } catch {}
-  }
-  return cwds
+      const argv = readFileSync(join(procRoot, pidValue, 'cmdline'), 'utf8')
+        .split('\0')
+        .filter(Boolean)
+      const commands = argv.slice(0, 3).map((arg) => basename(arg).toLowerCase())
+      const provider = commands.includes('claude') ? 'claude' : commands.includes('codex') ? 'codex' : undefined
+      if (!provider) return []
+      const processStat = statSync(join(procRoot, pidValue))
+      return [
+        {
+          pid: Number(pidValue),
+          provider,
+          cwd: readlinkSync(join(procRoot, pidValue, 'cwd')),
+          interactive:
+            provider === 'claude' ? !argv.includes('-p') && !argv.includes('--print') : !argv.includes('exec'),
+          startedAt: new Date(processStat.birthtimeMs || processStat.ctimeMs).toISOString(),
+        } satisfies RunningAgentProcess,
+      ]
+    } catch {
+      return []
+    }
+  })
+}
+
+/** Finds interactive Claude/Codex terminal sessions in Linux-visible working directories. */
+export function agentCwds(procRoot = '/proc'): Set<string> {
+  return new Set(
+    agentProcesses(procRoot)
+      .filter((process) => process.interactive !== false)
+      .map((process) => process.cwd),
+  )
 }
 
 export function externalAgentCwd(path: string, activeCwds: Set<string>): string | undefined {
@@ -44,7 +76,8 @@ export function externalAgentCwd(path: string, activeCwds: Set<string>): string 
   }
   for (const root of roots) {
     for (const cwd of activeCwds) {
-      if (cwd === root || cwd.startsWith(`${root}/`)) return cwd
+      const pathFromRoot = relative(root, cwd)
+      if (!pathFromRoot || (!pathFromRoot.startsWith('..') && !isAbsolute(pathFromRoot))) return cwd
     }
   }
 }

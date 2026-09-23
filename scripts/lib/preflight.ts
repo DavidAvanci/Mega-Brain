@@ -67,7 +67,7 @@ export function preflight(items: Item[], deps: PreflightDeps): PreflightIssue[] 
     issues.push({
       level: 'error',
       where: `## ${repo}`,
-      message: `Heading não resolve para um repo em ~/takeat — corrija o nome ou marque a seção como descartada (\`## ~~${repo}~~\`)`,
+      message: `Heading não resolve para um repositório ativo em Repositórios — corrija o nome ou marque a seção como descartada (\`## ~~${repo}~~\`)`,
     })
   }
 
@@ -76,12 +76,12 @@ export function preflight(items: Item[], deps: PreflightDeps): PreflightIssue[] 
 
   for (const item of items) {
     if (!item.repo || !deps.repoExists(item.repo)) continue
-    for (const pattern of item.files) {
+    for (const pattern of item.requires) {
       if (deps.pathExists(item.repo, pattern)) continue
       issues.push({
-        level: 'warn',
+        level: 'error',
         where: item.id,
-        message: `files: ${pattern} — nem o path nem o diretório pai existem`,
+        message: `requires: ${pattern} — requisito obrigatório não existe na base preparada`,
       })
     }
   }

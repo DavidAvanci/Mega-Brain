@@ -1,3 +1,5 @@
+import { EMBEDDED_STAGE } from '../../scripts/lib/env.ts'
+
 export type EmbeddedStageName = 'run-task-checklist' | 'run-test-checklist' | 'stage-task' | 'master-pr-task'
 
 export type EmbeddedStageLoader = (stage: EmbeddedStageName) => Promise<void>
@@ -15,5 +17,6 @@ export async function runEmbeddedStage(
   load: EmbeddedStageLoader = (name) => imports[name](),
 ): Promise<void> {
   if (!Object.hasOwn(imports, stage)) throw new Error(`Etapa interna desconhecida: ${stage}`)
+  process.env[EMBEDDED_STAGE] = '1'
   await load(stage as EmbeddedStageName)
 }

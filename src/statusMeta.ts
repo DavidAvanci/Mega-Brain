@@ -16,53 +16,63 @@ interface StatusMeta {
   icon: IconSvgElement
   accent: string
   iconColor: string
+  highlight: string
 }
 
 export const STATUS_META: Record<Status, StatusMeta> = {
   'a-fazer': {
     icon: InboxIcon,
-    accent: 'border-t-sky-500 dark:border-t-sky-400',
-    iconColor: 'text-sky-600 dark:text-sky-400',
+    accent: 'border-t-[var(--status-1)]',
+    iconColor: 'text-[var(--status-1)]',
+    highlight: 'bg-[var(--status-1)]',
   },
   planejando: {
     icon: BlueprintIcon,
-    accent: 'border-t-sky-500 dark:border-t-sky-400',
-    iconColor: 'text-sky-600 dark:text-sky-400',
+    accent: 'border-t-[var(--status-2)]',
+    iconColor: 'text-[var(--status-2)]',
+    highlight: 'bg-[var(--status-2)]',
   },
   'revisao-de-plano': {
     icon: EyeIcon,
-    accent: 'border-t-sky-500 dark:border-t-sky-400',
-    iconColor: 'text-sky-600 dark:text-sky-400',
+    accent: 'border-t-[var(--status-3)]',
+    iconColor: 'text-[var(--status-3)]',
+    highlight: 'bg-[var(--status-3)]',
   },
   desenvolvendo: {
     icon: CodeIcon,
-    accent: 'border-t-violet-500 dark:border-t-violet-400',
-    iconColor: 'text-violet-600 dark:text-violet-400',
+    accent: 'border-t-[var(--status-4)]',
+    iconColor: 'text-[var(--status-4)]',
+    highlight: 'bg-[var(--status-4)]',
   },
   'auto-testing': {
     icon: FlaskConicalIcon,
-    accent: 'border-t-violet-500 dark:border-t-violet-400',
-    iconColor: 'text-violet-600 dark:text-violet-400',
+    accent: 'border-t-[var(--status-5)]',
+    iconColor: 'text-[var(--status-5)]',
+    highlight: 'bg-[var(--status-5)]',
   },
   'code-review': {
     icon: GitPullRequestIcon,
-    accent: 'border-t-violet-500 dark:border-t-violet-400',
-    iconColor: 'text-violet-600 dark:text-violet-400',
+    accent: 'border-t-[var(--status-6)]',
+    iconColor: 'text-[var(--status-6)]',
+    highlight: 'bg-[var(--status-6)]',
   },
   staging: {
     icon: ServerIcon,
-    accent: 'border-t-cyan-500 dark:border-t-cyan-400',
-    iconColor: 'text-cyan-600 dark:text-cyan-400',
+    accent: 'border-t-[var(--status-7)]',
+    iconColor: 'text-[var(--status-7)]',
+    highlight: 'bg-[var(--status-7)]',
   },
   'aguardando-deploy': {
     icon: HourglassIcon,
-    accent: 'border-t-yellow-500 dark:border-t-yellow-400',
-    iconColor: 'text-yellow-600 dark:text-yellow-400',
+    accent: 'border-t-[var(--status-8)]',
+    iconColor: 'text-[var(--status-8)]',
+    highlight: 'bg-[var(--status-8)]',
   },
   producao: {
     icon: Rocket01Icon,
-    accent: 'border-t-emerald-500 dark:border-t-emerald-400',
-    iconColor: 'text-emerald-600 dark:text-emerald-400',
+    accent: 'border-t-[var(--status-9)]',
+    iconColor: 'text-[var(--status-9)]',
+    highlight: 'bg-[var(--status-9)]',
   },
 }
 

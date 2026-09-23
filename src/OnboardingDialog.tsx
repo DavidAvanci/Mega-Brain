@@ -53,6 +53,7 @@ export function OnboardingDialog({
         stages: providerChanged ? stagesForProvider(initial.stages, general.llmProvider) : initial.stages,
       })
       await refresh()
+      window.localStorage.setItem('mega-brain-onboarding-tour-v1', 'done')
       onComplete(saved)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -64,8 +65,8 @@ export function OnboardingDialog({
   return (
     <Dialog open onOpenChange={() => {}}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl" showCloseButton={false}>
-        <div className="flex gap-1" aria-label={`Etapa ${step + 1} de 2`}>
-          {[0, 1].map((item) => (
+        <div className="flex gap-1" aria-label={`Etapa ${step + 1} de 3`}>
+          {[0, 1, 2].map((item) => (
             <span key={item} className={`h-1 flex-1 rounded-full ${item <= step ? 'bg-primary' : 'bg-muted'}`} />
           ))}
         </div>
@@ -75,8 +76,7 @@ export function OnboardingDialog({
               <img src="/brain.svg" alt="" className="size-14" />
               <DialogTitle>Bem-vindo ao Mega Brain</DialogTitle>
               <DialogDescription className="max-w-md">
-                Vamos configurar onde seu trabalho será armazenado e quais ferramentas o app deve usar. Você poderá
-                alterar tudo depois.
+                Conheça as principais áreas do app e configure seu ambiente. Você poderá alterar as preferências depois.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-2 text-sm sm:grid-cols-3">
@@ -94,7 +94,36 @@ export function OnboardingDialog({
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={() => setStep(1)}>Configurar</Button>
+              <Button onClick={() => setStep(1)}>Conhecer o app</Button>
+            </DialogFooter>
+          </>
+        ) : step === 1 ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>O que você pode fazer no Mega Brain</DialogTitle>
+              <DialogDescription>Seu trabalho fica organizado em cards, repositórios e sessões de agentes.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[
+                ['Kanban', 'Organize cards por etapa, mova-os entre colunas e acompanhe o fluxo de trabalho.'],
+                ['Cards e Jira', 'Crie tarefas, veja detalhes e diff, acompanhe agentes e sincronize cards com Jira.'],
+                ['Agentes', 'Acompanhe sessões de agentes, veja o estado de execução e abra o card relacionado.'],
+                ['Repositórios', 'Consulte repositórios e seus diretórios de trabalho para navegar pelo código.'],
+                ['Deploy e progresso', 'Prepare PRs para deploy, acompanhe o consumo de IA e use o minimapa para navegar pelo quadro.'],
+                ['Comandos rápidos', 'Use Ctrl+K para buscar cards, criar um card ou abrir configurações e repositórios.'],
+                ['Configurações e integrações', 'Ajuste etapas e modelos de IA, editor, diretórios e integrações como Jira. O botão Café também fica no topo.'],
+              ].map(([title, description]) => (
+                <div key={title} className="rounded-lg border p-3">
+                  <strong className="block text-sm">{title}</strong>
+                  <span className="text-xs text-muted-foreground">{description}</span>
+                </div>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStep(0)}>
+                Voltar
+              </Button>
+              <Button onClick={() => setStep(2)}>Configurar ambiente</Button>
             </DialogFooter>
           </>
         ) : (
@@ -106,7 +135,7 @@ export function OnboardingDialog({
             <GeneralSettingsForm value={general} onChange={setGeneral} disabled={saving} initialEditors={editors} />
             {error && <p className="rounded-md bg-destructive/10 p-2 text-xs text-destructive">{error}</p>}
             <DialogFooter>
-              <Button variant="outline" disabled={saving} onClick={() => setStep(0)}>
+              <Button variant="outline" disabled={saving} onClick={() => setStep(1)}>
                 Voltar
               </Button>
               <Button

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from 'react'
-import { STATUS_GROUPS } from '@/statusMeta'
+import { STATUS_GROUPS, STATUS_META } from '@/statusMeta'
 import type { Card, Status } from '../../../shared/domain/cards'
 import { minimapViewport, type ScrollMetrics } from '@/boardMinimapGeometry'
 
@@ -9,8 +9,6 @@ interface BoardMinimapProps {
 }
 
 const EMPTY_METRICS: ScrollMetrics = { clientWidth: 0, scrollLeft: 0, scrollWidth: 0 }
-const GROUP_ACCENTS = ['bg-sky-500/70', 'bg-violet-500/70', 'bg-emerald-500/70']
-
 function sameMetrics(left: ScrollMetrics, right: ScrollMetrics) {
   return (
     left.clientWidth === right.clientWidth &&
@@ -135,13 +133,13 @@ export function BoardMinimap({ boardRef, cardsByStatus }: BoardMinimapProps) {
           aria-hidden="true"
           className={`flex h-full gap-1 transition-opacity duration-150 ${dragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus:opacity-100'}`}
         >
-          {STATUS_GROUPS.map(({ label, statuses }, groupIndex) => (
+          {STATUS_GROUPS.map(({ label, statuses }) => (
             <div key={label} className="flex min-w-0 gap-0.5" style={{ flex: statuses.length }}>
               {statuses.map((status) => {
                 const cardCount = cardsByStatus.get(status)?.length ?? 0
                 return (
                   <div key={status} className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-sm bg-background/80 p-0.5">
-                    <span className={`h-1 shrink-0 rounded-[2px] ${GROUP_ACCENTS[groupIndex]}`} />
+                    <span className={`h-1 shrink-0 rounded-[2px] opacity-80 ${STATUS_META[status].highlight}`} />
                     {Array.from({ length: Math.min(cardCount, 4) }, (_, index) => (
                       <span key={index} className="h-1.5 rounded-[2px] border bg-muted" />
                     ))}

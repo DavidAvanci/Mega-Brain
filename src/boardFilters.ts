@@ -1,23 +1,17 @@
 import type { BoardStateFilter } from './boardPreferences'
 import type { Card } from '../shared/domain/cards'
 
-const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
-
-export function attentionReason(card: Card, now = Date.now()): string | null {
+export function attentionReason(card: Card): string | null {
   if (card.agents?.some((agent) => agent.status === 'erro')) return 'Agente com erro'
   if (card.devEnv?.status === 'erro') return 'Ambiente de desenvolvimento com erro'
   if (card.agents?.some((agent) => agent.status === 'aguardando')) return 'Agente aguardando uma ação'
   if (card.status === 'code-review' && Object.values(card.prStates ?? {}).some((state) => state === 'open'))
     return 'PR aguardando revisão'
-  if (card.agents?.some((agent) => agent.status === 'rodando')) return null
-  const lastChange = new Date(card.updatedAt ?? card.createdAt).getTime()
-  const olderThanTwoDays = Number.isFinite(lastChange) && now - lastChange > TWO_DAYS_MS
-  const activeAndOld = olderThanTwoDays && !['a-fazer', 'producao'].includes(card.status)
-  return activeAndOld ? 'Card ativo sem atualização há mais de dois dias' : null
+  return null
 }
 
-export function needsAttention(card: Card, now = Date.now()): boolean {
-  return attentionReason(card, now) !== null
+export function needsAttention(card: Card): boolean {
+  return attentionReason(card) !== null
 }
 
 export function matchesQuery(card: Card, query: string): boolean {

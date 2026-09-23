@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { countCommits, featureBranch, stagingBranchOf } from './git'
+import { countCommits, currentBranch, featureBranch, restoreBranch, stagingBranchOf } from './git'
 
 function repoWith(branches: string[]): string {
   const cwd = mkdtempSync(join(tmpdir(), 'git-'))
@@ -60,4 +60,32 @@ test('countCommits separates a master-based branch from a staging-based one', ()
   expect(countCommits(cwd, 'master..feat/x', '--not', 'staging')).toBe(1)
   expect(countCommits(cwd, 'master..feat/x-staging')).toBe(2)
   expect(countCommits(cwd, 'master..feat/x-staging', '--not', 'staging')).toBe(1)
+})
+
+test('restoreBranch undoes an interrupted cherry-pick and returns to the feature branch', () => {
+  const cwd = repoWith([])
+  const run = (...args: string[]) => execFileSync('git', args, { cwd, stdio: 'ignore' })
+  const commit = (message: string) => {
+    run('add', '-A')
+    run('commit', '-qm', message)
+  }
+
+  run('checkout', '-q', '-b', 'staging')
+  run('rm', '-q', 'a')
+  commit('remove a')
+  run('checkout', '-q', '-b', 'feat/x', 'master')
+  writeFileSync(join(cwd, 'a'), 'editado')
+  commit('edita a')
+  run('checkout', '-q', '-b', 'feat/x-staging', 'staging')
+  expect(() => run('cherry-pick', 'feat/x')).toThrow()
+
+  expect(restoreBranch(cwd, 'feat/x')).toBe(true)
+  expect(currentBranch(cwd)).toBe('feat/x')
+  expect(readFileSync(join(cwd, 'a'), 'utf8')).toBe('editado')
+})
+
+test('restoreBranch reports failure when it cannot reach the branch', () => {
+  const cwd = repoWith([])
+  expect(restoreBranch(cwd, 'feat/inexistente')).toBe(false)
+  expect(currentBranch(cwd)).toBe('master')
 })

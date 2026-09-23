@@ -25,7 +25,7 @@ do executável Tauri/WebView no Windows; essa medida de produto pertence à Fase
 Para repetir no WSL:
 
 ```bash
-cd /home/david/mega-brain/spikes/tauri-loopback-auth
+cd /home/user/mega-brain/spikes/tauri-loopback-auth
 node startup-benchmark.mjs
 ```
 

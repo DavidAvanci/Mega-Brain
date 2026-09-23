@@ -93,6 +93,21 @@ export function hasRef(cwd: string, ref: string): boolean {
   }
 }
 
+/** Devolve a worktree para `branch`, limpa, mesmo depois de um cherry-pick interrompido. */
+export function restoreBranch(cwd: string, branch: string): boolean {
+  for (const args of [
+    ['cherry-pick', '--abort'],
+    ['cherry-pick', '--quit'],
+    ['reset', '--hard'],
+    ['checkout', '--force', branch],
+  ]) {
+    try {
+      git(cwd, ...args)
+    } catch {}
+  }
+  return currentBranch(cwd) === branch && !git(cwd, 'status', '--porcelain')
+}
+
 export function countCommits(cwd: string, ...revs: string[]): number {
   return Number(git(cwd, 'rev-list', '--count', ...revs))
 }

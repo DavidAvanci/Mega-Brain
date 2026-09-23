@@ -2,7 +2,7 @@
 
 Data: 2026-09-01  
 Ambiente que executou o teste: sessão Linux já hospedada em WSL2, no
-repositório `/home/david/mega-brain`.
+repositório `/home/user/mega-brain`.
 
 ## Objetivo
 
