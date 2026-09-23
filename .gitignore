@@ -1,6 +1,8 @@
 node_modules
 dist
 .env.local
+.env.staging
+.env.prod
 .env.*.local
 src-tauri/target
 spikes/

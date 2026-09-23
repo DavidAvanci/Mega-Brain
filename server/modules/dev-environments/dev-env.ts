@@ -426,7 +426,9 @@ async function orchestrate(
         await step(run, lib.dir, join(logDir, `${lib.name}.log`), ...argv(runScriptCommand(lib.dir, 'build')), runner)
       }
       const envFile = join(plan.backend.dir, '.env')
-      if (!existsSync(envFile)) copyFileSync(join(plan.backend.canonical, '.env'), envFile)
+      const localEnvFile = join(plan.backend.canonical, '.env.local')
+      const sourceEnvFile = existsSync(localEnvFile) ? localEnvFile : join(plan.backend.canonical, '.env')
+      if (existsSync(sourceEnvFile)) copyFileSync(sourceEnvFile, envFile)
       state.phase = undefined
       if (prepareDependencies(plan.backend.dir, plan.backend.canonical)) {
         app.status = 'instalando'
@@ -470,7 +472,9 @@ async function orchestrate(
         throw new Error(`Porta ${CLUBE_PORT} já está ocupada — outro api-clube rodando?`)
       }
       const envFile = join(plan.clube.dir, '.env')
-      if (!existsSync(envFile)) copyFileSync(join(plan.clube.canonical, '.env'), envFile)
+      const localEnvFile = join(plan.clube.canonical, '.env.local')
+      const sourceEnvFile = existsSync(localEnvFile) ? localEnvFile : join(plan.clube.canonical, '.env')
+      if (existsSync(sourceEnvFile)) copyFileSync(sourceEnvFile, envFile)
       state.phase = undefined
       if (prepareDependencies(plan.clube.dir, plan.clube.canonical)) {
         app.status = 'instalando'

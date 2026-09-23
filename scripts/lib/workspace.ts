@@ -168,28 +168,14 @@ export function assertFeatureBranch(cwd: string, repo: string): void {
   }
 }
 
-function copyUntrackedEnv(real: string, worktree: string): void {
-  for (const entry of readdirSync(real)) {
-    if (!entry.startsWith('.env')) continue
-    if (existsSync(join(worktree, entry))) continue
-    try {
-      git(real, 'ls-files', '--error-unmatch', entry)
-      continue
-    } catch {}
-    try {
-      writeFileSync(join(worktree, entry), readFileSync(join(real, entry)))
-    } catch {}
-  }
-}
-
 // As dependências e a configuração local pertencem ao checkout original (master).
 // As worktrees de tarefas só as referenciam para não duplicar installs ou credenciais.
 export function linkProjectRuntimeFiles(real: string, worktree: string): void {
-  for (const [name, type] of [
-    ['node_modules', 'dir'],
-    ['.env', 'file'],
-  ] as const) {
-    const source = join(real, name)
+  const runtimeFiles = [
+    ['node_modules', join(real, 'node_modules'), 'dir'],
+    ['.env', join(real, existsSync(join(real, '.env.local')) ? '.env.local' : '.env'), 'file'],
+  ] as const
+  for (const [name, source, type] of runtimeFiles) {
     const target = join(worktree, name)
     if (!existsSync(source) || lstatSync(target, { throwIfNoEntry: false })) continue
     try {
@@ -485,8 +471,7 @@ export function ensureItemWorktree(mainPath: string, taskId: string, repo: strin
       symlinkSync(realpathSync(modules), join(path, 'node_modules'), 'dir')
     } catch {}
   }
-  copyUntrackedEnv(mainPath, path)
-  excludeInjectedPaths(path)
+  linkProjectRuntimeFiles(mainPath, path)
   return path
 }
 

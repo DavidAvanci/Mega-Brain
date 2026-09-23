@@ -113,6 +113,8 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   add('GET', '/api/repositories', repositories)
   add('POST', '/api/repositories', repositories)
   add('PATCH', '/api/repositories', repositories)
+  add('GET', '/api/repositories/env', repositories)
+  add('PUT', '/api/repositories/env', repositories)
   add('POST', '/api/repositories/preview', repositories)
   add('POST', '/api/repositories/discover', repositories)
   add('GET', '/api/repositories/status', repositories)

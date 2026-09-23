@@ -400,6 +400,7 @@ export function RepositoriesPage() {
             </nav>
             <EnvironmentForm
               key={`${editing.id}-${tab}`}
+              repositoryId={editing.id}
               environmentKey={tab}
               environment={editing.environments[tab]}
               onSave={(values) => update(editing.id, { environments: { [tab]: values } })}
@@ -412,8 +413,9 @@ export function RepositoriesPage() {
 }
 
 function EnvironmentForm({
-  environmentKey, environment, onSave,
+  repositoryId, environmentKey, environment, onSave,
 }: {
+  repositoryId: string
   environmentKey: RepositoryEnvironmentKey
   environment: RepositoryEnvironment
   onSave: (values: RepositoryEnvironment) => Promise<void>
@@ -428,11 +430,30 @@ function EnvironmentForm({
   const [awsAccount, setAwsAccount] = useState(environment.aws?.accountId ?? '')
   const [awsRegion, setAwsRegion] = useState(environment.aws?.region ?? '')
   const [saving, setSaving] = useState(false)
+  const [variables, setVariables] = useState<{ key: string; value: string }[]>([])
+  const [variablesLoaded, setVariablesLoaded] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    void requestJson<Record<string, string>>(`/api/repositories/env?id=${encodeURIComponent(repositoryId)}&environment=${environmentKey}`, 'Falha ao carregar variáveis')
+      .then((values) => { if (active) { setVariables(Object.entries(values).map(([key, value]) => ({ key, value }))); setVariablesLoaded(true) } })
+      .catch((error: unknown) => toast.error(error instanceof Error ? error.message : String(error)))
+    return () => { active = false }
+  }, [repositoryId, environmentKey])
 
   const save = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setSaving(true)
     try {
+      if (!variablesLoaded) throw new Error('Aguarde o carregamento das variáveis')
+      const envValues: Record<string, string> = {}
+      for (const entry of variables) {
+        const key = entry.key.trim()
+        if (!key) continue
+        if (Object.hasOwn(envValues, key)) throw new Error(`Variável duplicada: ${key}`)
+        envValues[key] = entry.value
+      }
+      await requestJson<Record<string, string>>(`/api/repositories/env?id=${encodeURIComponent(repositoryId)}`, 'Falha ao salvar variáveis', { method: 'PUT', body: { environment: environmentKey, variables: envValues } })
       const values: RepositoryEnvironment = environmentKey === 'local'
         ? { ...environment, enabled, startScript: startScript || undefined, port: port ? Number(port) : undefined, url: url || undefined, envFile: envFile || undefined }
         : { ...environment, enabled, targetBranch: targetBranch || undefined, url: url || undefined, githubEnvironment: githubEnvironment || undefined, aws: { accountId: awsAccount || undefined, region: awsRegion || undefined, resources: environment.aws?.resources ?? [] } }
@@ -467,9 +488,19 @@ function EnvironmentForm({
           <Field label="Região AWS (opcional)" value={awsRegion} onChange={setAwsRegion} />
         </>
       )}
-      <p className="col-span-full text-xs text-muted-foreground">Valores secretos não são lidos nem mostrados nesta página.</p>
+      <section className="col-span-full grid gap-2 rounded-md border p-3">
+        <div><h3 className="text-sm font-medium">Variáveis de ambiente</h3><p className="text-xs text-muted-foreground">Salvas em {environmentKey === 'local' ? '.env.local' : environmentKey === 'staging' ? '.env.staging' : '.env.prod'} no checkout.</p></div>
+        {variables.map((entry, index) => (
+          <div key={index} className="grid grid-cols-[1fr_1.4fr_auto] gap-2">
+            <Input aria-label="Nome da variável" placeholder="API_URL" value={entry.key} onChange={(event) => setVariables((rows) => rows.map((row, i) => i === index ? { ...row, key: event.target.value } : row))} />
+            <Input aria-label="Valor da variável" value={entry.value} onChange={(event) => setVariables((rows) => rows.map((row, i) => i === index ? { ...row, value: event.target.value } : row))} />
+            <Button type="button" variant="ghost" onClick={() => setVariables((rows) => rows.filter((_, i) => i !== index))}>Remover</Button>
+          </div>
+        ))}
+        <Button type="button" variant="outline" className="justify-self-start" onClick={() => setVariables((rows) => [...rows, { key: '', value: '' }])}>Adicionar variável</Button>
+      </section>
       <div className="col-span-full flex justify-end">
-        <Button type="submit" disabled={saving}>{saving ? 'Salvando…' : `Salvar ${labels[environmentKey]}`}</Button>
+        <Button type="submit" disabled={saving || !variablesLoaded}>{saving ? 'Salvando…' : `Salvar ${labels[environmentKey]}`}</Button>
       </div>
     </form>
   )
