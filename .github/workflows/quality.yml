@@ -1,0 +1,41 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  node:
+    name: Node quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run deadcode:report
+      - run: npm test
+      - run: npm run coverage
+      - run: npm run build
+
+  rust:
+    name: Rust checks
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.77
+          targets: x86_64-pc-windows-msvc
+      - run: cargo test --manifest-path src-tauri/Cargo.toml

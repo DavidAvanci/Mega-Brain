@@ -1,0 +1,15 @@
+node_modules
+dist
+.env.local
+.env.staging
+.env.prod
+.env.*.local
+src-tauri/target
+spikes/
+.playwright-cli
+mega-brain-files/
+*.tsbuildinfo
+
+# Local generated showcase media and editor backups
+brag-output*/
+*.orig

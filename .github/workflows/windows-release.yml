@@ -1,0 +1,118 @@
+name: Windows release artifact
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  nsis:
+    name: Build and verify NSIS installer
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.77
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Build frontend production assets
+        run: npm run build
+
+      - name: Build and validate embedded WSL runtime
+        shell: pwsh
+        run: |
+          npm run server:build
+          node scripts/commands/validate-wsl-runtime.mjs
+
+      - name: Test backend contracts
+        run: npm run server:test
+
+      - name: Test Rust runtime contract on Windows
+        run: cargo test --manifest-path src-tauri/Cargo.toml runtime_contract
+
+      - name: Check release metadata consistency
+        shell: pwsh
+        run: |
+          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tauriVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $cargoVersion = Select-String -Path src-tauri/Cargo.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1
+          if ($packageVersion -ne $tauriVersion -or $cargoVersion.Matches.Groups[1].Value -ne $tauriVersion) {
+            throw "package.json, tauri.conf.json and Cargo.toml must use the same release version."
+          }
+
+      - name: Build NSIS installer on native Windows
+        shell: pwsh
+        run: |
+          # Vite empties dist during Tauri's beforeBuildCommand. Keep the WSL
+          # inputs present when rustc resolves include_bytes!/include_str!.
+          $env:TAURI_CONFIG = '{"build":{"beforeBuildCommand":"npm run build && npm run server:build"}}'
+          npm run tauri:build -- --bundles nsis --target x86_64-pc-windows-msvc
+
+      - name: Verify embedded WSL runtime after Tauri build
+        run: node scripts/commands/validate-wsl-runtime.mjs
+
+      - name: Create immutable artifact manifest
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if ($null -eq $installer) { throw "NSIS installer was not produced." }
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $releaseDir = "release/Mega-Brain-$version-windows-x64"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+          Copy-Item $installer.FullName "$releaseDir/Mega-Brain-$version-Setup.exe"
+          $hash = Get-FileHash "$releaseDir/Mega-Brain-$version-Setup.exe" -Algorithm SHA256
+          "$($hash.Hash.ToLower())  Mega-Brain-$version-Setup.exe" | Set-Content -NoNewline "$releaseDir/SHA256SUMS.txt"
+          @{
+            product = "Mega Brain"
+            version = $version
+            file = "Mega-Brain-$version-Setup.exe"
+            sha256 = $hash.Hash.ToLower()
+            sourceRevision = $env:GITHUB_SHA
+          } | ConvertTo-Json | Set-Content "$releaseDir/manifest.json"
+
+          # Validate the exact files to be uploaded, after all copies/writes.
+          $manifest = Get-Content "$releaseDir/manifest.json" -Raw | ConvertFrom-Json
+          $publishedHash = (Get-FileHash "$releaseDir/$($manifest.file)" -Algorithm SHA256).Hash.ToLower()
+          if ($manifest.sha256 -ne $publishedHash -or $manifest.sourceRevision -ne $env:GITHUB_SHA) {
+            throw "Release manifest does not describe the immutable uploaded installer."
+          }
+          if ((Get-Content "$releaseDir/SHA256SUMS.txt" -Raw).Trim() -ne "$publishedHash  $($manifest.file)") {
+            throw "SHA256SUMS.txt does not describe the immutable uploaded installer."
+          }
+
+      - name: Upload installer and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: mega-brain-windows-x64-${{ github.sha }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish immutable GitHub release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Do not update an existing release: a tag can publish this exact
+          # manifest/artifact set once, and retries must be investigated.
+          gh release view $env:GITHUB_REF_NAME 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "Release $env:GITHUB_REF_NAME already exists; refusing to replace immutable assets." }
+          $assets = @(Get-ChildItem release -File -Recurse | ForEach-Object FullName)
+          if ($assets.Count -ne 3) { throw "Expected installer, SHA256SUMS.txt and manifest.json for release publication." }
+          gh release create $env:GITHUB_REF_NAME $assets --title $env:GITHUB_REF_NAME --generate-notes
