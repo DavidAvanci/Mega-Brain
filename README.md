@@ -4,6 +4,10 @@ O Mega Brain é um gerenciador de projetos com IA. Em termos simples, é uma int
 
 > **Aviso:** este projeto é 100% *vibe coded*. Pode haver *AI slop*: código, textos ou comportamentos gerados por IA que ainda precisam de revisão. Confira as alterações e os comandos antes de usá-los em projetos importantes.
 
+![Quadro atual do Mega Brain com cards fictícios](./board.png)
+
+*Exemplo do quadro com tarefas, progresso e consumo do Claude fictícios.*
+
 ## Como funciona
 
 Crie um card com título, descrição e nível de fluxo. Você pode associá-lo a repositórios locais e movê-lo entre as colunas do quadro. Ao entrar em uma coluna com automação, o backend inicia a etapa correspondente; o andamento e eventuais erros aparecem no card. O aplicativo também permite abrir o projeto no editor escolhido, conversar com o agente, inspecionar o diff e iniciar ambientes locais de desenvolvimento.
