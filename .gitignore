@@ -13,3 +13,4 @@ mega-brain-files/
 # Local generated showcase media and editor backups
 brag-output*/
 *.orig
+.tmp-readme-shot/

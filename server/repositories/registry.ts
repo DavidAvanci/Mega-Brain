@@ -9,6 +9,7 @@ import type {
   RepositoryStatus,
 } from '../../shared/domain/repositories'
 import type { ProcessRunner } from '../process'
+import { parseEnvironmentVariables } from './environment-files'
 
 const environmentKeys: RepositoryEnvironmentKey[] = ['local', 'staging', 'prod']
 const emptyEnvironment = (): RepositoryEnvironment => ({ enabled: false })
@@ -37,7 +38,7 @@ export class RepositoryRegistry {
         throw exampleError
       })
     })
-    return parseEnv(content)
+    return parseEnvironmentVariables(content)
   }
 
   async writeEnvironmentVariables(id: unknown, environment: unknown, input: unknown): Promise<Record<string, string>> {
@@ -333,18 +334,5 @@ function envFilename(value: unknown): string {
   if (value === 'staging') return '.env.staging'
   if (value === 'prod') return '.env.prod'
   throw new Error('Ambiente inválido')
-}
-function parseEnv(content: string): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const line of content.split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
-    if (!match) continue
-    let value = match[2]
-    if (value.startsWith('"') && value.endsWith('"')) {
-      try { value = JSON.parse(value) as string } catch { value = value.slice(1, -1) }
-    } else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1)
-    result[match[1]] = value
-  }
-  return result
 }
 function quoteEnv(value: string): string { return /[\s#\"'\\]/.test(value) ? JSON.stringify(value) : value }
