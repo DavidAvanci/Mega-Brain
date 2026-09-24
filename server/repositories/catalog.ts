@@ -28,6 +28,30 @@ export function activeRepositories(file = repositoryCatalogFile()): Repository[]
   return parsed.repositories.filter((repo) => repo?.active === true)
 }
 
+export function activeRepositoryCompanionGroup(alias: string, file = repositoryCatalogFile()): Repository[] {
+  const repositories = activeRepositories(file)
+  const root = repositories.find((repo) => repo.alias.toLowerCase() === alias.toLowerCase())
+  if (!root) return []
+
+  const byId = new Map(repositories.map((repo) => [repo.id, repo]))
+  const included = new Set([root.id])
+  const pending = [root.id]
+  while (pending.length) {
+    const currentId = pending.pop()!
+    const current = byId.get(currentId)!
+    for (const candidate of repositories) {
+      const connected =
+        current.environments.local.companionRepositoryIds?.includes(candidate.id) ||
+        candidate.environments.local.companionRepositoryIds?.includes(currentId)
+      if (connected && !included.has(candidate.id)) {
+        included.add(candidate.id)
+        pending.push(candidate.id)
+      }
+    }
+  }
+  return repositories.filter((repo) => included.has(repo.id))
+}
+
 export function activeRepositoryPath(alias: string, file = repositoryCatalogFile()): string {
   if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(alias)) throw new Error(`Alias de repositório inválido: ${alias}`)
   const repository = activeRepositories(file).find((repo) => repo.alias?.toLowerCase() === alias.toLowerCase())

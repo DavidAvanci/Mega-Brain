@@ -2,9 +2,11 @@
 
 O Mega Brain é um gerenciador de projetos com IA. Em termos simples, é uma interface para organizar tarefas e trabalhar de forma mais automatizada com seus repositórios locais. Cada tarefa vira um card em um quadro: você acompanha o planejamento, a implementação, a revisão e a entrega, enquanto o aplicativo reúne conversas com a IA, arquivos gerados, diffs, worktrees e links de pull requests.
 
-![Quadro do Mega Brain](./board.png)
-
 > **Aviso:** este projeto é 100% *vibe coded*. Pode haver *AI slop*: código, textos ou comportamentos gerados por IA que ainda precisam de revisão. Confira as alterações e os comandos antes de usá-los em projetos importantes.
+
+![Quadro atual do Mega Brain com cards fictícios](./board.png)
+
+*Exemplo do quadro com tarefas, progresso e consumo do Claude fictícios.*
 
 ## Como funciona
 

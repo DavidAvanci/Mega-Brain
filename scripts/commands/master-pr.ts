@@ -10,7 +10,7 @@ import {
   hasRef,
 } from '../lib/git.ts'
 import { runsAsCommand } from '../lib/env.ts'
-import { jiraEnv, prsCommentAdf, textCommentAdf, transitionTo, upsertComment } from '../lib/jira.ts'
+import { jiraEnv, jiraIssueUrl, jiraSiteForRepositories, prsCommentAdf, textCommentAdf, transitionTo, upsertComment } from '../lib/jira.ts'
 import { activity, finish } from '../lib/log.ts'
 import { planSection, readPlan } from '../lib/plan.ts'
 import { mergeCardPrs, repoLinks, taskInfo } from '../lib/workspace.ts'
@@ -126,9 +126,10 @@ export async function runMasterPrStage(): Promise<void> {
   }
 
   const done = planSection(plan.raw, /o que foi feito/i)
+  const jiraSite = jiraSiteForRepositories(repos.map((repo) => repo.name))
   const body = [
     done ? `## O que foi feito\n${done}` : 'Alterações da task (ver commits).',
-    task.jiraKey ? `Jira: https://takeat.atlassian.net/browse/${task.jiraKey}` : '',
+    task.jiraKey && jiraIssueUrl(task.jiraKey, jiraSite) ? `Jira: ${jiraIssueUrl(task.jiraKey, jiraSite)}` : '',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -147,7 +148,7 @@ export async function runMasterPrStage(): Promise<void> {
   const slot = nextDeploySlot()
   if (Object.keys(prs).length) {
     mergeCardPrs(wsPath, 'master', prs)
-    const env = jiraEnv()
+    const env = jiraEnv(jiraSite)
     if (task.jiraKey && env) {
       activity('Jira', `Comentando PRs em ${task.jiraKey}`)
       const sections: [string, string][] = done ? [['O que foi feito', done]] : []

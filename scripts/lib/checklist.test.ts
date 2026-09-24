@@ -16,25 +16,25 @@ import {
 
 const MD = `# TASK-CHECKLIST
 
-## api-garcom-digital
-- [ ] T1 Criar migration {files: src/database/migrations/*; deps: -}
-- [ ] T2 Expor campo no serializer {files: src/app/serializers/Order.js; deps: T1}
+## sample-api
+- [ ] T1 Adicionar persistência {files: src/db/migrations/*; deps: -}
+- [ ] T2 Expor atributo no mapeador {files: src/api/serializers/item.ts; deps: T1}
 
-## operation-takeat
-- [x] T3 Congelar restante {files: src/pages/Split/*}
-- [ ] T4 Exibir parcelas {files: src/pages/Split/Summary.tsx; deps: T3}
-- [ ] T5 Ajustar rotas {files: src/routes.tsx, src/pages/Split/*}
+## sample-web
+- [x] T3 Ajustar comportamento existente {files: src/components/*}
+- [ ] T4 Exibir resultados {files: src/components/summary.tsx; deps: T3}
+- [ ] T5 Ajustar rotas {files: src/routes/index.ts, src/components/*}
 `
 
 test('parseChecklist', () => {
   const items = parseChecklist(MD)
   expect(items).toHaveLength(5)
-  expect(items[0]).toMatchObject({ id: 'T1', repo: 'api-garcom-digital', deps: [], state: 'pending' })
-  expect(items[0].files).toEqual(['src/database/migrations/*'])
+  expect(items[0]).toMatchObject({ id: 'T1', repo: 'sample-api', deps: [], state: 'pending' })
+  expect(items[0].files).toEqual(['src/db/migrations/*'])
   expect(items[1].deps).toEqual(['T1'])
-  expect(items[2]).toMatchObject({ id: 'T3', repo: 'operation-takeat', state: 'done' })
-  expect(items[4].files).toEqual(['src/routes.tsx', 'src/pages/Split/*'])
-  expect(items[0].text).toBe('Criar migration')
+  expect(items[2]).toMatchObject({ id: 'T3', repo: 'sample-web', state: 'done' })
+  expect(items[4].files).toEqual(['src/routes/index.ts', 'src/components/*'])
+  expect(items[0].text).toBe('Adicionar persistência')
 })
 
 test('parseChecklist without ids or metadata', () => {
@@ -44,8 +44,8 @@ test('parseChecklist without ids or metadata', () => {
 })
 
 test('app metadata overrides heading repo', () => {
-  const items = parseChecklist('- [ ] S1 Testar fluxo {app: operation-takeat}')
-  expect(items[0].repo).toBe('operation-takeat')
+  const items = parseChecklist('- [ ] S1 Testar fluxo {app: sample-web}')
+  expect(items[0].repo).toBe('sample-web')
 })
 
 test('separa pré-condições de arquivos que o item vai criar e lê limites por item', () => {
@@ -67,11 +67,11 @@ test('stripMeta', () => {
 })
 
 test('matchesPattern', () => {
-  expect(matchesPattern('src/pages/Split/Summary.tsx', 'src/pages/Split/*')).toBe(true)
-  expect(matchesPattern('src/pages/Split/deep/file.ts', 'src/pages/Split/*')).toBe(true)
-  expect(matchesPattern('src/routes.tsx', 'src/routes.tsx')).toBe(true)
-  expect(matchesPattern('src/other.tsx', 'src/pages/Split/*')).toBe(false)
-  expect(matchesPattern('src/database/migrations/001.js', 'src/database/migrations')).toBe(true)
+  expect(matchesPattern('src/components/summary.tsx', 'src/components/*')).toBe(true)
+  expect(matchesPattern('src/components/deep/file.ts', 'src/components/*')).toBe(true)
+  expect(matchesPattern('src/routes/index.ts', 'src/routes/index.ts')).toBe(true)
+  expect(matchesPattern('src/other.tsx', 'src/components/*')).toBe(false)
+  expect(matchesPattern('src/db/migrations/001.js', 'src/db/migrations')).toBe(true)
 })
 
 test('overlaps', () => {
@@ -79,7 +79,7 @@ test('overlaps', () => {
   expect(overlaps(t1, t2)).toBe(false)
   expect(overlaps(t4, t5)).toBe(true)
   expect(overlaps(t1, t4)).toBe(false)
-  const noMeta = parseChecklist('## api-garcom-digital\n- [ ] T9 Sem files')[0]
+  const noMeta = parseChecklist('## sample-api\n- [ ] T9 Sem files')[0]
   expect(overlaps(t1, noMeta)).toBe(true)
 })
 
@@ -108,8 +108,8 @@ test('markItem and resetUnfinished', () => {
   markItem(file, items[0], 'done')
   markItem(file, items[1], 'failed', 'Observado: erro de lint\nEsperado: build limpo')
   let updated = readFileSync(file, 'utf8')
-  expect(updated).toContain('- [x] T1 Criar migration')
-  expect(updated).toContain('- [!] T2 Expor campo no serializer')
+  expect(updated).toContain('- [x] T1 Adicionar persistência')
+  expect(updated).toContain('- [!] T2 Expor atributo no mapeador')
   expect(updated).toContain('  > Observado: erro de lint')
   expect(parseChecklist(updated).find((item) => item.id === 'T2')?.state).toBe('failed')
 
@@ -135,32 +135,32 @@ test('resetUnfinished keeps scenario sub-bullets, drops only notes', () => {
   writeFileSync(
     file,
     [
-      '- [!] S1 Dividir conta {app: operation-takeat}',
+      '- [!] S1 Validar formulário {app: sample-web}',
       '  > Observado: erro / Esperado: sucesso',
-      '  - Dado: mesa aberta',
-      '  - Quando: abrir divisão',
-      '  - Então: parcelas visíveis',
+      '  - Dado: formulário preenchido',
+      '  - Quando: enviar formulário',
+      '  - Então: resultado visível',
       '- [ ] S2 Outro cenário',
     ].join('\n'),
   )
   resetUnfinished(file)
   const updated = readFileSync(file, 'utf8')
-  expect(updated).toContain('- [ ] S1 Dividir conta')
+  expect(updated).toContain('- [ ] S1 Validar formulário')
   expect(updated).not.toContain('Observado: erro')
-  expect(updated).toContain('  - Dado: mesa aberta')
-  expect(updated).toContain('  - Quando: abrir divisão')
-  expect(updated).toContain('  - Então: parcelas visíveis')
+  expect(updated).toContain('  - Dado: formulário preenchido')
+  expect(updated).toContain('  - Quando: enviar formulário')
+  expect(updated).toContain('  - Então: resultado visível')
 })
 
 test('heading com caminho vira nome do repo', () => {
-  const items = parseChecklist('## backend/api-garcom-digital\n- [ ] T1 Fazer algo {files: src/x.js}\n')
-  expect(items[0].repo).toBe('api-garcom-digital')
+  const items = parseChecklist('## backend/sample-api\n- [ ] T1 Fazer algo {files: src/x.js}\n')
+  expect(items[0].repo).toBe('sample-api')
 })
 
 test('itens e seções riscados não entram no run', () => {
   const items = parseChecklist(
     [
-      '## operation-takeat',
+      '## sample-web',
       '- [ ] T1 Vivo {files: a.ts}',
       '- [ ] ~~T2 Descartado~~ — não faz sentido {files: b.ts}',
       '  - detalhe do descartado',

@@ -1,9 +1,7 @@
 
 export interface FrontendConfig {
   apiVar?: string
-  prodUrl?: string
   clubeApiVar?: string
-  clubeProdUrl?: string
   script: string
   flavor: 'vite' | 'cra' | 'next'
   port: number
@@ -20,37 +18,31 @@ export const LOCAL_CLUBE_API = `http://localhost:${CLUBE_PORT}`
 export const FRONTENDS: Readonly<Record<string, FrontendConfig>> = {
   'operation-takeat': {
     apiVar: 'VITE_OPERATION_API_URL',
-    prodUrl: 'https://backend-pdv.takeat.app',
     script: 'dev',
     flavor: 'vite',
     port: 3000,
   },
   'garcom-restaurant-dashboard': {
     apiVar: 'REACT_APP_API_URL',
-    prodUrl: 'https://backend.takeat.app',
     script: 'start',
     flavor: 'cra',
     port: 3000,
   },
   'manager-area': {
     apiVar: 'VITE_API_KEY',
-    prodUrl: 'https://backend.takeat.app/',
     script: 'dev',
     flavor: 'vite',
     port: 5173,
   },
   'internal-dashboard': {
     apiVar: 'VITE_API_URL',
-    prodUrl: 'https://backend.takeat.app',
     clubeApiVar: 'VITE_API_CLUB_URL',
-    clubeProdUrl: 'https://backend.takeat.club',
     script: 'dev',
     flavor: 'vite',
     port: 5180,
   },
   'garcom-digital-client': {
     apiVar: 'VITE_API_URL',
-    prodUrl: 'https://backend.takeat.app',
     script: 'start',
     flavor: 'vite',
     port: 5173,

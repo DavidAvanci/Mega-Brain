@@ -14,6 +14,7 @@ import {
 import { connect } from 'node:net'
 import { dirname, join } from 'node:path'
 import { activeRepositoryPath, assertRegisteredWorktree, repositoryCatalogFile } from '../../repositories/catalog'
+import { readRepositoryEnvironmentVariables } from '../../repositories/environment-files'
 import { installCommand, lockfilesMatch, runScriptCommand, type Command } from '../../../scripts/lib/packageManager.ts'
 import type { DevEnvApp, DevEnvInfo } from '../../../shared/domain/agents'
 import { nodeProcessRunner, type ProcessChild, type ProcessRunner } from '../../process'
@@ -169,15 +170,22 @@ export function planDevEnv(
   }
 }
 
-function apiUrlFor(config: FrontendConfig, localBackend: boolean): string | undefined {
+function apiUrlFor(
+  config: FrontendConfig,
+  localBackend: boolean,
+  productionVariables: Record<string, string>,
+): string | undefined {
   if (!config.apiVar) return undefined
-  if (!localBackend) return config.prodUrl
-  return config.prodUrl?.endsWith('/') ? `${LOCAL_API}/` : LOCAL_API
+  return localBackend ? LOCAL_API : productionVariables[config.apiVar] || undefined
 }
 
-function clubeApiUrlFor(config: FrontendConfig, localClube: boolean): string | undefined {
+function clubeApiUrlFor(
+  config: FrontendConfig,
+  localClube: boolean,
+  productionVariables: Record<string, string>,
+): string | undefined {
   if (!config.clubeApiVar) return undefined
-  return localClube ? LOCAL_CLUBE_API : config.clubeProdUrl
+  return localClube ? LOCAL_CLUBE_API : productionVariables[config.clubeApiVar] || undefined
 }
 
 interface Run {
@@ -598,17 +606,21 @@ export function startDevEnv(
             } satisfies DevEnvApp,
           ]
         : []),
-      ...plan.fronts.map(
-        (front) =>
-          ({
-            repo: front.repo,
-            kind: 'frontend',
-            source: front.source,
-            apiUrl: apiUrlFor(front.config, plan.localBackend),
-            clubeApiUrl: clubeApiUrlFor(front.config, plan.localClube),
-            status: 'aguardando',
-          }) satisfies DevEnvApp,
-      ),
+      ...plan.fronts.map((front) => {
+        const productionVariables = readRepositoryEnvironmentVariables(
+          front.canonical,
+          'prod',
+          [front.config.apiVar, front.config.clubeApiVar].filter((key): key is string => Boolean(key)),
+        )
+        return {
+          repo: front.repo,
+          kind: 'frontend',
+          source: front.source,
+          apiUrl: apiUrlFor(front.config, plan.localBackend, productionVariables),
+          clubeApiUrl: clubeApiUrlFor(front.config, plan.localClube, productionVariables),
+          status: 'aguardando',
+        } satisfies DevEnvApp
+      }),
     ],
   }
   writeState(cardPath, state)
