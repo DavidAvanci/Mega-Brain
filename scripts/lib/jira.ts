@@ -1,4 +1,6 @@
 import { loadEnv } from './env.ts'
+import { activeRepositoryPath } from '../../server/repositories/catalog.ts'
+import { readRepositoryEnvironmentVariables } from '../../server/repositories/environment-files.ts'
 
 export const JIRA_KEY = /^(?!MB-)[A-Z][A-Z0-9]*-\d+$/i
 
@@ -8,10 +10,41 @@ export interface JiraEnv {
   token: string
 }
 
-export function jiraEnv(): JiraEnv | null {
+function normalizeJiraSite(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const trimmed = value.trim().replace(/^https?:\/\//i, '').replace(/\/$/, '')
+  const domain = trimmed.match(/^([a-z0-9-]+)\.atlassian\.net$/i)
+  const site = domain?.[1] ?? trimmed
+  return /^[a-z0-9][a-z0-9-]*$/i.test(site) ? site : undefined
+}
+
+export function jiraSiteForRepositories(aliases: string[]): string | undefined {
+  const sites = new Set<string>()
+  for (const alias of aliases) {
+    let repositoryPath: string
+    try {
+      repositoryPath = activeRepositoryPath(alias)
+    } catch {
+      continue
+    }
+    const site = normalizeJiraSite(
+      readRepositoryEnvironmentVariables(repositoryPath, 'local', ['JIRA_SITE']).JIRA_SITE,
+    )
+    if (site) sites.add(site.toLowerCase())
+  }
+  return sites.size === 1 ? [...sites][0] : undefined
+}
+
+export function jiraIssueUrl(key: string, site: string | undefined): string | undefined {
+  const normalizedSite = normalizeJiraSite(site)
+  return normalizedSite ? `https://${normalizedSite}.atlassian.net/browse/${encodeURIComponent(key)}` : undefined
+}
+
+export function jiraEnv(siteOverride: string | undefined): JiraEnv | null {
   const env = loadEnv()
-  if (!env.JIRA_SITE || !env.JIRA_EMAIL || !env.JIRA_API_TOKEN) return null
-  return { site: env.JIRA_SITE, email: env.JIRA_EMAIL, token: env.JIRA_API_TOKEN }
+  const site = normalizeJiraSite(siteOverride)
+  if (!site || !env.JIRA_EMAIL || !env.JIRA_API_TOKEN) return null
+  return { site, email: env.JIRA_EMAIL, token: env.JIRA_API_TOKEN }
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

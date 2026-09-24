@@ -1,13 +1,14 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { readDevEnv, startDevEnv } from '../../server/modules/dev-environments/dev-env.ts'
+import { activeRepositoryPath } from '../../server/repositories/catalog.ts'
+import { readRepositoryEnvironmentVariables } from '../../server/repositories/environment-files.ts'
 import { runsAsCommand } from '../lib/env.ts'
 import { resetUnfinished, type Item } from '../lib/checklist.ts'
 import { activity, finish } from '../lib/log.ts'
 import { formatDuration, runChecklist } from '../lib/scheduler.ts'
 import { runClaudeItem } from '../lib/executor.ts'
-import { credentialsForEnvironment, type TestCredentials } from '../lib/testCredentials.ts'
+import { credentialsFromEnvironment } from '../lib/testCredentials.ts'
 
 const wsPath = process.argv[2] ?? process.cwd()
 const file = join(wsPath, 'TEST-CHECKLIST.md')
@@ -17,7 +18,6 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 interface TestEnvironment {
   urls: Map<string, string>
-  localBackend: boolean
 }
 
 async function ensureEnv(): Promise<TestEnvironment> {
@@ -43,26 +43,23 @@ async function ensureEnv(): Promise<TestEnvironment> {
     const url = app.url ?? (app.port ? `http://localhost:${app.port}` : undefined)
     if (url) urls.set(app.repo, url)
   }
-  return {
-    urls,
-    localBackend: state.apps.some((app) => app.repo === 'api-garcom-digital' && app.kind === 'backend'),
-  }
+  return { urls }
 }
 
-const CREDENTIALS_FILE = join(homedir(), '.claude', 'takeat-test-credentials.json')
-
-function readCredentials(): TestCredentials | null {
-  if (!existsSync(CREDENTIALS_FILE)) return null
+function readCredentials(repositoryAlias: string) {
+  let repositoryPath: string
   try {
-    const parsed = JSON.parse(readFileSync(CREDENTIALS_FILE, 'utf8'))
-    if (!parsed?.email || !parsed?.password) return null
-    return { email: parsed.email, password: parsed.password }
+    repositoryPath = activeRepositoryPath(repositoryAlias)
   } catch {
     return null
   }
+  return credentialsFromEnvironment(readRepositoryEnvironmentVariables(repositoryPath, 'local', [
+    'TEST_LOGIN_EMAIL',
+    'TEST_LOGIN_PASSWORD',
+  ]))
 }
 
-function buildPrompt(item: Item, url: string | undefined, credentials: ReturnType<typeof readCredentials>): string {
+function buildPrompt(item: Item, url: string | undefined, hasCredentials: boolean): string {
   return [
     '/exec-test-item',
     '',
@@ -71,8 +68,8 @@ function buildPrompt(item: Item, url: string | undefined, credentials: ReturnTyp
     `App: ${item.repo}${url ? ` — ${url}` : ''}`,
     `Sessão playwright: use sempre playwright-cli -s=${item.id}`,
     `Screenshots: salve em ${screenshots}/${item.id}-<passo>.png`,
-    ...(credentials
-      ? [`Login: se a tela pedir autenticação, entre com ${credentials.email} / ${credentials.password}`]
+    ...(hasCredentials
+      ? ['Login: se a tela pedir autenticação, use TEST_LOGIN_EMAIL e TEST_LOGIN_PASSWORD disponíveis no ambiente do processo. Nunca mostre nem registre seus valores.']
       : []),
     'Ao abrir o app podem aparecer modais de aviso empilhados: feche todos (botão "Ok, entendi" ou o X) antes de começar o cenário.',
   ].join('\n')
@@ -86,21 +83,25 @@ export async function runTestStage(): Promise<void> {
   resetUnfinished(file)
   mkdirSync(screenshots, { recursive: true })
   const environment = await ensureEnv()
-  const credentials = credentialsForEnvironment(readCredentials(), environment.localBackend)
 
   const summary = await runChecklist({
     file,
     max: 3,
-    execute: (item) =>
-      runClaudeItem({
+    execute: (item) => {
+      const credentials = readCredentials(item.repo)
+      return runClaudeItem({
         cwd: wsPath,
-        prompt: buildPrompt(item, environment.urls.get(item.repo) ?? [...environment.urls.values()][0], credentials),
+        prompt: buildPrompt(item, environment.urls.get(item.repo) ?? [...environment.urls.values()][0], Boolean(credentials)),
         model: process.env.CHECKLIST_MODEL ?? 'sonnet',
         effort: process.env.CHECKLIST_EFFORT ?? 'low',
         tools: 'Bash,Read',
         maxTurns: 60,
         timeoutMs: 12 * 60_000,
-      }),
+        env: credentials
+          ? { TEST_LOGIN_EMAIL: credentials.email, TEST_LOGIN_PASSWORD: credentials.password }
+          : undefined,
+      })
+    },
   })
 
   finish(

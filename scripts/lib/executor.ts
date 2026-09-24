@@ -46,6 +46,7 @@ export interface ClaudeItemOptions {
   tools: string
   maxTurns: number
   timeoutMs: number
+  env?: Record<string, string>
 }
 
 type ResultStatus = ItemResult['status']
@@ -177,7 +178,11 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
             codexPrompt,
           ]
         : claudeArgs
-    const child = spawn(command, args, { cwd: options.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: { ...process.env, ...options.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
     let stdout = ''
     let stderr = ''
     let timedOut = false

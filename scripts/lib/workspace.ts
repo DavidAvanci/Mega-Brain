@@ -13,7 +13,7 @@ import {
 import { appendFileSync, mkdirSync, rmdirSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { WORKTREES } from './env.ts'
-import { activeRepositoryPath, assertRegisteredWorktree } from '../../server/repositories/catalog.ts'
+import { activeRepositoryCompanionGroup, activeRepositoryPath, assertRegisteredWorktree } from '../../server/repositories/catalog.ts'
 import { currentBranch, defaultBranch, git, hasRef } from './git.ts'
 import { JIRA_KEY } from './jira.ts'
 import { installCommand } from './packageManager.ts'
@@ -220,7 +220,7 @@ export function ensureWorktree(wsPath: string, repo: string, taskId: string, bra
     if (target && insideWorktrees(target) && isRegisteredWorktree(real, target)) {
       assertFeatureBranch(target, repo)
       linkProjectRuntimeFiles(real, target)
-      ensureBackendCompanions(taskId, repo)
+      ensureRepositoryCompanions(taskId, repo)
       return target
     }
     if (!lstatSync(link).isSymbolicLink()) {
@@ -263,7 +263,7 @@ export function ensureWorktree(wsPath: string, repo: string, taskId: string, bra
       )
     }
   }
-  ensureBackendCompanions(taskId, repo)
+  ensureRepositoryCompanions(taskId, repo)
   return worktree
 }
 
@@ -337,20 +337,17 @@ export function checkoutTaskBranch(worktree: string, branch: string): void {
   else git(worktree, 'checkout', '-b', branch)
 }
 
-export const BACKEND_STACK = ['api-garcom-digital', 'api-core', 'takeat-services']
-
-// O dev-register do api-garcom-digital resolve as libs pelos irmãos ../api-core e ../takeat-services
-export function ensureBackendCompanions(taskId: string, repo: string): void {
-  if (!BACKEND_STACK.includes(repo)) return
-  for (const companion of BACKEND_STACK) {
-    if (companion === repo) continue
-    const path = join(WORKTREES, taskId, 'repos', companion)
+export function ensureRepositoryCompanions(taskId: string, repo: string): void {
+  const group = activeRepositoryCompanionGroup(repo)
+  for (const companion of group) {
+    if (companion.alias.toLowerCase() === repo.toLowerCase()) continue
+    const path = join(WORKTREES, taskId, 'repos', companion.alias)
     if (existsSync(path) || isLink(path)) continue
     try {
-      addDetachedWorktree(realRepoPath(companion), path)
+      addDetachedWorktree(activeRepositoryPath(companion.alias), path)
     } catch (error) {
       process.stderr.write(
-        `${companion}: não foi possível criar a worktree companion: ${error instanceof Error ? error.message : error}\n`,
+        `${companion.alias}: não foi possível criar a worktree companheira: ${error instanceof Error ? error.message : error}\n`,
       )
     }
   }

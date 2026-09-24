@@ -1,19 +1,12 @@
 import { expect, test } from 'vitest'
-import { credentialsForEnvironment, LOCAL_BACKEND_TEST_EMAIL } from './testCredentials'
+import { credentialsFromEnvironment } from './testCredentials'
 
-const configured = { email: 'foodies@foodies.com', password: '123456' }
+const configured = { TEST_LOGIN_EMAIL: 'tester@example.invalid', TEST_LOGIN_PASSWORD: 'fake-password' }
 
-test('usa a conta do banco local quando o backend principal é local', () => {
-  expect(credentialsForEnvironment(configured, true)).toEqual({
-    email: LOCAL_BACKEND_TEST_EMAIL,
-    password: '123456',
-  })
+test('lê credenciais de teste configuradas no ambiente', () => {
+  expect(credentialsFromEnvironment(configured)).toEqual({ email: 'tester@example.invalid', password: 'fake-password' })
 })
 
-test('preserva a conta configurada quando o backend principal é remoto', () => {
-  expect(credentialsForEnvironment(configured, false)).toEqual(configured)
-})
-
-test('continua sem login quando não há credenciais configuradas', () => {
-  expect(credentialsForEnvironment(null, true)).toBeNull()
+test('não retorna credenciais incompletas', () => {
+  expect(credentialsFromEnvironment({ TEST_LOGIN_EMAIL: 'tester@example.invalid' })).toBeNull()
 })

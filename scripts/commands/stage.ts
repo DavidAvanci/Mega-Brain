@@ -10,7 +10,7 @@ import {
   stagingBranchOf,
 } from '../lib/git.ts'
 import { runsAsCommand } from '../lib/env.ts'
-import { jiraEnv, prsCommentAdf, transitionTo, upsertComment } from '../lib/jira.ts'
+import { jiraEnv, jiraIssueUrl, jiraSiteForRepositories, prsCommentAdf, transitionTo, upsertComment } from '../lib/jira.ts'
 import { activity, finish } from '../lib/log.ts'
 import { planSection, readPlan } from '../lib/plan.ts'
 import { mergeCardPrs, repoLinks, taskInfo } from '../lib/workspace.ts'
@@ -19,13 +19,13 @@ import { resolveCherryPickConflict } from '../lib/conflictResolver.ts'
 const wsPath = process.argv[2] ?? process.cwd()
 const draft = process.argv.includes('--draft')
 
-function prBody(planRaw: string, jiraKey?: string): string {
+function prBody(planRaw: string, jiraKey?: string, jiraSite?: string): string {
   const done = planSection(planRaw, /o que foi feito/i)
   const before = planSection(planRaw, /o que acontecia/i)
   const parts = [
     before ? `## O que acontecia\n${before}` : '',
     done ? `## O que foi feito\n${done}` : '',
-    jiraKey ? `Jira: https://takeat.atlassian.net/browse/${jiraKey}` : '',
+    jiraKey && jiraIssueUrl(jiraKey, jiraSite) ? `Jira: ${jiraIssueUrl(jiraKey, jiraSite)}` : '',
   ].filter(Boolean)
   return parts.join('\n\n') || 'Alterações da task (ver commits).'
 }
@@ -128,7 +128,8 @@ export async function runStagingStage(): Promise<void> {
     process.exit(1)
   }
 
-  const body = prBody(plan.raw, task.jiraKey)
+  const jiraSite = jiraSiteForRepositories(repos.map((repo) => repo.name))
+  const body = prBody(plan.raw, task.jiraKey, jiraSite)
   const prs: Record<string, string> = {}
   const errors: string[] = []
   for (const repo of repos) {
@@ -142,7 +143,7 @@ export async function runStagingStage(): Promise<void> {
 
   if (Object.keys(prs).length) {
     mergeCardPrs(wsPath, 'staging', prs)
-    const env = jiraEnv()
+    const env = jiraEnv(jiraSite)
     if (task.jiraKey && env) {
       activity('Jira', `Comentando PRs em ${task.jiraKey}`)
       const sections: [string, string][] = []

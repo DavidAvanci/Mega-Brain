@@ -3,12 +3,8 @@ export interface TestCredentials {
   password: string
 }
 
-export const LOCAL_BACKEND_TEST_EMAIL = 'test@example.invalid'
-
-export function credentialsForEnvironment(
-  credentials: TestCredentials | null,
-  localBackend: boolean,
-): TestCredentials | null {
-  if (!credentials || !localBackend) return credentials
-  return { ...credentials, email: LOCAL_BACKEND_TEST_EMAIL }
+export function credentialsFromEnvironment(environment: Record<string, string>): TestCredentials | null {
+  const email = environment.TEST_LOGIN_EMAIL?.trim()
+  const password = environment.TEST_LOGIN_PASSWORD
+  return email && password ? { email, password } : null
 }

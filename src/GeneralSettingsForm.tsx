@@ -239,7 +239,6 @@ export function GeneralSettingsForm({
           <Input
             value={value.jiraSite}
             disabled={disabled}
-            placeholder="takeat ou takeat.atlassian.net"
             spellCheck={false}
             onChange={(event) => update({ jiraSite: event.target.value })}
           />
@@ -250,7 +249,6 @@ export function GeneralSettingsForm({
             type="email"
             value={value.jiraEmail}
             disabled={disabled}
-            placeholder="voce@empresa.com"
             autoComplete="username"
             spellCheck={false}
             onChange={(event) => update({ jiraEmail: event.target.value })}
