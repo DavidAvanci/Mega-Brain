@@ -1,4 +1,4 @@
-import type { Item } from './checklist.ts'
+import { pendingRequires, type Item } from './checklist.ts'
 
 export interface PreflightIssue {
   level: 'error' | 'warn'
@@ -76,8 +76,7 @@ export function preflight(items: Item[], deps: PreflightDeps): PreflightIssue[] 
 
   for (const item of items) {
     if (!item.repo || !deps.repoExists(item.repo)) continue
-    for (const pattern of item.requires) {
-      if (deps.pathExists(item.repo, pattern)) continue
+    for (const pattern of pendingRequires(item, items, (path) => deps.pathExists(item.repo, path))) {
       issues.push({
         level: 'error',
         where: item.id,

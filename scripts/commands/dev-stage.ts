@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { runsAsCommand } from '../lib/env.ts'
-import { markItem, matchesPattern, parseChecklist, resetUnfinished, type Item } from '../lib/checklist.ts'
+import { markItem, matchesPattern, parseChecklist, pendingRequires, resetUnfinished, type Item } from '../lib/checklist.ts'
 import { CmdError, changedFiles, git } from '../lib/git.ts'
 import { activity, finish } from '../lib/log.ts'
 import { itemContext, readPlan } from '../lib/plan.ts'
@@ -388,7 +388,7 @@ export async function runDevStage(): Promise<void> {
 
   const missingRequirements = parsed.flatMap((item) =>
     item.repo && prepared.includes(item.repo)
-      ? item.requires.filter((pattern) => !existsSync(join(repoPath(item.repo), pattern.replace(/\/?\*+$/, '')))).map((pattern) => `${item.id}: ${pattern}`)
+      ? pendingRequires(item, parsed, (pattern) => existsSync(join(repoPath(item.repo), pattern.replace(/\/?\*+$/, '')))).map((pattern) => `${item.id}: ${pattern}`)
       : [],
   )
   if (missingRequirements.length) {
