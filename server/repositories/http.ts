@@ -5,6 +5,10 @@ export function repositoriesHttp(registry: RepositoryRegistry): ApiHandler {
   return async (request) => {
     try {
       const id = request.query.get('id') ?? ''
+      if (request.path === '/api/repositories/mentions' && request.method === 'GET') {
+        const repositories = await registry.list()
+        return json(200, repositories.filter((repo) => repo.active).map(({ id, alias, displayName }) => ({ id, alias, displayName })))
+      }
       if (request.path === '/api/repositories' && request.method === 'GET') return json(200, await registry.list())
       if (request.path === '/api/repositories/preview' && request.method === 'POST') return json(200, await registry.preview(record(request.body).path))
       if (request.path === '/api/repositories/discover' && request.method === 'POST') return json(200, await registry.discover(record(request.body).path))

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { updateBrainBranding } from './brainBranding'
 
 const STORAGE_KEY = 'mega-brain-theme'
 
@@ -79,6 +80,7 @@ function apply(): void {
   if (settings.preset) document.documentElement.dataset.preset = settings.preset
   else delete document.documentElement.dataset.preset
   document.documentElement.classList.toggle('dark', colorMode === 'dark')
+  updateBrainBranding()
 }
 
 function persist(next: ThemeSettings): void {

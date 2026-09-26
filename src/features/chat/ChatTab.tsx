@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { SentIcon, StopIcon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
+import { RepositoryMentionTextarea } from '@/components/RepositoryMentionTextarea'
 import { cn } from '@/lib/utils'
 import { abortChat, fetchChat, sendChat } from '@/features/cards/api/card-detail-api'
 import { Markdown } from '@/Markdown'
@@ -34,8 +34,43 @@ export function ChatTab({ cardId }: { cardId: string }) {
   const [settings, setSettings] = useState<ChatAgentSettings | null>(null)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [focusRequest, setFocusRequest] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
+  const composer = useRef<HTMLDivElement>(null)
+  const textarea = useRef<HTMLTextAreaElement>(null)
+  const actionButton = useRef<HTMLButtonElement>(null)
+  const pendingFocus = useRef<string | null>(null)
+
+  useEffect(() => {
+    const cancelOnFocus = (event: FocusEvent) => {
+      if (pendingFocus.current && event.target !== textarea.current && event.target !== actionButton.current) {
+        pendingFocus.current = null
+      }
+    }
+    const cancelOnPointer = (event: PointerEvent) => {
+      if (pendingFocus.current && !composer.current?.contains(event.target as Node)) {
+        pendingFocus.current = null
+      }
+    }
+    document.addEventListener('focusin', cancelOnFocus, true)
+    document.addEventListener('pointerdown', cancelOnPointer, true)
+    return () => {
+      pendingFocus.current = null
+      document.removeEventListener('focusin', cancelOnFocus, true)
+      document.removeEventListener('pointerdown', cancelOnPointer, true)
+    }
+  }, [])
+
+  useEffect(() => {
+    pendingFocus.current = null
+  }, [cardId])
+
+  useLayoutEffect(() => {
+    if (streaming || pendingFocus.current !== cardId) return
+    pendingFocus.current = null
+    if (textarea.current?.isConnected && !textarea.current.disabled) textarea.current.focus()
+  }, [streaming, cardId, focusRequest])
 
   useEffect(() => {
     let cancelled = false
@@ -62,6 +97,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
   const send = async () => {
     const text = input.trim()
     if (!text || streaming) return
+    pendingFocus.current = cardId
     setInput('')
     setError(null)
     setStreaming(true)
@@ -84,6 +120,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setStreaming(false)
+      setFocusRequest((request) => request + 1)
     }
   }
 
@@ -111,11 +148,14 @@ export function ChatTab({ cardId }: { cardId: string }) {
         {streaming && <Spinner className="text-muted-foreground" />}
       </div>
       {error && <p className="px-5 pb-2 text-xs text-destructive">{error}</p>}
-      <div className="flex items-end gap-2 border-t px-5 py-3">
-        <Textarea
+      <div ref={composer} className="flex items-end gap-2 border-t px-5 py-3">
+        <RepositoryMentionTextarea
+          textareaRef={textarea}
+          popupPlacement="above"
+          aria-label="Mensagem do chat"
           rows={1}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onValueChange={setInput}
           onKeyDown={(e) => {
             if (e.key !== 'Enter' || e.shiftKey) return
             e.preventDefault()
@@ -127,6 +167,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
         />
         {streaming ? (
           <Button
+            ref={actionButton}
             aria-label="Parar resposta"
             className="h-10 w-10 px-0"
             variant="outline"
@@ -137,6 +178,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
           </Button>
         ) : (
           <Button
+            ref={actionButton}
             aria-label="Enviar mensagem"
             className="h-10 w-10 px-0"
             size="sm"

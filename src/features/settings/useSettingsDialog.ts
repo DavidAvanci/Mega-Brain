@@ -9,7 +9,7 @@ import { getDesktopAutostartEnabled, setDesktopAutostartEnabled } from '@/deskto
 import type {
   BoardSettings,
   EditorDiscovery,
-  GeneralSettings,
+  GeneralSettingsInput,
   MegaBrainSettings,
 } from '../../../shared/domain/settings'
 import { withGeneralSettings, withStageSetting } from '@/settings-state'
@@ -56,8 +56,18 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void) {
   const updateStage = (key: keyof BoardSettings, field: 'model' | 'effort', value: string) => {
     setSettings((current) => (current ? withStageSetting(current, key, field, value) : current))
   }
-  const updateGeneral = (general: GeneralSettings) => {
+  const updateGeneral = (general: GeneralSettingsInput) => {
     setSettings((current) => (current ? withGeneralSettings(current, general) : current))
+  }
+  const close = () => {
+    setSettings((current) => {
+      if (!current) return current
+      const general: GeneralSettingsInput = { ...current.general }
+      delete general.layaApiKey
+      delete general.layaRemoveSavedKey
+      return { ...current, general }
+    })
+    onClose()
   }
   const save = async () => {
     if (!settings) return
@@ -70,7 +80,7 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void) {
       ])
       window.dispatchEvent(new Event('megabrain-settings-changed'))
       await refresh()
-      onClose()
+      close()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -88,5 +98,6 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void) {
     updateStage,
     updateGeneral,
     save,
+    close,
   }
 }

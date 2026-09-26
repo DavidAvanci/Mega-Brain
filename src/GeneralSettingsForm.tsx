@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { fetchDetectedEditors } from './features/cards/api/card-detail-api'
 import { isTauriDesktop, pickDesktopWslDirectory } from './desktopBootstrap'
-import type { EditorDiscovery, EditorPreference, GeneralSettings, LlmProvider } from '../shared/domain/settings'
+import type { EditorDiscovery, EditorPreference, GeneralSettingsInput, LlmProvider } from '../shared/domain/settings'
 
 const EDITOR_LABELS: Record<EditorPreference, string> = {
   cursor: 'Cursor',
@@ -65,8 +65,8 @@ export function GeneralSettingsForm({
   disabled,
   initialEditors,
 }: {
-  value: GeneralSettings
-  onChange: (value: GeneralSettings) => void
+  value: GeneralSettingsInput
+  onChange: (value: GeneralSettingsInput) => void
   disabled?: boolean
   initialEditors: EditorDiscovery
 }) {
@@ -75,7 +75,7 @@ export function GeneralSettingsForm({
   const [detectionError, setDetectionError] = useState<string | null>(null)
   const [pickingDirectory, setPickingDirectory] = useState<'workspace' | 'worktrees' | null>(null)
   const [directoryError, setDirectoryError] = useState<string | null>(null)
-  const update = (patch: Partial<GeneralSettings>) => onChange({ ...value, ...patch })
+  const update = (patch: Partial<GeneralSettingsInput>) => onChange({ ...value, ...patch })
   const detectedEditor = discovery.editors.find((option) => option.id === value.editor)
   const editorOptions: { value: EditorPreference; label: string; available?: boolean }[] = discovery.editors.map(
     (option) => ({ value: option.id, label: option.label, available: true }),
@@ -269,6 +269,73 @@ export function GeneralSettingsForm({
               ? 'Integração configurada. Limpe site e e-mail para desativar.'
               : 'Os três campos são obrigatórios para ativar a integração.'}
           </span>
+        </label>
+      </section>
+
+      <section className="grid gap-2">
+        <h3 className="text-sm font-medium">Triagem de cards (experimental)</h3>
+        <p className="text-xs text-muted-foreground">
+          Ao solicitar uma sugestão, título e descrição são enviados ao gateway Laya na rede local. HTTP sem TLS exige
+          uma LAN confiável.
+        </p>
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={value.layaEnabled}
+            disabled={disabled}
+            onChange={(event) => update({ layaEnabled: event.target.checked })}
+          />{' '}
+          Habilitar Laya
+        </label>
+        <label className="grid gap-1 text-xs font-medium">
+          URL do gateway Laya
+          <Input
+            type="url"
+            value={value.layaBaseUrl}
+            disabled={disabled}
+            spellCheck={false}
+            placeholder="http://192.168.0.66:3000"
+            onChange={(event) => update({ layaBaseUrl: event.target.value })}
+          />
+          <span className="font-normal text-muted-foreground">
+            Informe a origem do gateway (porta 3000), sem /v1/systemone. O IP do exemplo pode mudar.
+          </span>
+        </label>
+        {value.layaUrlSource === 'environment' && (
+          <p className="text-[11px] text-muted-foreground">
+            {value.layaActiveBaseUrl
+              ? `LAYA_BASE_URL tem precedência: ${value.layaActiveBaseUrl}`
+              : 'LAYA_BASE_URL inválida; corrija a variável no backend.'}
+          </p>
+        )}
+        <label className="grid gap-1 text-xs font-medium">
+          Chave do gateway Laya
+          <Input
+            type="password"
+            value={value.layaApiKey ?? ''}
+            disabled={disabled}
+            autoComplete="new-password"
+            placeholder={
+              value.layaCredentialSource !== 'none' ? 'Chave cadastrada — deixe vazio para manter' : 'Cole sua chave'
+            }
+            onChange={(event) => update({ layaApiKey: event.target.value, layaRemoveSavedKey: false })}
+          />
+        </label>
+        <p className="text-[11px] text-muted-foreground">
+          {value.layaCredentialSource === 'environment'
+            ? 'Configurada por LAYA_API_KEY (tem precedência).'
+            : value.layaCredentialSource !== 'none'
+              ? 'Chave cadastrada; conexão ainda não validada.'
+              : 'Nenhuma chave cadastrada.'}
+        </p>
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={value.layaRemoveSavedKey ?? false}
+            disabled={disabled}
+            onChange={(event) => update({ layaRemoveSavedKey: event.target.checked, layaApiKey: '' })}
+          />{' '}
+          Remover chave salva ao salvar
         </label>
       </section>
 

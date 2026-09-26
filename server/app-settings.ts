@@ -1,16 +1,34 @@
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { dirname, isAbsolute, resolve } from 'node:path'
-import type { GeneralSettings } from '../shared/domain/settings'
+import type { GeneralSettings, GeneralSettingsInput } from '../shared/domain/settings'
 import type { MegaBrainConfig } from './config'
 import { resolveOptionalExecutable } from './platform'
 import { detectEditors } from './editor-detection'
+import { normalizeLayaBaseUrl } from './integrations/laya/url'
 
 const EDITORS = new Set(['cursor', 'vscode', 'windsurf', 'zed', 'sublime', 'intellij', 'webstorm', 'pycharm', 'custom'])
 const PROVIDERS = new Set(['claude', 'chatgpt'])
 
+function safeLayaBaseUrl(value: string | undefined): string {
+  if (!value) return ''
+  try {
+    return normalizeLayaBaseUrl(value)
+  } catch {
+    return ''
+  }
+}
+
 export function readGeneralSettings(config: MegaBrainConfig): GeneralSettings {
   const jiraConfigured = Boolean(config.jira.site && config.jira.email && config.jira.token)
+  const activeBaseUrl = safeLayaBaseUrl(config.laya.environmentBaseUrl || config.laya.savedBaseUrl)
   return {
+    layaEnabled: config.laya.enabled,
+    layaBaseUrl: safeLayaBaseUrl(config.laya.savedBaseUrl),
+    layaActiveBaseUrl: activeBaseUrl,
+    layaUrlSource: config.laya.environmentBaseUrl ? 'environment' : config.laya.savedBaseUrl ? 'saved' : 'none',
+    layaConfigured: Boolean((config.laya.environmentKey || config.laya.savedKey) && activeBaseUrl),
+    layaCredentialSource: config.laya.environmentKey ? 'environment' : config.laya.savedKey ? 'saved' : 'none',
     editor: config.preferences.editor,
     editorCommand: config.preferences.editorCommand,
     workspaceDir: resolve(config.workspaceDir),
@@ -32,7 +50,7 @@ function requiredAbsolutePath(value: unknown, label: string): string {
 
 export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): GeneralSettings {
   if (!value || typeof value !== 'object') throw new Error('Configurações gerais inválidas')
-  const input = value as Partial<GeneralSettings>
+  const input = value as Partial<GeneralSettingsInput>
   if (!EDITORS.has(String(input.editor))) throw new Error('Editor inválido')
   if (!PROVIDERS.has(String(input.llmProvider))) throw new Error('Provedor LLM inválido')
 
@@ -54,7 +72,24 @@ export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): G
     if (!jiraSite || !jiraEmail || !jiraApiToken) throw new Error('Preencha site, e-mail e token da API do Jira')
   }
 
+  const layaApiKey = typeof input.layaApiKey === 'string' ? input.layaApiKey.trim() : ''
+  const savedLayaKey = input.layaRemoveSavedKey === true ? undefined : layaApiKey || config.laya.savedKey
+  const layaEnabled = input.layaEnabled === undefined ? config.laya.enabled : input.layaEnabled === true
+  const savedBaseUrl =
+    input.layaBaseUrl === undefined
+      ? safeLayaBaseUrl(config.laya.savedBaseUrl) || undefined
+      : typeof input.layaBaseUrl === 'string' && input.layaBaseUrl.trim()
+        ? normalizeLayaBaseUrl(input.layaBaseUrl)
+        : undefined
+  const activeBaseUrl = safeLayaBaseUrl(config.laya.environmentBaseUrl || savedBaseUrl)
+
   const settings: GeneralSettings = {
+    layaEnabled,
+    layaBaseUrl: savedBaseUrl ?? '',
+    layaActiveBaseUrl: activeBaseUrl,
+    layaUrlSource: config.laya.environmentBaseUrl ? 'environment' : savedBaseUrl ? 'saved' : 'none',
+    layaConfigured: Boolean((config.laya.environmentKey || savedLayaKey) && activeBaseUrl),
+    layaCredentialSource: config.laya.environmentKey ? 'environment' : savedLayaKey ? 'saved' : 'none',
     editor,
     editorCommand,
     workspaceDir: requiredAbsolutePath(input.workspaceDir, 'Workspace'),
@@ -71,9 +106,20 @@ export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): G
   mkdirSync(settings.worktreesDir, { recursive: true })
   const file = config.preferences.settingsFile
   mkdirSync(dirname(file), { recursive: true })
-  const temporary = `${file}.tmp`
-  writeFileSync(temporary, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 })
-  renameSync(temporary, file)
+  const temporary = `${file}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(
+      temporary,
+      `${JSON.stringify({ ...settings, layaApiKey: savedLayaKey ?? undefined, layaConfigured: undefined, layaCredentialSource: undefined, layaRemoveSavedKey: undefined, layaActiveBaseUrl: undefined, layaUrlSource: undefined, jiraConfigured: undefined }, null, 2)}\n`,
+      { mode: 0o600, flag: 'wx' },
+    )
+    renameSync(temporary, file)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+  config.laya.enabled = layaEnabled
+  config.laya.savedKey = savedLayaKey
+  config.laya.savedBaseUrl = savedBaseUrl
 
   config.workspaceDir = settings.workspaceDir
   config.worktreesDir = settings.worktreesDir

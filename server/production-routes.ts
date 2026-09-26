@@ -1,3 +1,6 @@
+import { cardTriageHttp } from './card-triage/http'
+import { createCardTriageService } from './card-triage/service'
+import { stderrJsonlLogger } from './logger'
 import { basename, join } from 'node:path'
 import type { ApiHandler, SseHandler } from './contracts'
 import { agentsHttp } from './agents/http'
@@ -62,7 +65,9 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   const jira = createJiraService(config.jira)
   const usage = createClaudeUsageService(config.directories.claudeCredentials)
   const coffee = coffeeHttp(createCoffeeService(runner, config.executables.powershell, owner))
-  const repositories = repositoriesHttp(new RepositoryRegistry(repositoryCatalogFile(config.preferences.settingsFile), runner))
+  const repositories = repositoriesHttp(
+    new RepositoryRegistry(repositoryCatalogFile(config.preferences.settingsFile), runner),
+  )
   const windowsCodexHome = process.env.WSL_DISTRO_NAME
     ? join('/mnt/c/Users', basename(config.directories.home), '.codex')
     : undefined
@@ -99,6 +104,9 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['POST', '/api/workspace/delete'],
   ] as const)
     add(method, path, workspace)
+  const triage = cardTriageHttp(createCardTriageService(config, { logger: stderrJsonlLogger(process.stderr) }))
+  add('POST', '/api/card-triage', triage)
+  add('GET', '/api/card-triage', triage)
   add('GET', '/api/chat', chatHistoryHttp(chat))
   add('POST', '/api/chat/send', chatSendHttp(chat))
   add('POST', '/api/chat/abort', chatAbortHttp(chat))
@@ -112,6 +120,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   add('POST', '/api/coffee', coffee)
   add('DELETE', '/api/coffee', coffee)
   add('GET', '/api/repositories', repositories)
+  add('GET', '/api/repositories/mentions', repositories)
   add('POST', '/api/repositories', repositories)
   add('PATCH', '/api/repositories', repositories)
   add('GET', '/api/repositories/env', repositories)

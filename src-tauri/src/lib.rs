@@ -318,6 +318,7 @@ mod tests {
         assert!(capability.contains("allow-set-wsl-workspace-dir"));
         assert!(capability.contains("allow-normalize-wsl-directory"));
         assert!(capability.contains("dialog:allow-open"));
+        assert!(capability.contains("core:window:allow-set-icon"));
         assert!(capability.contains("allow-open-diagnostics-folder"));
         assert!(!capability.contains("shell:"));
         assert!(!capability.contains("fs:"));
@@ -361,7 +362,7 @@ mod tests {
         // enabled. Keep that feature absent and do not override the default in
         // the window configuration.
         let manifest = include_str!("../Cargo.toml");
-        assert!(manifest.contains("tauri = { version = \"2\", features = [] }"));
+        assert!(manifest.contains("tauri = { version = \"2\", features = [\"image-png\"] }"));
         assert!(!manifest.contains("devtools"));
 
         let config: serde_json::Value =

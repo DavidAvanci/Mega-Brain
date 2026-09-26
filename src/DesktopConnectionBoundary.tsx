@@ -8,6 +8,7 @@ import {
   setDesktopWslWorkspaceDir,
 } from './desktopBootstrap'
 import { DesktopWindowControls, invokeDesktopWindowCommand } from './DesktopWindowControls'
+import { BrainIcon } from './BrainIcon'
 
 function StartupTitlebar() {
   return (
@@ -18,7 +19,7 @@ function StartupTitlebar() {
         if (!(event.target as Element).closest('button')) void invokeDesktopWindowCommand('toggle_maximize_main_window')
       }}
     >
-      <img src="/brain.svg" alt="" aria-hidden="true" className="size-6" />
+      <BrainIcon className="size-6" />
       <span data-tauri-drag-region className="font-sans text-base font-semibold">
         Mega Brain
       </span>

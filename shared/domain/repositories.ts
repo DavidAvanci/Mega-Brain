@@ -57,3 +57,9 @@ export interface RepositoryRegistryFile {
   version: 1
   repositories: Repository[]
 }
+
+export interface RepositoryMention {
+  id: string
+  alias: string
+  displayName: string
+}

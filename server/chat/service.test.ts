@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
@@ -122,5 +122,38 @@ test('new Codex text chats bypass approvals and sandbox by default', async () =>
   const service = createChatService(config, fake.runner)
   service.send('card', 'oi', () => {})
   expect(fake.calls[0].args).toContain('--dangerously-bypass-approvals-and-sandbox')
+  await service.shutdown?.()
+})
+
+test('chat sends validated repository context for registered mentions', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mega-brain-chat-mention-'))
+  const checkout = join(root, 'repository')
+  mkdirSync(join(checkout, '.git'), { recursive: true })
+  writeFileSync(
+    join(root, 'repositories.json'),
+    JSON.stringify({
+      version: 1,
+      repositories: [{ id: 'repo_1', alias: 'api', displayName: 'API', path: checkout, active: true }],
+    }),
+  )
+  const fake = fakeRunner()
+  const service = createChatService(
+    {
+      ...testConfig(root),
+      preferences: {
+        settingsFile: join(root, 'settings.json'),
+        editor: 'cursor',
+        editorCommand: '',
+        llmProvider: 'claude',
+        onboardingCompleted: true,
+      },
+    },
+    fake.runner,
+  )
+  service.send('card', 'Ajuste @api e ignore @unknown', () => {})
+  const prompt = fake.calls[0].args[1]
+  expect(prompt).toContain('"id":"repo_1"')
+  expect(prompt).toContain(JSON.stringify({ id: 'repo_1', alias: 'api', path: checkout }))
+  expect(prompt).toContain('@unknown')
   await service.shutdown?.()
 })
