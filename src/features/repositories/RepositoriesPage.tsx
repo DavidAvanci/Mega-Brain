@@ -14,6 +14,7 @@ import type {
   RepositoryEnvironment,
   RepositoryEnvironmentKey,
   RepositoryStatus,
+  RepositoryMigrationResult,
 } from '../../../shared/domain/repositories'
 
 const environmentKeys: RepositoryEnvironmentKey[] = ['local', 'staging', 'prod']
@@ -24,6 +25,8 @@ type Discovery = { path: string; repositories: { preview: Preview; alias: string
 export function RepositoriesPage() {
   const [repositories, setRepositories] = useState<Repository[]>([])
   const [statuses, setStatuses] = useState<Record<string, RepositoryStatus>>({})
+  const [remoteBusy, setRemoteBusy] = useState<string | null>(null)
+  const [migrations, setMigrations] = useState<Record<string, RepositoryMigrationResult>>({})
   const [editingId, setEditingId] = useState<string | null>(null)
   const [tab, setTab] = useState<RepositoryEnvironmentKey>('local')
   const [query, setQuery] = useState('')
@@ -58,6 +61,7 @@ export function RepositoriesPage() {
           available: false,
           path: '',
           checkedAt: new Date().toISOString(),
+          source: 'local', state: 'unavailable',
           error: error instanceof Error ? error.message : String(error),
         },
       }))
@@ -68,6 +72,10 @@ export function RepositoriesPage() {
     const list = await requestJson<Repository[]>('/api/repositories', 'Falha ao carregar repositórios')
     setRepositories(list)
     await Promise.all(list.map((repo) => refreshStatus(repo.id)))
+    await Promise.all(list.map(async (repo) => {
+      const result = await requestJson<RepositoryMigrationResult>(`/api/repositories/migration?id=${encodeURIComponent(repo.id)}`, 'Falha ao consultar migração').catch(() => ({ state: 'idle' as const }))
+      setMigrations((current) => ({ ...current, [repo.id]: result }))
+    }))
   }, [refreshStatus])
 
   useEffect(() => {
@@ -200,6 +208,46 @@ export function RepositoriesPage() {
     }
   }
 
+  const verifyRemote = async (id: string) => {
+    setRemoteBusy(id)
+    try {
+      const status = await requestJson<RepositoryStatus>('/api/repositories/verify', 'Falha ao verificar remoto', { method: 'POST', body: { id } })
+      setStatuses((current) => ({ ...current, [id]: status }))
+    } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
+    finally { setRemoteBusy(null) }
+  }
+
+  const verifyAll = async () => {
+    setRemoteBusy('all')
+    try {
+      const results = await requestJson<Record<string, RepositoryStatus>>('/api/repositories/verify', 'Falha ao verificar remotos', { method: 'POST', body: { ids: repositories.map((repo) => repo.id) } })
+      setStatuses((current) => ({ ...current, ...results }))
+    } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
+    finally { setRemoteBusy(null) }
+  }
+
+  const pull = async (id: string) => {
+    setRemoteBusy(id)
+    try {
+      const status = await requestJson<RepositoryStatus>('/api/repositories/pull', 'Falha ao atualizar checkout', { method: 'POST', body: { id } })
+      setStatuses((current) => ({ ...current, [id]: status }))
+      if (status.error) toast.error(status.error)
+      else toast.success('Checkout atualizado')
+    } catch (error) { toast.error(error instanceof Error ? error.message : String(error)); await refreshStatus(id) }
+    finally { setRemoteBusy(null) }
+  }
+
+  const migrate = async (id: string, environment: RepositoryEnvironmentKey) => {
+    setRemoteBusy(id)
+    try {
+      const result = await requestJson<RepositoryMigrationResult>('/api/repositories/migration', 'Falha ao executar migração', { method: 'POST', body: { id, environment } })
+      setMigrations((current) => ({ ...current, [id]: result }))
+      if (result.state === 'failure') toast.error(result.error ?? 'Migração falhou')
+      else toast.success('Migração concluída')
+    } catch (error) { toast.error(error instanceof Error ? error.message : String(error)) }
+    finally { setRemoteBusy(null) }
+  }
+
   const openEditor = (id: string) => {
     setEditingId(id)
     setTab('local')
@@ -212,6 +260,7 @@ export function RepositoriesPage() {
           <p className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">Catálogo local</p>
           <h2 className="mt-1 text-2xl font-semibold">Repositórios</h2>
           <p className="mt-1 text-sm text-muted-foreground">Checkouts locais e configuração de cada ambiente.</p>
+          <Button type="button" variant="outline" size="sm" className="mt-3" disabled={remoteBusy !== null || repositories.length === 0} onClick={() => void verifyAll()}>Verificar remoto de todos</Button>
         </header>
 
         <section className="rounded-lg border bg-card p-4">
@@ -290,6 +339,9 @@ export function RepositoriesPage() {
           )}
           {visible.map((repo) => {
             const status = statuses[repo.id]
+            const migration = migrations[repo.id]
+            const configuredMigrations = environmentKeys.filter((key) => repo.environments[key]?.migration?.backend)
+            const pullBlock = !status?.available ? 'Checkout indisponível' : status.dirty ? 'Há alterações locais' : status.state === 'no-upstream' ? 'Sem upstream' : status.state === 'diverged' ? 'Branch divergente' : status.state === 'ahead' ? 'Branch à frente' : status.state === 'remote-failed' ? 'Falha de rede' : status.state !== 'behind' ? 'Checkout já atualizado' : status.source !== 'remote' ? 'Verifique o remoto primeiro' : null
             return (
               <article key={repo.id} className="w-full rounded-lg border bg-card p-4">
                 <div className="flex flex-wrap items-start gap-4">
@@ -306,6 +358,10 @@ export function RepositoriesPage() {
                       <span>{status?.available ? `Branch: ${status.branch || 'detached'}` : status?.error ?? 'Verificando Git…'}</span>
                       {status?.available && <span>{status.dirty ? 'Alterações locais' : 'Checkout limpo'}</span>}
                       <span className="break-all">origin: {status?.origin ?? repo.githubUrl ?? 'não configurado'}</span>
+                      <span>Upstream: {status?.upstream ?? 'não configurado'}</span>
+                      <span>Estado: {status ? ({ 'up-to-date': status.source === 'remote' ? 'Atualizado' : 'Remoto não verificado', behind: 'Atrás', ahead: 'À frente', diverged: 'Divergente', 'no-upstream': 'Sem upstream', unavailable: 'Indisponível', 'remote-failed': 'Falha de rede' }[status.state]) : 'Carregando…'} {status?.ahead !== undefined ? `(${status.ahead} à frente, ${status.behind} atrás)` : ''}</span>
+                      <span>{status?.source === 'remote' ? `Remoto verificado em ${status.remoteCheckedAt ? new Date(status.remoteCheckedAt).toLocaleString() : 'agora'}` : 'Dados locais; remoto ainda não verificado nesta ação'}</span>
+                      {status?.error && <span className="text-destructive">{status.error}</span>}
                     </div>
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
@@ -314,9 +370,8 @@ export function RepositoriesPage() {
                         {switchingId === repo.id ? 'Trocando…' : 'Ir para master'}
                       </Button>
                     )}
-                    <Button type="button" variant="outline" size="sm" onClick={() => void refreshStatus(repo.id)}>
-                      Atualizar
-                    </Button>
+                    <Button type="button" variant="outline" size="sm" disabled={remoteBusy !== null} onClick={() => void verifyRemote(repo.id)}>Verificar remoto</Button>
+                    <Button type="button" variant="outline" size="sm" title={pullBlock ?? undefined} disabled={remoteBusy !== null || !!pullBlock} onClick={() => void pull(repo.id)}>Atualizar checkout</Button>
                     <Button type="button" variant="outline" size="sm" onClick={() => void toggleActive(repo)}>
                       {repo.active ? 'Desativar' : 'Ativar'}
                     </Button>
@@ -325,6 +380,14 @@ export function RepositoriesPage() {
                     </Button>
                   </div>
                 </div>
+                {pullBlock && <p className="mt-2 text-xs text-muted-foreground">Atualização indisponível: {pullBlock}.</p>}
+                {configuredMigrations.map((key) => { const config = repo.environments[key].migration!; return (
+                  <div key={key} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span>Migração {labels[key]}: <code>{config.command.join(' ')}</code> em <code>{config.workingDirectory}</code></span>
+                    {status?.migrationReady && <Button type="button" size="sm" variant="outline" disabled={remoteBusy !== null} onClick={() => void migrate(repo.id, key)}>Executar migrações</Button>}
+                  </div>
+                ) })}
+                {migration && migration.state !== 'idle' && <p className="mt-2 text-xs">Migração {migration.environment ? labels[migration.environment] : ''}: {migration.state === 'success' ? 'sucesso' : migration.state === 'failure' ? 'falha' : 'executando'} {migration.error ?? migration.output ?? ''}</p>}
               </article>
             )
           })}
@@ -421,6 +484,9 @@ function EnvironmentForm({
   onSave: (values: RepositoryEnvironment) => Promise<void>
 }) {
   const [enabled, setEnabled] = useState(environment.enabled)
+  const [backend, setBackend] = useState(environment.migration?.backend ?? false)
+  const [migrationCommand, setMigrationCommand] = useState(environment.migration?.command.join(' ') ?? '')
+  const [migrationDirectory, setMigrationDirectory] = useState(environment.migration?.workingDirectory ?? '.')
   const [startScript, setStartScript] = useState(environment.startScript ?? '')
   const [port, setPort] = useState(environment.port?.toString() ?? '')
   const [url, setUrl] = useState(environment.url ?? '')
@@ -457,6 +523,7 @@ function EnvironmentForm({
       const values: RepositoryEnvironment = environmentKey === 'local'
         ? { ...environment, enabled, startScript: startScript || undefined, port: port ? Number(port) : undefined, url: url || undefined, envFile: envFile || undefined }
         : { ...environment, enabled, targetBranch: targetBranch || undefined, url: url || undefined, githubEnvironment: githubEnvironment || undefined, aws: { accountId: awsAccount || undefined, region: awsRegion || undefined, resources: environment.aws?.resources ?? [] } }
+      values.migration = migrationCommand.trim() ? { backend, command: migrationCommand.trim().split(/\s+/), workingDirectory: migrationDirectory.trim() || '.' } : undefined
       await onSave(values)
       toast.success(`${labels[environmentKey]} salvo`)
     } catch (error) {
@@ -488,6 +555,12 @@ function EnvironmentForm({
           <Field label="Região AWS (opcional)" value={awsRegion} onChange={setAwsRegion} />
         </>
       )}
+      <section className="col-span-full grid gap-2 rounded-md border p-3">
+        <h3 className="text-sm font-medium">Migração após atualização do checkout</h3>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={backend} onChange={(event) => setBackend(event.target.checked)} />Backend com migração</label>
+        <Field label="Comando permitido (argumentos separados por espaço)" value={migrationCommand} onChange={setMigrationCommand} placeholder="npm run migrate" />
+        <Field label="Diretório relativo ao checkout" value={migrationDirectory} onChange={setMigrationDirectory} placeholder="." />
+      </section>
       <section className="col-span-full grid gap-2 rounded-md border p-3">
         <div><h3 className="text-sm font-medium">Variáveis de ambiente</h3><p className="text-xs text-muted-foreground">Salvas em {environmentKey === 'local' ? '.env.local' : environmentKey === 'staging' ? '.env.staging' : '.env.prod'} no checkout.</p></div>
         {variables.map((entry, index) => (

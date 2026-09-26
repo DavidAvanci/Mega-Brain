@@ -16,6 +16,17 @@ export function repositoriesHttp(registry: RepositoryRegistry): ApiHandler {
         return json(200, await registry.writeEnvironmentVariables(id, body.environment, body.variables))
       }
       if (request.path === '/api/repositories/status' && request.method === 'GET') return json(200, await registry.status(id))
+      if (request.path === '/api/repositories/verify' && request.method === 'POST') {
+        const body = record(request.body)
+        return json(200, Array.isArray(body.ids) ? await registry.verifyRemotes(body.ids.filter((id): id is string => typeof id === 'string')) : await registry.verifyRemote(String(body.id ?? '')))
+      }
+      if (request.path === '/api/repositories/pull' && request.method === 'POST') return json(200, await registry.pull(String(record(request.body).id ?? '')))
+      if (request.path === '/api/repositories/migration' && request.method === 'GET') return json(200, registry.migrationResult(id))
+      if (request.path === '/api/repositories/migration' && request.method === 'POST') {
+        const body = record(request.body)
+        if (body.environment !== 'local' && body.environment !== 'staging' && body.environment !== 'prod') throw new Error('Ambiente inválido')
+        return json(200, await registry.migrate(String(body.id ?? ''), body.environment))
+      }
       if (request.path === '/api/repositories/switch-master' && request.method === 'POST') {
         const body = record(request.body)
         return json(200, await registry.switchToMaster(body.id, body.dirtyAction, body.commitMessage))

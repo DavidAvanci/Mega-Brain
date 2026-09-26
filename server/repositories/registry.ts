@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { chmod, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type {
   Repository,
   RepositoryEnvironment,
   RepositoryEnvironmentKey,
   RepositoryRegistryFile,
   RepositoryStatus,
+  RepositoryMigrationResult,
 } from '../../shared/domain/repositories'
 import type { ProcessRunner } from '../process'
 import { parseEnvironmentVariables } from './environment-files'
@@ -22,6 +23,11 @@ export class RepositoryDirtyError extends Error {
 }
 
 export class RepositoryRegistry {
+  private readonly remoteChecks = new Map<string, { branch: string; checkedAt: string }>()
+  private readonly operations = new Set<string>()
+  private readonly pulledHeads = new Map<string, string>()
+  private readonly migrationResults = new Map<string, RepositoryMigrationResult>()
+
   constructor(private readonly file: string, private readonly runner: ProcessRunner) {}
 
   async list(): Promise<Repository[]> {
@@ -160,16 +166,112 @@ export class RepositoryRegistry {
     if (!repository) throw new Error('Repositório não encontrado')
     const checkedAt = new Date().toISOString()
     try {
-      const path = await realpath(repository.path)
-      const [branch, dirty, origin] = await Promise.all([
+      const path = await this.validatePath(repository.path)
+      const [branch, dirty, origin, head] = await Promise.all([
         this.git(path, ['branch', '--show-current']),
         this.git(path, ['status', '--porcelain']).then((text) => text.length > 0),
         this.git(path, ['config', '--get', 'remote.origin.url']).then(safeOrigin).catch(() => undefined),
+        this.git(path, ['rev-parse', 'HEAD']),
       ])
-      return { available: true, path, branch, dirty, origin, checkedAt }
+      const base = { available: true, path, branch, dirty, origin, checkedAt, migrationReady: this.pulledHeads.get(id) === head } as const
+      const upstream = await this.git(path, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']).catch(() => '')
+      if (!upstream || !branch) return { ...base, source: 'local', state: 'no-upstream' }
+      const counts = await this.git(path, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}'])
+      const [ahead, behind] = counts.split(/\s+/).map(Number)
+      if (!Number.isInteger(ahead) || !Number.isInteger(behind)) throw new Error('Contagens Git inválidas')
+      const remoteCheckedAt = this.remoteChecks.get(id)?.branch === branch ? this.remoteChecks.get(id)?.checkedAt : undefined
+      const state = ahead && behind ? 'diverged' : behind ? 'behind' : ahead ? 'ahead' : 'up-to-date'
+      return { ...base, upstream, ahead, behind, remoteCheckedAt, source: 'local', state }
     } catch (error) {
-      return { available: false, path: repository.path, checkedAt, error: message(error) }
+      return { available: false, path: repository.path, checkedAt, source: 'local', state: 'unavailable', error: message(error) }
     }
+  }
+
+  async verifyRemote(id: string): Promise<RepositoryStatus> {
+    return this.exclusive(id, async () => this.verifyRemoteUnlocked(id))
+  }
+
+  async verifyRemotes(ids: string[]): Promise<Record<string, RepositoryStatus>> {
+    const result: Record<string, RepositoryStatus> = {}
+    for (let index = 0; index < ids.length; index += 4) {
+      await Promise.all(ids.slice(index, index + 4).map(async (id) => {
+        result[id] = await this.verifyRemote(id).catch((error) => ({
+          available: false, path: '', checkedAt: new Date().toISOString(), source: 'remote',
+          state: 'remote-failed', error: message(error),
+        }))
+      }))
+    }
+    return result
+  }
+
+  private async verifyRemoteUnlocked(id: string): Promise<RepositoryStatus> {
+    const local = await this.status(id)
+    if (!local.available || local.state === 'no-upstream') return local
+    const repository = await this.getRepository(id)
+    const remote = await this.git(repository.path, ['config', '--get', `branch.${local.branch}.remote`]).catch(() => '')
+    if (!remote || remote === '.') return { ...local, state: 'no-upstream', source: 'remote' }
+    try {
+      await this.git(repository.path, ['fetch', '--', remote], 30_000)
+      const checkedAt = new Date().toISOString()
+      this.remoteChecks.set(id, { branch: local.branch!, checkedAt })
+      return { ...await this.status(id), source: 'remote', remoteCheckedAt: checkedAt }
+    } catch (error) {
+      return { ...local, source: 'remote', state: 'remote-failed', error: message(error) }
+    }
+  }
+
+  async pull(id: string): Promise<RepositoryStatus> {
+    return this.exclusive(id, async () => {
+      this.pulledHeads.delete(id)
+      const verified = await this.verifyRemoteUnlocked(id)
+      if (!verified.available || verified.state === 'remote-failed') return { ...verified, error: verified.error ?? 'Checkout indisponível' }
+      if (verified.dirty) return { ...verified, error: 'Checkout com alterações locais' }
+      if (verified.state !== 'behind') return { ...verified, error: `Atualização indisponível: ${verified.state}` }
+      const repository = await this.getRepository(id)
+      try {
+        await this.git(repository.path, ['pull', '--ff-only', '--no-rebase'], 60_000)
+        const head = await this.git(repository.path, ['rev-parse', 'HEAD'])
+        this.pulledHeads.set(id, head)
+        return { ...await this.status(id), source: 'remote' }
+      } catch (error) {
+        return { ...await this.status(id), source: 'remote', error: message(error) }
+      }
+    })
+  }
+
+  migrationResult(id: string): RepositoryMigrationResult {
+    return this.migrationResults.get(id) ?? { state: 'idle' }
+  }
+
+  async migrate(id: string, environment: RepositoryEnvironmentKey): Promise<RepositoryMigrationResult> {
+    return this.exclusive(id, async () => {
+      const repository = await this.getRepository(id)
+      const config = repository.environments[environment]?.migration
+      if (!config?.backend || !config.command.length) throw new Error('Migração de backend não configurada para este ambiente')
+      const head = await this.git(repository.path, ['rev-parse', 'HEAD'])
+      if (this.pulledHeads.get(id) !== head) throw new Error('Atualize o checkout antes de executar migrações')
+      const cwd = resolve(repository.path, config.workingDirectory)
+      const relativePath = relative(repository.path, cwd)
+      if (relativePath.startsWith('..') || isAbsolute(relativePath) || await realpath(cwd) !== cwd) throw new Error('Diretório de migração fora do checkout')
+      const result: RepositoryMigrationResult = { state: 'running', environment, command: config.command, workingDirectory: cwd }
+      this.migrationResults.set(id, result)
+      try {
+        const output = await this.run(cwd, config.command[0], config.command.slice(1), 120_000)
+        const completed = { ...result, state: 'success' as const, completedAt: new Date().toISOString(), output: output.slice(-4000) }
+        this.migrationResults.set(id, completed)
+        return completed
+      } catch (error) {
+        const completed = { ...result, state: 'failure' as const, completedAt: new Date().toISOString(), error: message(error).slice(-4000) }
+        this.migrationResults.set(id, completed)
+        return completed
+      }
+    })
+  }
+
+  private async exclusive<T>(id: string, action: () => Promise<T>): Promise<T> {
+    if (this.operations.has(id)) throw new Error('Operação já em andamento neste repositório')
+    this.operations.add(id)
+    try { return await action() } finally { this.operations.delete(id) }
   }
 
   async switchToMaster(id: unknown, dirtyAction?: unknown, commitMessage?: unknown): Promise<RepositoryStatus> {
@@ -223,8 +325,12 @@ export class RepositoryRegistry {
   }
 
   private git(cwd: string, args: string[], timeout = 5000): Promise<string> {
+    return this.run(cwd, 'git', args, timeout)
+  }
+
+  private run(cwd: string, command: string, args: string[], timeout: number): Promise<string> {
     return new Promise((resolve, reject) => {
-      this.runner.execFile('git', args, { cwd, timeout, encoding: 'utf8' }, (error, stdout, stderr) => {
+      this.runner.execFile(command, args, { cwd, timeout, encoding: 'utf8', maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
         if (error) reject(new Error(stderr.trim() || error.message))
         else resolve(stdout.trim())
       })
@@ -288,6 +394,12 @@ function normalizeEnvironments(value: unknown): Repository['environments'] {
         resources: aws.resources === undefined ? [] : stringList(aws.resources, 'resources'),
       }
     }
+    if (raw.migration !== undefined) {
+      if (!isRecord(raw.migration) || typeof raw.migration.backend !== 'boolean' || !Array.isArray(raw.migration.command) || !raw.migration.command.length || !raw.migration.command.every((part: unknown) => typeof part === 'string' && part.trim() && !/[\r\n\0]/.test(part)) || typeof raw.migration.workingDirectory !== 'string' || !raw.migration.workingDirectory.trim()) throw new Error(`Migração inválida no ambiente ${key}`)
+      const directory = raw.migration.workingDirectory.trim()
+      if (isAbsolute(directory) || directory.split(/[\\/]/).includes('..')) throw new Error(`Diretório de migração inválido no ambiente ${key}`)
+      environment.migration = { backend: raw.migration.backend, command: raw.migration.command as string[], workingDirectory: directory }
+    }
     if (environment.url) environment.url = optionalWebUrl(environment.url)
     if (environment.envFile && !isAbsolute(environment.envFile)) throw new Error(`envFile deve ser absoluto no ambiente ${key}`)
     if (environment.targetBranch && !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(environment.targetBranch)) throw new Error(`Branch inválida no ambiente ${key}`)
@@ -335,4 +447,4 @@ function envFilename(value: unknown): string {
   if (value === 'prod') return '.env.prod'
   throw new Error('Ambiente inválido')
 }
-function quoteEnv(value: string): string { return /[\s#\"'\\]/.test(value) ? JSON.stringify(value) : value }
+function quoteEnv(value: string): string { return /[\s#"'\\]/.test(value) ? JSON.stringify(value) : value }

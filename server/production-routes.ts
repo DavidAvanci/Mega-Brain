@@ -118,6 +118,10 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   add('POST', '/api/repositories/preview', repositories)
   add('POST', '/api/repositories/discover', repositories)
   add('GET', '/api/repositories/status', repositories)
+  add('POST', '/api/repositories/verify', repositories)
+  add('POST', '/api/repositories/pull', repositories)
+  add('GET', '/api/repositories/migration', repositories)
+  add('POST', '/api/repositories/migration', repositories)
   add('POST', '/api/repositories/switch-master', repositories)
   return routes
 }
