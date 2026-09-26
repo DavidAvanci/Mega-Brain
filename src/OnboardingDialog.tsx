@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { GeneralSettingsForm } from './GeneralSettingsForm'
+import { BrainIcon } from './BrainIcon'
 import { refresh } from './features/cards/model/card-commands'
 import { saveMegaBrainSettings } from './features/cards/api/card-detail-api'
 import type { BoardSettings, EditorDiscovery, GeneralSettings, MegaBrainSettings } from '../shared/domain/settings'
@@ -73,7 +74,7 @@ export function OnboardingDialog({
         {step === 0 ? (
           <>
             <DialogHeader className="items-center text-center">
-              <img src="/brain.svg" alt="" className="size-14" />
+              <BrainIcon className="size-14" />
               <DialogTitle>Bem-vindo ao Mega Brain</DialogTitle>
               <DialogDescription className="max-w-md">
                 Conheça as principais áreas do app e configure seu ambiente. Você poderá alterar as preferências depois.

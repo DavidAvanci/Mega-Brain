@@ -24,6 +24,12 @@ export interface EditorDiscovery {
 }
 
 export interface GeneralSettings {
+  layaEnabled: boolean
+  layaBaseUrl: string
+  layaActiveBaseUrl: string
+  layaUrlSource: 'environment' | 'saved' | 'none'
+  layaConfigured: boolean
+  layaCredentialSource: 'environment' | 'saved' | 'none'
   editor: EditorPreference
   editorCommand: string
   workspaceDir: string
@@ -34,6 +40,11 @@ export interface GeneralSettings {
   jiraApiToken: string
   jiraConfigured: boolean
   onboardingCompleted: boolean
+}
+
+export interface GeneralSettingsInput extends GeneralSettings {
+  layaApiKey?: string
+  layaRemoveSavedKey?: boolean
 }
 
 export interface MegaBrainSettings {

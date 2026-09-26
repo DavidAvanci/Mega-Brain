@@ -10,6 +10,7 @@ import type { ChatAgentSettings, ChatEntry, ChatEvent } from '../../shared/contr
 import { loadMegaBrainConfig, type MegaBrainConfig } from '../config'
 import { nodeProcessRunner, type ProcessChild, type ProcessOwner, type ProcessRunner } from '../process'
 import { assertTestWorkspace } from '../test-safety'
+import { repositoryMentionContext } from '../repositories/mentions'
 
 const DEFAULT_PROJECTS_ROOT = loadMegaBrainConfig().directories.claudeProjects
 const TRANSCRIPT_TAIL_BYTES = 512 * 1024
@@ -306,12 +307,13 @@ export function createChatService(
       if (!message) throw new Error('Mensagem vazia')
       const busy = busyReason(path, running)
       if (busy) throw new Error(busy)
+      const prompt = repositoryMentionContext(message, config.preferences?.settingsFile)
       if (config.preferences?.llmProvider === 'chatgpt')
-        streamCodexChat(path, message, emit, config.executables.codex, runner, running, aborted, owner)
+        streamCodexChat(path, prompt, emit, config.executables.codex, runner, running, aborted, owner)
       else
         streamChat(
           path,
-          message,
+          prompt,
           emit,
           config.directories.claudeProjects,
           config.executables.claude,

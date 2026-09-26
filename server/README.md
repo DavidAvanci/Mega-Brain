@@ -128,3 +128,7 @@ Use `MEGA_BRAIN_BENCHMARK_RUNS` (1–100, padrão 10) e
 amostra. A saída JSON contém mínimo, mediana, P95 (nearest-rank) e máximo em
 milissegundos. Ela é uma medição do backend bundle no host corrente; não mede
 cold start Windows, WSL, Tauri/WebView nem o tempo até o board estar usável.
+
+## Triagem Laya local
+
+`POST /api/card-triage` usa uma integração opcional com chave somente no backend. Consulte [a documentação](../docs/integrations/laya-card-triage.md).

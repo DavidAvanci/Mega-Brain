@@ -10,6 +10,8 @@ test('loads typed runtime configuration from a fixture environment without expos
       JIRA_SITE: 'example',
       JIRA_EMAIL: 'person@example.test',
       JIRA_API_TOKEN: 'test-token',
+      LAYA_API_KEY: 'gateway-key',
+      LAYA_BASE_URL: 'http://192.168.0.66:3000',
       MEGA_BRAIN_CLAUDE_HOME: '/tmp/claude',
       MEGA_BRAIN_CLAUDE_PROJECTS_DIR: '/tmp/projects',
       MEGA_BRAIN_CLAUDE_CREDENTIALS_FILE: '/tmp/credentials.json',
@@ -26,6 +28,7 @@ test('loads typed runtime configuration from a fixture environment without expos
     server: { host: '127.0.0.1', port: 0 },
     workspaceDir: '/tmp/workspace',
     jira: { site: 'example', email: 'person@example.test', token: 'test-token' },
+    laya: { enabled: false, environmentKey: 'gateway-key', environmentBaseUrl: 'http://192.168.0.66:3000' },
     directories: {
       home: '/tmp/mega-brain-home',
       claudeHome: '/tmp/claude',

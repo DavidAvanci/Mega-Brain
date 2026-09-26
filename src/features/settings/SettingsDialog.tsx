@@ -63,11 +63,41 @@ const THEME_CATEGORIES: {
     title: 'Paleta de cores',
     description: 'Muda somente as cores usadas no aplicativo.',
     options: [
-      { value: 'classic', label: 'Clássica', description: 'Neutros, segue o modo do sistema.', colors: ['#ffffff', '#f1f1f1', '#29707a', '#222222'], darkColors: ['#171717', '#292929', '#29707a', '#eeeeee'] },
-      { value: 'takeat', label: 'Takeat', description: 'Vermelho, branco e cinza.', colors: ['#ffffff', '#f6f6f6', '#c8131b', '#545454'], darkColors: ['#181719', '#222023', '#ff6872', '#f5f1f2'] },
-      { value: 'ocean', label: 'Oceano', description: 'Azuis frios e ciano.', colors: ['#f2f7fb', '#ffffff', '#397bd8', '#70c7dc'], darkColors: ['#111a26', '#192535', '#73adff', '#70d2e3'] },
-      { value: 'terracotta', label: 'Terracota', description: 'Creme, coral e âmbar.', colors: ['#fbf4e6', '#fffaf1', '#d5573f', '#eca34a'], darkColors: ['#211a17', '#2c231e', '#ff977f', '#ffc16f'] },
-      { value: 'berry', label: 'Frutas silvestres', description: 'Malva, ameixa e rosa.', colors: ['#f8f1f7', '#fffaff', '#a44f91', '#916de0'], darkColors: ['#211823', '#2b202f', '#e88bd2', '#b19aff'] },
+      {
+        value: 'classic',
+        label: 'Clássica',
+        description: 'Neutros, segue o modo do sistema.',
+        colors: ['#ffffff', '#f1f1f1', '#29707a', '#222222'],
+        darkColors: ['#171717', '#292929', '#29707a', '#eeeeee'],
+      },
+      {
+        value: 'takeat',
+        label: 'Takeat',
+        description: 'Vermelho, branco e cinza.',
+        colors: ['#ffffff', '#f6f6f6', '#c8131b', '#545454'],
+        darkColors: ['#181719', '#222023', '#ff6872', '#f5f1f2'],
+      },
+      {
+        value: 'ocean',
+        label: 'Oceano',
+        description: 'Azuis frios e ciano.',
+        colors: ['#f2f7fb', '#ffffff', '#397bd8', '#70c7dc'],
+        darkColors: ['#111a26', '#192535', '#73adff', '#70d2e3'],
+      },
+      {
+        value: 'terracotta',
+        label: 'Terracota',
+        description: 'Creme, coral e âmbar.',
+        colors: ['#fbf4e6', '#fffaf1', '#d5573f', '#eca34a'],
+        darkColors: ['#211a17', '#2c231e', '#ff977f', '#ffc16f'],
+      },
+      {
+        value: 'berry',
+        label: 'Frutas silvestres',
+        description: 'Malva, ameixa e rosa.',
+        colors: ['#f8f1f7', '#fffaff', '#a44f91', '#916de0'],
+        darkColors: ['#211823', '#2b202f', '#e88bd2', '#b19aff'],
+      },
     ],
   },
   {
@@ -75,10 +105,30 @@ const THEME_CATEGORIES: {
     title: 'Tipografia',
     description: 'Muda somente as famílias tipográficas e o ritmo do texto.',
     options: [
-      { value: 'classic', label: 'Clássica', description: 'JetBrains Mono, compacta e técnica.', fontFamily: "'JetBrains Mono Variable', monospace" },
-      { value: 'takeat', label: 'Poppins', description: 'Poppins, geométrica e amigável.', fontFamily: "'Poppins', sans-serif" },
-      { value: 'editorial', label: 'Editorial', description: 'Georgia, serifada e espaçosa.', fontFamily: "Georgia, 'Times New Roman', serif" },
-      { value: 'technical', label: 'Técnica', description: 'JetBrains Mono com mais espaçamento.', fontFamily: "'JetBrains Mono Variable', monospace" },
+      {
+        value: 'classic',
+        label: 'Clássica',
+        description: 'JetBrains Mono, compacta e técnica.',
+        fontFamily: "'JetBrains Mono Variable', monospace",
+      },
+      {
+        value: 'takeat',
+        label: 'Poppins',
+        description: 'Poppins, geométrica e amigável.',
+        fontFamily: "'Poppins', sans-serif",
+      },
+      {
+        value: 'editorial',
+        label: 'Editorial',
+        description: 'Georgia, serifada e espaçosa.',
+        fontFamily: "Georgia, 'Times New Roman', serif",
+      },
+      {
+        value: 'technical',
+        label: 'Técnica',
+        description: 'JetBrains Mono com mais espaçamento.',
+        fontFamily: "'JetBrains Mono Variable', monospace",
+      },
     ],
   },
   {
@@ -86,11 +136,41 @@ const THEME_CATEGORIES: {
     title: 'Formatos',
     description: 'Muda somente o raio e a forma dos cantos.',
     options: [
-      { value: 'classic', label: 'Clássico', description: 'Cantos arredondados discretos.', radius: '0.625rem', cornerShape: 'round' },
-      { value: 'takeat', label: 'Takeat', description: 'Arredondamento suave de 12 px.', radius: '0.75rem', cornerShape: 'round' },
-      { value: 'squircle', label: 'Squircle', description: 'Superelipse com curva acentuada.', radius: '1.75rem', cornerShape: 'superellipse(1.5)' },
-      { value: 'soft', label: 'Suave', description: 'Curvas amplas e orgânicas.', radius: '1.25rem', cornerShape: 'superellipse(1.2)' },
-      { value: 'angular', label: 'Angular', description: 'Cantos pequenos e geométricos.', radius: '0.3rem', cornerShape: 'superellipse(4)' },
+      {
+        value: 'classic',
+        label: 'Clássico',
+        description: 'Cantos arredondados discretos.',
+        radius: '0.625rem',
+        cornerShape: 'round',
+      },
+      {
+        value: 'takeat',
+        label: 'Takeat',
+        description: 'Arredondamento suave de 12 px.',
+        radius: '0.75rem',
+        cornerShape: 'round',
+      },
+      {
+        value: 'squircle',
+        label: 'Squircle',
+        description: 'Superelipse com curva acentuada.',
+        radius: '1.75rem',
+        cornerShape: 'superellipse(1.5)',
+      },
+      {
+        value: 'soft',
+        label: 'Suave',
+        description: 'Curvas amplas e orgânicas.',
+        radius: '1.25rem',
+        cornerShape: 'superellipse(1.2)',
+      },
+      {
+        value: 'angular',
+        label: 'Angular',
+        description: 'Cantos pequenos e geométricos.',
+        radius: '0.3rem',
+        cornerShape: 'superellipse(4)',
+      },
     ],
   },
   {
@@ -98,8 +178,20 @@ const THEME_CATEGORIES: {
     title: 'Presets',
     description: 'Aplica paleta, tipografia e formatos em conjunto.',
     options: [
-      { value: 'takeat', label: 'Takeat', description: 'Identidade Takeat completa.', colors: ['#ffffff', '#f6f6f6', '#c8131b', '#545454'], darkColors: ['#181719', '#222023', '#ff6872', '#f5f1f2'] },
-      { value: 'classic', label: 'Clássico', description: 'Aparência original do Mega Brain.', colors: ['#ffffff', '#f1f1f1', '#29707a', '#222222'], darkColors: ['#171717', '#292929', '#29707a', '#eeeeee'] },
+      {
+        value: 'takeat',
+        label: 'Takeat',
+        description: 'Identidade Takeat completa.',
+        colors: ['#ffffff', '#f6f6f6', '#c8131b', '#545454'],
+        darkColors: ['#181719', '#222023', '#ff6872', '#f5f1f2'],
+      },
+      {
+        value: 'classic',
+        label: 'Clássico',
+        description: 'Aparência original do Mega Brain.',
+        colors: ['#ffffff', '#f1f1f1', '#29707a', '#222222'],
+        darkColors: ['#171717', '#292929', '#29707a', '#eeeeee'],
+      },
     ],
   },
 ]
@@ -237,10 +329,11 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     updateStage,
     updateGeneral,
     save,
+    close,
   } = useSettingsDialog(desktop, onClose)
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && close()}>
       <DialogContent className="max-h-[90vh] gap-0 overflow-hidden p-0 sm:max-w-3xl" showCloseButton={!saving}>
         <DialogHeader className="px-5 py-4">
           <DialogTitle>Configurações</DialogTitle>
@@ -268,19 +361,29 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 <section className="grid gap-2">
                   <div>
                     <h3 className="text-sm font-medium">Aparência</h3>
-                    <p className="text-xs text-muted-foreground">Tema compartilhado entre web e desktop. Personalize cada aspecto ou aplique um preset.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Tema compartilhado entre web e desktop. Personalize cada aspecto ou aplique um preset.
+                    </p>
                   </div>
                   <section className="grid gap-2" aria-label="Modo de cores">
                     <div>
                       <h4 className="text-xs font-semibold">Modo</h4>
-                      <p className="text-[10px] text-muted-foreground">Use a preferência do sistema ou escolha claro/escuro.</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Use a preferência do sistema ou escolha claro/escuro.
+                      </p>
                     </div>
-                    <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/50 p-1" role="radiogroup" aria-label="Modo de cores">
-                      {([
-                        ['system', 'Sistema'],
-                        ['light', 'Claro'],
-                        ['dark', 'Escuro'],
-                      ] as const).map(([value, label]) => {
+                    <div
+                      className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/50 p-1"
+                      role="radiogroup"
+                      aria-label="Modo de cores"
+                    >
+                      {(
+                        [
+                          ['system', 'Sistema'],
+                          ['light', 'Claro'],
+                          ['dark', 'Escuro'],
+                        ] as const
+                      ).map(([value, label]) => {
                         const selected = theme.mode === value
                         return (
                           <button
@@ -326,9 +429,11 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                                     className="grid size-10 grid-cols-2 overflow-hidden rounded-md border border-black/10 shadow-sm"
                                     aria-hidden="true"
                                   >
-                                    {(colorMode === 'dark' ? option.darkColors ?? option.colors : option.colors).map((color) => (
-                                      <span key={color} style={{ backgroundColor: color }} />
-                                    ))}
+                                    {(colorMode === 'dark' ? (option.darkColors ?? option.colors) : option.colors).map(
+                                      (color) => (
+                                        <span key={color} style={{ backgroundColor: color }} />
+                                      ),
+                                    )}
                                   </span>
                                 ) : category.key === 'typography' ? (
                                   <span
@@ -339,10 +444,18 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                                     Aa
                                   </span>
                                 ) : (
-                                  <span className="grid size-10 place-items-center rounded-md border bg-muted" aria-hidden="true">
+                                  <span
+                                    className="grid size-10 place-items-center rounded-md border bg-muted"
+                                    aria-hidden="true"
+                                  >
                                     <span
                                       className="size-7 border-2 border-primary bg-primary/15"
-                                      style={{ borderRadius: option.radius, cornerShape: option.cornerShape } as CSSProperties}
+                                      style={
+                                        {
+                                          borderRadius: option.radius,
+                                          cornerShape: option.cornerShape,
+                                        } as CSSProperties
+                                      }
                                     />
                                   </span>
                                 )}
@@ -474,7 +587,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </Tabs>
         )}
         <DialogFooter className="mx-0 mb-0 rounded-none px-5 py-3">
-          <Button variant="outline" onClick={onClose} disabled={saving}>
+          <Button variant="outline" onClick={close} disabled={saving}>
             Cancelar
           </Button>
           <Button onClick={save} disabled={!settings || saving}>

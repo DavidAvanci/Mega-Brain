@@ -30,6 +30,7 @@ import { STATUS_LABELS, type Card, type Status } from '../shared/domain/cards'
 import type { EditorDiscovery, MegaBrainSettings } from '../shared/domain/settings'
 import { isTauriDesktop } from './desktopBootstrap'
 import { DesktopWindowControls, invokeDesktopWindowCommand } from './DesktopWindowControls'
+import { BrainIcon } from './BrainIcon'
 
 const CardModal = lazy(() => import('./features/cards/ui/CardModal').then((module) => ({ default: module.CardModal })))
 const DeployPrsDialog = lazy(() =>
@@ -158,7 +159,7 @@ export default function App() {
           }}
         >
           <h1 data-tauri-drag-region className="flex min-w-0 items-center gap-2.5 font-sans text-base font-semibold">
-            <img src="/brain.svg" alt="" aria-hidden="true" className="size-6" />
+            <BrainIcon className="size-6" />
             <span className="truncate">Mega Brain</span>
           </h1>
           <span data-tauri-drag-region className="min-w-2 flex-1" />

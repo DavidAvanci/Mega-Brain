@@ -1,7 +1,7 @@
-import type { BoardSettings, GeneralSettings, MegaBrainSettings } from '../shared/domain/settings'
+import type { BoardSettings, GeneralSettingsInput, MegaBrainSettings } from '../shared/domain/settings'
 
 /** Applies a general-settings edit and resets stage defaults only on provider changes. */
-export function withGeneralSettings(current: MegaBrainSettings, general: GeneralSettings): MegaBrainSettings {
+export function withGeneralSettings(current: MegaBrainSettings, general: GeneralSettingsInput): MegaBrainSettings {
   if (current.general.llmProvider === general.llmProvider) return { ...current, general }
   const stages = Object.fromEntries(
     Object.entries(current.stages).map(([key, stage]) => [

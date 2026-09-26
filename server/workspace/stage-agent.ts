@@ -8,6 +8,7 @@ import { stageScriptCommand } from './stage-command'
 import { readStageSettings } from './stage-settings'
 import { captureStageSnapshot } from './stage-snapshot'
 import { stageOwnedFiles, type Stage } from './stage-catalog'
+import { repositoryMentionContext } from '../repositories/mentions'
 
 export const AGENT_FILE = 'agent.json'
 
@@ -29,10 +30,11 @@ export function stageAgentCommand(
   provider: LlmProvider = 'claude',
   claude?: string,
   codex?: string,
+  settingsFile?: string,
 ): [string, string[]] {
   if (stage.script) return stageScriptCommand(path, stage)
 
-  const prompt = (stage.prompt as (currentCard: CardData) => string)(card)
+  const prompt = repositoryMentionContext((stage.prompt as (currentCard: CardData) => string)(card), settingsFile)
   if (provider === 'chatgpt') {
     return [
       codexBin(codex),
@@ -84,7 +86,7 @@ export function runStageAgent(
   if (model === undefined) captureStageSnapshot(path, stage.name, stageOwnedFiles(stage))
   const out = openSync(join(path, `${stage.name}.jsonl`), 'w')
   const err = openSync(join(path, `${stage.name}.log`), 'a')
-  const [bin, args] = stageAgentCommand(path, stage, card, effectiveModel, settings.effort, provider, claude, codex)
+  const [bin, args] = stageAgentCommand(path, stage, card, effectiveModel, settings.effort, provider, claude, codex, settingsFile)
   const child = runner.spawn(bin, args, {
     cwd: path,
     detached: true,

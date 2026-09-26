@@ -16,6 +16,7 @@ export function completeWorkspaceConfig(input: WorkspaceConfigInput): MegaBrainC
     workspaceDir,
     worktreesDir: input.worktreesDir ?? join(dirname(resolve(workspaceDir)), 'worktrees'),
     jira: {},
+    laya: { enabled: false },
     directories: {
       home,
       claudeHome: join(home, '.claude'),

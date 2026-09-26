@@ -4,6 +4,12 @@ import { withGeneralSettings, withStageSetting } from './settings-state'
 
 const settings: MegaBrainSettings = {
   general: {
+    layaEnabled: false,
+    layaBaseUrl: '',
+    layaActiveBaseUrl: '',
+    layaUrlSource: 'none',
+    layaConfigured: false,
+    layaCredentialSource: 'none',
     llmProvider: 'claude',
     editor: 'vscode',
     editorCommand: '',

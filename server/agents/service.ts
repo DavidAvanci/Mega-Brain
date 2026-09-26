@@ -1,5 +1,5 @@
-import { closeSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { closeSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { AgentProvider, AgentSession, AgentSessionsResponse, AgentStatus } from '../../shared/domain/agents'
 import { agentProcesses, externalAgentCwd, type RunningAgentProcess } from '../agent-process'
 import { parseJsonRecord, readTail, record, summarizeAgentInput, toolUse } from '../agent-log'
@@ -26,6 +26,7 @@ export interface AgentSessionServiceOptions {
   now?: () => Date
   processes?: () => RunningAgentProcess[]
   workspaceDir?: string
+  worktreesDir?: string
   stopProcess?: (pid: number) => void
 }
 
@@ -181,21 +182,71 @@ function uniqueExisting(values: readonly string[]): string[] {
   return [...new Set(values.filter(Boolean))]
 }
 
-function cardIdsByCwd(workspaceDir: string | undefined, processes: readonly RunningAgentProcess[]): Map<string, string> {
-  const result = new Map<string, string>()
-  if (!workspaceDir || !processes.length) return result
-  let cards
+/** Returns the first path segment only when cwd is contained in the worktrees root. */
+export function cardIdFromWorktreeCwd(cwd: string, worktreesRoot: string): string | undefined {
+  if (!cwd || !worktreesRoot || !isAbsolute(cwd) || !isAbsolute(worktreesRoot)) return undefined
+  const withinRoot = relative(resolve(worktreesRoot), resolve(cwd))
+  if (!withinRoot || withinRoot === '..' || withinRoot.startsWith(`..${sep}`) || isAbsolute(withinRoot))
+    return undefined
+  return withinRoot.split(sep)[0] || undefined
+}
+
+function realWorktreesRoot(worktreesDir: string | undefined): string | undefined {
+  if (!worktreesDir) return undefined
   try {
-    cards = readdirSync(workspaceDir, { withFileTypes: true }).filter(
-      (entry) => entry.isDirectory() && !entry.name.startsWith('.'),
+    return realpathSync(worktreesDir)
+  } catch {
+    return undefined
+  }
+}
+
+function normalizedSessionCwd(cwd: string): string | undefined {
+  if (!isAbsolute(cwd)) return undefined
+  try {
+    return realpathSync(cwd)
+  } catch {
+    // A historical session can outlive its nested worktree directory. Resolve the
+    // nearest existing ancestor to prevent a surviving symlink from escaping root.
+    let ancestor = resolve(cwd)
+    const missing: string[] = []
+    while (true) {
+      try {
+        const existing = realpathSync(ancestor)
+        return resolve(existing, ...missing.reverse())
+      } catch {
+        const parent = resolve(ancestor, '..')
+        if (parent === ancestor) return undefined
+        missing.push(basename(ancestor))
+        ancestor = parent
+      }
+    }
+  }
+}
+
+function existingCardIds(workspaceDir: string | undefined): Set<string> {
+  if (!workspaceDir) return new Set()
+  try {
+    return new Set(
+      readdirSync(workspaceDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => entry.name),
     )
   } catch {
-    return result
+    return new Set()
   }
+}
+
+function cardIdsByCwd(
+  workspaceDir: string | undefined,
+  processes: readonly RunningAgentProcess[],
+  cardIds: Set<string>,
+): Map<string, string> {
+  const result = new Map<string, string>()
+  if (!workspaceDir || !processes.length) return result
   for (const process of processes) {
-    for (const card of cards) {
-      if (externalAgentCwd(join(workspaceDir, card.name), new Set([process.cwd]))) {
-        result.set(process.cwd, card.name)
+    for (const cardId of cardIds) {
+      if (externalAgentCwd(join(workspaceDir, cardId), new Set([process.cwd]))) {
+        result.set(process.cwd, cardId)
         break
       }
     }
@@ -246,7 +297,9 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
   const list = (): AgentSessionsResponse => {
     const now = (options.now ?? (() => new Date()))()
     const running = (options.processes ?? agentProcesses)()
-    const cardByCwd = cardIdsByCwd(options.workspaceDir, running)
+    const cardIds = existingCardIds(options.workspaceDir)
+    const worktreesRoot = realWorktreesRoot(options.worktreesDir)
+    const cardByCwd = cardIdsByCwd(options.workspaceDir, running, cardIds)
     const activeByProviderAndCwd = new Map<string, RunningAgentProcess[]>()
     for (const process of running) {
       const key = `${process.provider}:${process.cwd}`
@@ -311,7 +364,11 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
         .flatMap((session) => {
           const name = cachedNames.get(`${session.provider}:${session.id}`)
           if (isInternalResourcesSession(session, name)) return []
-          const cardId = cardByCwd.get(session.cwd)
+          const normalizedCwd = worktreesRoot ? normalizedSessionCwd(session.cwd) : undefined
+          const worktreeCardId =
+            normalizedCwd && worktreesRoot ? cardIdFromWorktreeCwd(normalizedCwd, worktreesRoot) : undefined
+          const cardId =
+            cardByCwd.get(session.cwd) ?? (worktreeCardId && cardIds.has(worktreeCardId) ? worktreeCardId : undefined)
           return [{ ...session, ...(name ? { name } : {}), ...(cardId ? { cardId } : {}) }]
         }),
       scannedAt: now.toISOString(),
