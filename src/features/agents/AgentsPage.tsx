@@ -23,12 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import type { AgentSession, AgentStatus } from '../../../shared/domain/agents'
 import type { Card } from '../../../shared/domain/cards'
-import {
-  isAgentSessionActive,
-  refreshAgentSessions,
-  stopAgentSession,
-  useAgentSessions,
-} from './model/agents-state'
+import { isAgentSessionActive, refreshAgentSessions, stopAgentSession, useAgentSessions } from './model/agents-state'
 
 const STATUS_META: Record<AgentStatus, { label: string; dot: string }> = {
   rodando: { label: 'Rodando', dot: 'bg-emerald-500' },
@@ -143,6 +138,7 @@ function AgentRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="max-w-full truncate font-sans font-semibold">{session.name ?? session.title}</h3>
+            <span className="text-xs text-muted-foreground">{provider.label}</span>
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className={cn('size-2 rounded-full', meta.dot, isActive(session) && 'animate-pulse')} />
               {meta.label}
@@ -216,6 +212,20 @@ export function AgentsPage({ cards, onOpenCard }: { cards: Card[]; onOpenCard: (
     for (const session of sessions) (isActive(session) ? current : history).push(session)
     return { active: current, recent: history }
   }, [sessions])
+  const activeGroups = useMemo(() => {
+    const groups = new Map<string | undefined, AgentSession[]>()
+    for (const session of active) {
+      const cardId = session.cardId && cardsById.has(session.cardId) ? session.cardId : undefined
+      const group = groups.get(cardId)
+      if (group) group.push(session)
+      else groups.set(cardId, [session])
+    }
+    return [...groups].sort(([left], [right]) => {
+      if (!left) return 1
+      if (!right) return -1
+      return left.localeCompare(right)
+    })
+  }, [active, cardsById])
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6" aria-label="Página Agentes">
@@ -259,14 +269,35 @@ export function AgentsPage({ cards, onOpenCard }: { cards: Card[]; onOpenCard: (
               </div>
               {active.length ? (
                 <div className="space-y-3">
-                  {active.map((session) => (
-                    <AgentRow
-                      key={session.id}
-                      session={session}
-                      card={session.cardId ? cardsById.get(session.cardId) : undefined}
-                      onOpenCard={onOpenCard}
-                    />
-                  ))}
+                  {activeGroups.map(([cardId, group]) => {
+                    const card = cardId ? cardsById.get(cardId) : undefined
+                    return (
+                      <div key={cardId ?? 'sem-card'} className="rounded-xl border bg-muted/20 p-3">
+                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
+                          {card ? (
+                            <button
+                              type="button"
+                              className="min-w-0 text-left font-sans font-semibold text-primary hover:underline dark:text-chart-2"
+                              onClick={() => onOpenCard(card.id)}
+                              title={`Abrir ${card.id}: ${card.title}`}
+                            >
+                              <span className="font-mono">{card.id}</span> · {card.title}
+                            </button>
+                          ) : (
+                            <h3 className="font-sans font-semibold">Sem card</h3>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            {group.length} {group.length === 1 ? 'agente' : 'agentes'}
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {group.map((session) => (
+                            <AgentRow key={session.id} session={session} card={card} onOpenCard={onOpenCard} />
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="rounded-xl border border-dashed bg-card/50 px-6 py-10 text-center">

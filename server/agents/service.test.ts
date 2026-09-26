@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { createAgentSessionService } from './service'
+import { cardIdFromWorktreeCwd, createAgentSessionService } from './service'
 
 function jsonl(path: string, events: unknown[], modifiedAt = new Date('2026-09-20T12:00:00.000Z')) {
   mkdirSync(join(path, '..'), { recursive: true })
@@ -11,6 +11,59 @@ function jsonl(path: string, events: unknown[], modifiedAt = new Date('2026-09-2
 }
 
 describe('agent session service', () => {
+  test('extracts only the first card segment inside the real worktrees root', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mega-brain-worktree-path-'))
+    const worktreesDir = join(root, 'worktrees')
+    const nested = join(worktreesDir, 'MB-123', 'items', 'T1', 'api')
+    mkdirSync(nested, { recursive: true })
+    expect(cardIdFromWorktreeCwd(nested, worktreesDir)).toBe('MB-123')
+    expect(cardIdFromWorktreeCwd(join(worktreesDir, 'MB-12', 'repos', 'api'), worktreesDir)).toBe('MB-12')
+    expect(cardIdFromWorktreeCwd(join(root, 'worktrees-other', 'MB-123'), worktreesDir)).toBeUndefined()
+    expect(cardIdFromWorktreeCwd(worktreesDir, worktreesDir)).toBeUndefined()
+  })
+
+  test('associates nested active and historical worktrees only to existing cards', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mega-brain-worktree-sessions-'))
+    const workspaceDir = join(root, 'cards')
+    const worktreesDir = join(root, 'worktrees')
+    const codexHome = join(root, '.codex')
+    for (const cardId of ['MB-12', 'MB-123']) mkdirSync(join(workspaceDir, cardId), { recursive: true })
+    const activeCwd = join(worktreesDir, 'MB-123', 'repos', 'api')
+    const historicalCwd = join(worktreesDir, 'MB-12', 'items', 'T1', 'api')
+    const unknownCwd = join(worktreesDir, 'MB-999', 'repos', 'api')
+    const outsideCwd = join(root, 'worktrees-other', 'MB-123', 'repos', 'api')
+    const removedNestedCwd = join(worktreesDir, 'MB-12', 'items', 'removed', 'api')
+    const escapedCwd = join(worktreesDir, 'MB-123', 'escaped', 'api')
+    for (const cwd of [activeCwd, historicalCwd, unknownCwd, outsideCwd]) mkdirSync(cwd, { recursive: true })
+    symlinkSync(join(root, 'worktrees-other'), join(worktreesDir, 'MB-123', 'escaped'))
+    for (const [id, cwd] of [
+      ['historical', historicalCwd],
+      ['unknown', unknownCwd],
+      ['outside', outsideCwd],
+      ['removed', removedNestedCwd],
+      ['escaped', escapedCwd],
+    ]) {
+      jsonl(join(codexHome, 'sessions', '2026', '09', '20', `${id}.jsonl`), [
+        { type: 'session_meta', payload: { id, cwd } },
+        { type: 'event_msg', payload: { type: 'task_complete' } },
+      ])
+    }
+    const sessions = createAgentSessionService({
+      home: root,
+      claudeProjects: join(root, '.claude', 'projects'),
+      codexHomes: [codexHome],
+      workspaceDir,
+      worktreesDir,
+      now: () => new Date('2026-09-20T12:01:00.000Z'),
+      processes: () => [{ pid: 123, provider: 'claude', cwd: activeCwd }],
+    }).list().sessions
+    expect(sessions.find(({ pid }) => pid === 123)).toMatchObject({ cardId: 'MB-123' })
+    expect(sessions.find(({ id }) => id === 'historical')).toMatchObject({ cardId: 'MB-12', pid: undefined })
+    expect(sessions.find(({ id }) => id === 'unknown')?.cardId).toBeUndefined()
+    expect(sessions.find(({ id }) => id === 'outside')?.cardId).toBeUndefined()
+    expect(sessions.find(({ id }) => id === 'removed')).toMatchObject({ cardId: 'MB-12', pid: undefined })
+    expect(sessions.find(({ id }) => id === 'escaped')?.cardId).toBeUndefined()
+  })
   test('combines active Claude processes with recent Claude and Codex sessions', () => {
     const root = mkdtempSync(join(tmpdir(), 'mega-brain-agents-'))
     const claudeProjects = join(root, '.claude', 'projects')
@@ -159,7 +212,10 @@ describe('agent session service', () => {
       { type: 'session_meta', payload: { id: 'codex-resources', cwd: join(root, 'resources') } },
       { type: 'event_msg', payload: { type: 'task_started' } },
     ])
-    writeFileSync(join(codexHome, 'session_index.jsonl'), JSON.stringify({ id: 'codex-resources', thread_name: 'resources' }))
+    writeFileSync(
+      join(codexHome, 'session_index.jsonl'),
+      JSON.stringify({ id: 'codex-resources', thread_name: 'resources' }),
+    )
 
     const result = createAgentSessionService({
       home: root,

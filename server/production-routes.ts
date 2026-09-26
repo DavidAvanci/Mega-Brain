@@ -75,6 +75,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
         (value): value is string => Boolean(value),
       ),
       workspaceDir: config.workspaceDir,
+      worktreesDir: config.worktreesDir,
     }),
   )
 
