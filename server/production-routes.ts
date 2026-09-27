@@ -52,8 +52,23 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
       signalTree: (pid, signal) => process.kill(-pid, signal),
     })
   const config = options.config
+  const windowsCodexHome = process.env.WSL_DISTRO_NAME
+    ? join('/mnt/c/Users', basename(config.directories.home), '.codex')
+    : undefined
+  const agentService = createAgentSessionService({
+    home: config.directories.home,
+    claudeHome: config.directories.claudeHome,
+    claudeProjects: config.directories.claudeProjects,
+    codexHomes: [process.env.MEGA_BRAIN_CODEX_HOME, join(config.directories.home, '.codex'), windowsCodexHome].filter(
+      (value): value is string => Boolean(value),
+    ),
+    workspaceDir: config.workspaceDir,
+    worktreesDir: config.worktreesDir,
+  })
   const chat = createChatService(config, runner, owner)
-  const workspaceAdapter = workspaceHttp(createWorkspaceService(config, runner, owner, chat.activePaths))
+  const workspaceAdapter = workspaceHttp(
+    createWorkspaceService(config, runner, owner, () => agentService.list().sessions),
+  )
   // The workspace handler predates the common /api registry and intentionally
   // keeps its compact domain-relative paths. Normalize once at composition,
   // rather than teaching either HTTP transport a workspace-specific rule.
@@ -68,21 +83,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   const repositories = repositoriesHttp(
     new RepositoryRegistry(repositoryCatalogFile(config.preferences.settingsFile), runner),
   )
-  const windowsCodexHome = process.env.WSL_DISTRO_NAME
-    ? join('/mnt/c/Users', basename(config.directories.home), '.codex')
-    : undefined
-  const agents = agentsHttp(
-    createAgentSessionService({
-      home: config.directories.home,
-      claudeHome: config.directories.claudeHome,
-      claudeProjects: config.directories.claudeProjects,
-      codexHomes: [process.env.MEGA_BRAIN_CODEX_HOME, join(config.directories.home, '.codex'), windowsCodexHome].filter(
-        (value): value is string => Boolean(value),
-      ),
-      workspaceDir: config.workspaceDir,
-      worktreesDir: config.worktreesDir,
-    }),
-  )
+  const agents = agentsHttp(agentService)
 
   for (const [method, path] of [
     ['GET', '/api/workspace'],

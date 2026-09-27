@@ -287,16 +287,12 @@ export interface ChatService {
   shutdown?(): Promise<void>
 }
 
-export interface ChatRuntimeService extends ChatService {
-  activePaths(): ReadonlySet<string>
-}
-
 export function createChatService(
   config: Pick<MegaBrainConfig, 'workspaceDir' | 'directories' | 'executables'> &
     Partial<Pick<MegaBrainConfig, 'preferences'>>,
   runner: ProcessRunner = nodeProcessRunner,
   owner?: ProcessOwner,
-): ChatRuntimeService {
+): ChatService {
   const running = new Map<string, ProcessChild>()
   const aborted = new WeakSet<ProcessChild>()
   let closing = false
@@ -306,9 +302,6 @@ export function createChatService(
     return createWorkspacePathResolver(root).resolveCardFolder(name).path
   }
   return {
-    activePaths() {
-      return new Set(running.keys())
-    },
     async history(name) {
       const path = folderPath(name)
       if (config.preferences?.llmProvider === 'chatgpt') return { sessionId: null, entries: [], settings: null }

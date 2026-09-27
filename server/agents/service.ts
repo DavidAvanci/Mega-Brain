@@ -202,7 +202,13 @@ function realWorktreesRoot(worktreesDir: string | undefined): string | undefined
 
 function cardIdFromWorkspaceCwd(cwd: string, workspaceDir: string | undefined, cardIds: Set<string>): string | undefined {
   if (!workspaceDir || !cwd) return undefined
-  const withinRoot = relative(resolve(workspaceDir), resolve(cwd))
+  let realWorkspaceDir: string
+  try {
+    realWorkspaceDir = realpathSync(workspaceDir)
+  } catch {
+    return undefined
+  }
+  const withinRoot = relative(realWorkspaceDir, resolve(cwd))
   if (!withinRoot || withinRoot === '..' || withinRoot.startsWith(`..${sep}`) || isAbsolute(withinRoot)) return undefined
   const cardId = withinRoot.split(sep)[0]
   return cardIds.has(cardId) ? cardId : undefined

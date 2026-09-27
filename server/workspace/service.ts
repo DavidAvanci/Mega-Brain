@@ -8,6 +8,7 @@ import { createCard } from './card-folder'
 import { createWorkspacePathResolver } from './path'
 import { deleteCard } from './worktree-lifecycle'
 import { listBoardCards } from './board-list'
+import type { AgentSession } from '../../shared/domain/agents'
 import { openEditor } from './launchers'
 import { createStageController } from './stage-controller'
 import { inspectCard, inspectCardDiff } from './card-inspection'
@@ -46,7 +47,7 @@ export function createWorkspaceService(
   inputConfig: WorkspaceConfigInput,
   runner: ProcessRunner = nodeProcessRunner,
   owner?: ProcessOwner,
-  activeChatPaths: () => ReadonlySet<string> = () => new Set(),
+  agentSessions: () => readonly AgentSession[] = () => [],
 ): WorkspaceService {
   const config = completeWorkspaceConfig(inputConfig)
   const stages = createStageController(config, runner, owner)
@@ -69,7 +70,7 @@ export function createWorkspaceService(
             config.executables.git,
             runner,
             stages.start,
-            activeChatPaths(),
+            agentSessions(),
           )
         const card = folder(query.get('name'))
         if (path === '/detail') return inspectCard(card, resolve(config.worktreesDir), config.executables.git, runner)
@@ -80,7 +81,7 @@ export function createWorkspaceService(
           config.executables.git,
           runner,
           stages.start,
-          activeChatPaths(),
+          agentSessions(),
         )
       }
       if (method !== 'POST') throw new Error('Método não suportado')

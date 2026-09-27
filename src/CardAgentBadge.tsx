@@ -3,6 +3,8 @@ import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
 import {
   AiBrain01Icon,
   BlueprintIcon,
+  ChatGptIcon,
+  ClaudeIcon,
   CodeIcon,
   FlaskConicalIcon,
   GitPullRequestIcon,
@@ -35,7 +37,10 @@ const KINDS: Record<string, { name: string; icon: IconSvgElement }> = {
 const AUTONOMOUS = { name: 'autônomo', icon: AiBrain01Icon }
 
 function kindOf(agent: AgentInfo) {
-  return (agent.stage ? KINDS[agent.stage] : undefined) ?? AUTONOMOUS
+  const kind = (agent.stage ? KINDS[agent.stage] : undefined) ?? AUTONOMOUS
+  if (agent.provider === 'claude') return { name: agent.stage ? kind.name : 'Claude', icon: ClaudeIcon }
+  if (agent.provider === 'codex') return { name: agent.stage ? kind.name : 'Codex', icon: ChatGptIcon }
+  return kind
 }
 
 export function agentName(agent: AgentInfo): string {
@@ -77,6 +82,7 @@ export function AgentBadge({ agent, cardId }: { agent: AgentInfo; cardId: string
           <HugeiconsIcon
             icon={icon}
             strokeWidth={2}
+            aria-label={agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : undefined}
             className={cn('size-3.5 shrink-0', agent.status === 'rodando' && 'animate-pulse')}
           />
           <span className="truncate">{text}</span>

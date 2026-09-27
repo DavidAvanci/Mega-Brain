@@ -421,10 +421,10 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
                   </span>
                 </div>
               )}
-              {agents.map((agent) => {
+              {agents.map((agent, index) => {
                 const progress = agent.status === 'rodando' ? agent.progress : undefined
                 return (
-                  <div key={agent.stage ?? 'autonomo'} className="flex flex-col gap-1.5">
+                  <div key={`${agent.stage ?? 'autonomo'}-${index}`} className="flex flex-col gap-1.5">
                     <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                       <AgentBadge agent={agent} cardId={card.id} />
                       <StageResetButton agent={agent} cardId={card.id} />

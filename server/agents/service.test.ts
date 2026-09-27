@@ -13,10 +13,11 @@ function jsonl(path: string, events: unknown[], modifiedAt = new Date('2026-09-2
 describe('agent session service', () => {
   test('keeps a card association for a finished session started in the card folder', () => {
     const root = mkdtempSync(join(tmpdir(), 'mega-brain-card-session-'))
-    const workspaceDir = join(root, 'cards')
-    const cwd = join(workspaceDir, 'MB-123')
+    const workspaceDir = join(root, 'cards-link')
+    const cwd = join(root, 'cards', 'MB-123')
     const codexHome = join(root, '.codex')
     mkdirSync(cwd, { recursive: true })
+    symlinkSync(join(root, 'cards'), workspaceDir, 'dir')
     jsonl(join(codexHome, 'sessions', '2026', '09', '20', 'card.jsonl'), [
       { type: 'session_meta', payload: { id: 'card-session', cwd } },
       { type: 'event_msg', payload: { type: 'task_complete' } },
