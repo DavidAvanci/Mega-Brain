@@ -101,6 +101,28 @@ export function matchesPattern(path: string, pattern: string): boolean {
   return regex.test(path)
 }
 
+export function createdByDeps(item: Item, items: Item[]): string[] {
+  const byId = new Map(items.map((other) => [other.id, other]))
+  const visited = new Set<string>()
+  const pending = [...item.deps]
+  const created: string[] = []
+  while (pending.length) {
+    const dep = byId.get(pending.pop()!)
+    if (!dep || visited.has(dep.id)) continue
+    visited.add(dep.id)
+    if (dep.repo === item.repo) created.push(...dep.creates)
+    pending.push(...dep.deps)
+  }
+  return created
+}
+
+export function pendingRequires(item: Item, items: Item[], exists: (pattern: string) => boolean): string[] {
+  const created = createdByDeps(item, items)
+  return item.requires.filter(
+    (pattern) => !exists(pattern) && !created.some((path) => matchesPattern(path, pattern)),
+  )
+}
+
 export function overlaps(a: Item, b: Item): boolean {
   if (a.repo !== b.repo) return false
   if (!a.files.length || !b.files.length) return true
