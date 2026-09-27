@@ -2,6 +2,7 @@ import { ApiError, apiClient } from '@/shared/api/api-client'
 import { requestJson } from '@/shared/api/request-json'
 import type { EditorDiscovery, MegaBrainSettings } from '../../../../shared/domain/settings'
 import type { ChatAgentSettings, ChatEntry, ChatEvent } from '../../../../shared/contracts/chat'
+import type { CardAgentUsage } from '../../../../shared/domain/agents'
 
 export interface WorktreeRepoInfo {
   name: string
@@ -18,6 +19,7 @@ export interface WorktreeRepoInfo {
 export interface CardDetail {
   files: Record<string, string | null>
   repos: WorktreeRepoInfo[]
+  usage: CardAgentUsage
 }
 
 export interface RepoDiff {

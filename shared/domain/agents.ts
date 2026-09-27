@@ -13,6 +13,13 @@ export interface AgentInfo {
 
 export type AgentProvider = 'claude' | 'codex'
 
+export interface CardAgentUsage {
+  durationMs: number
+  costUsd: number
+  runs: number
+  unpricedRuns: number
+}
+
 export interface AgentSession {
   id: string
   provider: AgentProvider
