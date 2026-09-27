@@ -46,6 +46,7 @@ export function createWorkspaceService(
   inputConfig: WorkspaceConfigInput,
   runner: ProcessRunner = nodeProcessRunner,
   owner?: ProcessOwner,
+  activeChatPaths: () => ReadonlySet<string> = () => new Set(),
 ): WorkspaceService {
   const config = completeWorkspaceConfig(inputConfig)
   const stages = createStageController(config, runner, owner)
@@ -62,11 +63,25 @@ export function createWorkspaceService(
         if (path === '/settings/editors') return availableWorkspaceEditors(config)
         if (path === '/settings') return readWorkspaceSettings(config, root)
         if (path === '/')
-          return listBoardCards(root, resolve(config.worktreesDir), config.executables.git, runner, stages.start)
+          return listBoardCards(
+            root,
+            resolve(config.worktreesDir),
+            config.executables.git,
+            runner,
+            stages.start,
+            activeChatPaths(),
+          )
         const card = folder(query.get('name'))
         if (path === '/detail') return inspectCard(card, resolve(config.worktreesDir), config.executables.git, runner)
         if (path === '/diff') return inspectCardDiff(card.path, config.executables.git, runner)
-        return listBoardCards(root, resolve(config.worktreesDir), config.executables.git, runner, stages.start)
+        return listBoardCards(
+          root,
+          resolve(config.worktreesDir),
+          config.executables.git,
+          runner,
+          stages.start,
+          activeChatPaths(),
+        )
       }
       if (method !== 'POST') throw new Error('Método não suportado')
       const data = (body ?? {}) as Record<string, unknown>

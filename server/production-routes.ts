@@ -52,7 +52,8 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
       signalTree: (pid, signal) => process.kill(-pid, signal),
     })
   const config = options.config
-  const workspaceAdapter = workspaceHttp(createWorkspaceService(config, runner, owner))
+  const chat = createChatService(config, runner, owner)
+  const workspaceAdapter = workspaceHttp(createWorkspaceService(config, runner, owner, chat.activePaths))
   // The workspace handler predates the common /api registry and intentionally
   // keeps its compact domain-relative paths. Normalize once at composition,
   // rather than teaching either HTTP transport a workspace-specific rule.
@@ -61,7 +62,6 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
       ...request,
       path: request.path.slice('/api/workspace'.length) || '/',
     })
-  const chat = createChatService(config, runner, owner)
   const jira = createJiraService(config.jira)
   const usage = createClaudeUsageService(config.directories.claudeCredentials)
   const coffee = coffeeHttp(createCoffeeService(runner, config.executables.powershell, owner))

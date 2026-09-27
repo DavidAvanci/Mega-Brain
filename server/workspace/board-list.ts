@@ -21,6 +21,7 @@ export function listBoardCards(
   git: string | undefined,
   runner: ProcessRunner,
   startStage: BoardStageStarter,
+  activeChatPaths: ReadonlySet<string> = new Set(),
 ) {
   mkdirSync(root, { recursive: true })
   const activeCwds = agentCwds()
@@ -59,7 +60,9 @@ export function listBoardCards(
       const advanced = advanceStage(path, card, agent, startStage)
       if (advanced !== card) agent = readAgent(path)
       const agents = agent ? [agent] : []
-      if (agent?.status !== 'rodando') {
+      const chatRunning = activeChatPaths.has(path)
+      if (chatRunning) agents.push({ status: 'rodando', phase: 'Chat' })
+      if (agent?.status !== 'rodando' && !chatRunning) {
         const cwd = externalAgentCwd(path, activeCwds)
         if (cwd) agents.push(readExternalAgent(cwd))
       }

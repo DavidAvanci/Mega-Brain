@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { parseChatSettings, createChatService } from './service'
+import { createWorkspaceService } from '../workspace/service'
 import type { ProcessOwner, ProcessRunner } from '../process'
 
 function fakeRunner() {
@@ -157,3 +158,40 @@ test('chat sends validated repository context for registered mentions', async ()
   expect(prompt).toContain('@unknown')
   await service.shutdown?.()
 })
+
+test.each(['claude', 'chatgpt'] as const)(
+  'board shows a running %s card chat and clears it on exit',
+  async (provider) => {
+    const root = mkdtempSync(join(tmpdir(), 'mega-brain-chat-card-'))
+    const config = {
+      ...testConfig(root),
+      preferences: {
+        settingsFile: join(root, 'settings.json'),
+        editor: 'cursor' as const,
+        editorCommand: '',
+        llmProvider: provider,
+        onboardingCompleted: true,
+      },
+    }
+    const fake = fakeRunner()
+    const chat = createChatService(config, fake.runner)
+    const workspace = createWorkspaceService(
+      { workspaceDir: root, executables: {} },
+      fake.runner,
+      undefined,
+      chat.activePaths,
+    )
+    const board = async () =>
+      (await workspace.handle('/', 'GET', new URLSearchParams(), undefined)) as Array<{
+        agents: Array<{ status: string; phase?: string }>
+      }>
+
+    expect((await board())[0].agents).toEqual([])
+    chat.send('card', 'oi', () => {})
+    expect((await board())[0].agents).toContainEqual({ status: 'rodando', phase: 'Chat' })
+
+    fake.children[0].emit('close', 0, null)
+    expect((await board())[0].agents).toEqual([])
+    await chat.shutdown?.()
+  },
+)
