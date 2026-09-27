@@ -56,6 +56,32 @@ test('requisito ausente bloqueia, mas arquivo declarado para criação não', ()
   ])
 })
 
+test('requisito criado por dependência transitiva do mesmo repo não bloqueia', () => {
+  const md = [
+    '## repo',
+    '- [ ] T1 A {creates: src/routes/novo.tsx}',
+    '- [ ] T2 B {deps: T1}',
+    '- [ ] T3 C {requires: src/routes/novo.tsx; deps: T2}',
+  ].join('\n')
+  expect(errors(md, { repoExists: () => true, pathExists: () => false })).toEqual([])
+})
+
+test('requisito criado por item que não é dependência ou é de outro repo continua bloqueando', () => {
+  const md = [
+    '## repo',
+    '- [ ] T1 A {creates: src/novo.tsx}',
+    '- [ ] T2 B {requires: src/novo.tsx}',
+    '## outro',
+    '- [ ] T3 C {creates: src/outro.tsx}',
+    '## repo2',
+    '- [ ] T4 D {requires: src/outro.tsx; deps: T3}',
+  ].join('\n')
+  expect(errors(md, { repoExists: () => true, pathExists: () => false }).map((issue) => issue.where)).toEqual([
+    'T2',
+    'T4',
+  ])
+})
+
 test('checklist só com seções descartadas não é executável', () => {
   expect(errors('## ~~descartados~~\n- [ ] T1 Nada {files: a.ts}\n')[0].message).toContain('Nenhum item executável')
 })
