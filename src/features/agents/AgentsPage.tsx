@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AiBrain01Icon,
+  ArrowDown01Icon,
+  ArrowRight01Icon,
   ChatGptIcon,
   ClaudeIcon,
   Clock01Icon,
@@ -233,38 +235,91 @@ function AgentGroups({
       {groups.map(([cardId, group]) => {
         const card = cardId ? cardsById.get(cardId) : undefined
         return (
-          <div key={cardId ?? 'sem-card'} className="rounded-xl border bg-muted/20 p-3">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
-              {card ? (
-                <button
-                  type="button"
-                  className="min-w-0 text-left font-sans font-semibold text-primary hover:underline dark:text-chart-2"
-                  onClick={() => onOpenCard(card.id)}
-                  title={`Abrir ${card.id}: ${card.title}`}
-                >
-                  <span className="font-mono">{card.id}</span> · {card.title}
-                </button>
-              ) : (
-                <h3 className="font-sans font-semibold">Sem card</h3>
-              )}
-              <span className="text-xs text-muted-foreground">
-                {group.length} {group.length === 1 ? 'agente' : 'agentes'}
-              </span>
-            </div>
-            <div className="space-y-2">
-              {group.map((session) => (
-                <AgentRow
-                  key={session.id}
-                  session={session}
-                  card={card}
-                  onOpenCard={onOpenCard}
-                  historical={historical}
-                />
-              ))}
-            </div>
-          </div>
+          <AgentGroup
+            key={cardId ?? 'sem-card'}
+            group={group}
+            card={card}
+            onOpenCard={onOpenCard}
+            historical={historical}
+          />
         )
       })}
+    </div>
+  )
+}
+
+function AgentGroup({
+  group,
+  card,
+  onOpenCard,
+  historical,
+}: {
+  group: AgentSession[]
+  card?: Card
+  onOpenCard: (id: string) => void
+  historical: boolean
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const [maxHeight, setMaxHeight] = useState<number>()
+  const listRef = useRef<HTMLDivElement>(null)
+  const listId = useId()
+
+  useLayoutEffect(() => {
+    if (!expanded || group.length <= 3 || !listRef.current) return
+    const rows = Array.from(listRef.current.children).slice(0, 3) as HTMLElement[]
+    const updateHeight = () => {
+      const first = rows[0]
+      const third = rows[2]
+      setMaxHeight(third.offsetTop + third.offsetHeight - first.offsetTop)
+    }
+    const observer = new ResizeObserver(updateHeight)
+    rows.forEach((row) => observer.observe(row))
+    updateHeight()
+    return () => observer.disconnect()
+  }, [expanded, group])
+
+  return (
+    <div className="rounded-xl border bg-muted/20 p-3">
+      <div className={cn('flex flex-wrap items-center justify-between gap-2 px-1', expanded && 'mb-3')}>
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label={`${expanded ? 'Recolher' : 'Expandir'} ${card ? `${card.id}: ${card.title}` : 'Sem card'}`}
+            aria-expanded={expanded}
+            aria-controls={listId}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            <HugeiconsIcon icon={expanded ? ArrowDown01Icon : ArrowRight01Icon} strokeWidth={2} className="size-4" />
+          </button>
+          {card ? (
+            <button
+              type="button"
+              className="min-w-0 text-left font-sans font-semibold text-primary hover:underline dark:text-chart-2"
+              onClick={() => onOpenCard(card.id)}
+              title={`Abrir ${card.id}: ${card.title}`}
+            >
+              <span className="font-mono">{card.id}</span> · {card.title}
+            </button>
+          ) : (
+            <h3 className="font-sans font-semibold">Sem card</h3>
+          )}
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {group.length} {group.length === 1 ? 'agente' : 'agentes'}
+        </span>
+      </div>
+      <div
+        id={listId}
+        ref={listRef}
+        hidden={!expanded}
+        className="relative space-y-2 overflow-y-auto"
+        style={group.length > 3 ? { maxHeight: maxHeight ?? 352 } : undefined}
+      >
+        {group.map((session) => (
+          <AgentRow key={session.id} session={session} card={card} onOpenCard={onOpenCard} historical={historical} />
+        ))}
+      </div>
     </div>
   )
 }
