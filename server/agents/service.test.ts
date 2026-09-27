@@ -11,6 +11,27 @@ function jsonl(path: string, events: unknown[], modifiedAt = new Date('2026-09-2
 }
 
 describe('agent session service', () => {
+  test('keeps a card association for a finished session started in the card folder', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mega-brain-card-session-'))
+    const workspaceDir = join(root, 'cards')
+    const cwd = join(workspaceDir, 'MB-123')
+    const codexHome = join(root, '.codex')
+    mkdirSync(cwd, { recursive: true })
+    jsonl(join(codexHome, 'sessions', '2026', '09', '20', 'card.jsonl'), [
+      { type: 'session_meta', payload: { id: 'card-session', cwd } },
+      { type: 'event_msg', payload: { type: 'task_complete' } },
+    ])
+    const sessions = createAgentSessionService({
+      home: root,
+      claudeProjects: join(root, '.claude', 'projects'),
+      codexHomes: [codexHome],
+      workspaceDir,
+      now: () => new Date('2026-09-20T12:01:00.000Z'),
+      processes: () => [],
+    }).list().sessions
+    expect(sessions[0]).toMatchObject({ id: 'card-session', cardId: 'MB-123', name: 'MB-123' })
+  })
+
   test('extracts only the first card segment inside the real worktrees root', () => {
     const root = mkdtempSync(join(tmpdir(), 'mega-brain-worktree-path-'))
     const worktreesDir = join(root, 'worktrees')

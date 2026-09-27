@@ -200,6 +200,14 @@ function realWorktreesRoot(worktreesDir: string | undefined): string | undefined
   }
 }
 
+function cardIdFromWorkspaceCwd(cwd: string, workspaceDir: string | undefined, cardIds: Set<string>): string | undefined {
+  if (!workspaceDir || !cwd) return undefined
+  const withinRoot = relative(resolve(workspaceDir), resolve(cwd))
+  if (!withinRoot || withinRoot === '..' || withinRoot.startsWith(`..${sep}`) || isAbsolute(withinRoot)) return undefined
+  const cardId = withinRoot.split(sep)[0]
+  return cardIds.has(cardId) ? cardId : undefined
+}
+
 function normalizedSessionCwd(cwd: string): string | undefined {
   if (!isAbsolute(cwd)) return undefined
   try {
@@ -364,12 +372,15 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
         .flatMap((session) => {
           const name = cachedNames.get(`${session.provider}:${session.id}`)
           if (isInternalResourcesSession(session, name)) return []
-          const normalizedCwd = worktreesRoot ? normalizedSessionCwd(session.cwd) : undefined
+          const normalizedCwd = normalizedSessionCwd(session.cwd)
           const worktreeCardId =
             normalizedCwd && worktreesRoot ? cardIdFromWorktreeCwd(normalizedCwd, worktreesRoot) : undefined
           const cardId =
-            cardByCwd.get(session.cwd) ?? (worktreeCardId && cardIds.has(worktreeCardId) ? worktreeCardId : undefined)
-          return [{ ...session, ...(name ? { name } : {}), ...(cardId ? { cardId } : {}) }]
+            cardByCwd.get(session.cwd) ??
+            (normalizedCwd ? cardIdFromWorkspaceCwd(normalizedCwd, options.workspaceDir, cardIds) : undefined) ??
+            (worktreeCardId && cardIds.has(worktreeCardId) ? worktreeCardId : undefined)
+          const displayName = name ?? (session.provider === 'codex' ? cardId : undefined)
+          return [{ ...session, ...(displayName ? { name: displayName } : {}), ...(cardId ? { cardId } : {}) }]
         }),
       scannedAt: now.toISOString(),
     }
