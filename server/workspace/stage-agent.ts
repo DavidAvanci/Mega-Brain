@@ -105,6 +105,7 @@ export function runStageAgent(
       MEGA_BRAIN_LLM_PROVIDER: provider,
       MEGA_BRAIN_STAGE_SCRIPT: stage.script ? stage.name : undefined,
       MEGA_BRAIN_CARD_ID: basename(path),
+      MEGA_BRAIN_CARD_PATH: path,
       MEGA_BRAIN_CLAUDE_BIN: claudeBin(claude),
       MEGA_BRAIN_CODEX_BIN: codex ?? process.env.MEGA_BRAIN_CODEX_BIN,
     },

@@ -146,12 +146,13 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
     const cardId = process.env.MEGA_BRAIN_CARD_ID?.trim()
     const itemId = options.prompt.match(/(?:^|\n)(?:Item:|Cenário:|Correção orientada por teste que falhou:)\s*([^\s—]+)/)?.[1]
     const sessionName = [cardId, itemId ?? process.env.MEGA_BRAIN_STAGE_SCRIPT].filter(Boolean).join(' · ')
-    const usageId = process.env.MEGA_BRAIN_CARD_ID ? startAgentUsage(options.cwd, new Date(startedAt)) : undefined
+    const cardPath = process.env.MEGA_BRAIN_CARD_PATH?.trim()
+    const usageId = cardPath ? startAgentUsage(cardPath, new Date(startedAt)) : undefined
     let usageFinished = false
     const finishUsage = (cost?: number) => {
-      if (!usageId || usageFinished) return
+      if (!cardPath || !usageId || usageFinished) return
       usageFinished = true
-      finishAgentUsage(options.cwd, usageId, cost)
+      finishAgentUsage(cardPath, usageId, cost)
     }
     const claudeArgs = [
       '-p',
