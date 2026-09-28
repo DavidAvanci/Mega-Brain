@@ -130,6 +130,10 @@ function sessionFromFile(
     if (!startedAt && typeof payload?.timestamp === 'string') startedAt = payload.timestamp
 
     if (file.provider === 'claude') {
+      if (event.type === 'assistant') {
+        if (typeof message?.model === 'string') model = message.model
+        if (typeof event.effort === 'string') effort = event.effort
+      }
       if (
         !title &&
         event.type === 'queue-operation' &&
@@ -152,6 +156,9 @@ function sessionFromFile(
         if (typeof payload?.model === 'string' && payload.model.trim()) model = payload.model
         if (typeof payload?.effort === 'string' && payload.effort.trim()) effort = payload.effort
       }
+      if (event.type === 'session_meta' && typeof payload?.model === 'string') model = payload.model
+      if (typeof payload?.reasoning_effort === 'string') effort = payload.reasoning_effort
+      if (typeof payload?.effort === 'string') effort = payload.effort
       if (!title && event.type === 'response_item' && payload?.type === 'message' && payload.role === 'user') {
         const candidate = eventText(payload.content)
         if (candidate && !candidate.trimStart().startsWith('<')) title = candidate
@@ -181,6 +188,8 @@ function sessionFromFile(
     status,
     cwd,
     title: cleanTitle(title, cwd),
+    model,
+    effort,
     startedAt: startedAt ?? fallbackStartedAt,
     updatedAt: new Date(file.mtimeMs).toISOString(),
     activity,

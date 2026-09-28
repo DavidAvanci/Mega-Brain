@@ -31,6 +31,8 @@ export interface AgentSession {
   cwd: string
   title: string
   name?: string
+  model?: string
+  effort?: string
   startedAt: string
   updatedAt: string
   activity?: string
