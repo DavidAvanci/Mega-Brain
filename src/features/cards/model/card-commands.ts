@@ -85,6 +85,11 @@ export async function deleteCard(name: string): Promise<void> {
   await refresh()
 }
 
+export async function updateCardDescription(name: string, description: string): Promise<void> {
+  await updateWorkspaceCard(name, { description }, 'Falha ao atualizar a descrição')
+  await refresh()
+}
+
 export function moveCard(id: string, status: Status): void {
   userInitiatedStatusChanges.set(id, { status, expiresAt: Date.now() + USER_ACTION_WINDOW_MS })
   setCardsState({

@@ -445,6 +445,11 @@
   background: color-mix(in srgb, var(--color-muted) 70%, var(--color-foreground) 4%);
 }
 
+.markdown code.markdown-path {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
 .markdown pre {
   margin: 8px 0;
   padding: 10px 12px;

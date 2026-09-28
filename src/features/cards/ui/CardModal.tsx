@@ -23,7 +23,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { AppSelect } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { deleteCard, moveCard, openFolder, openPrs, openTerminal, setCardFlow } from '../model/card-commands'
+import { deleteCard, moveCard, openFolder, openPrs, openTerminal, setCardFlow, updateCardDescription } from '../model/card-commands'
 import { type WorktreeRepoInfo } from '../api/card-detail-api'
 import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 import { PrChip, StageResetButton } from './CardView'
@@ -32,6 +32,7 @@ import { Markdown } from '@/Markdown'
 import { countTasks, type TaskCounts } from '@/markdownFormat'
 import { relativeTime } from '@/relativeTime'
 import { Tip } from '@/Tip'
+import { Textarea } from '@/components/ui/textarea'
 import { useCardDetail } from '../model/useCardDetail'
 import {
   FLOW_DESCRIPTIONS,
@@ -394,6 +395,25 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
   const [activeTab, setActiveTab] = useState(
     initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description'),
   )
+  const [editingDescription, setEditingDescription] = useState(false)
+  const [descriptionDraft, setDescriptionDraft] = useState(card.description)
+  const [descriptionText, setDescriptionText] = useState(card.description)
+  const [savingDescription, setSavingDescription] = useState(false)
+  const [descriptionError, setDescriptionError] = useState<string | null>(null)
+
+  const saveDescription = async () => {
+    setSavingDescription(true)
+    setDescriptionError(null)
+    try {
+      await updateCardDescription(card.id, descriptionDraft)
+      setDescriptionText(descriptionDraft)
+      setEditingDescription(false)
+    } catch (cause) {
+      setDescriptionError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSavingDescription(false)
+    }
+  }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -480,7 +500,35 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
                 )}
               </TabsList>
               <TabsContent value="description" className="overflow-y-auto px-5 py-4">
-                {card.description ? <Markdown text={card.description} /> : <Placeholder>Sem descrição.</Placeholder>}
+                <div className="mb-3 flex justify-end">
+                  {editingDescription ? (
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="sm" disabled={savingDescription} onClick={() => {
+                        setDescriptionDraft(card.description)
+                        setDescriptionError(null)
+                        setEditingDescription(false)
+                      }}>Cancelar</Button>
+                      <Button size="sm" disabled={savingDescription} onClick={() => void saveDescription()}>
+                        {savingDescription ? 'Salvando…' : 'Salvar descrição'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => {
+                      setDescriptionDraft(card.description)
+                      setEditingDescription(true)
+                    }}>Editar descrição</Button>
+                  )}
+                </div>
+                {descriptionError && <p className="mb-2 text-xs text-destructive" role="alert">{descriptionError}</p>}
+                {editingDescription ? (
+                  <Textarea
+                    aria-label="Descrição do card"
+                    value={descriptionDraft}
+                    maxLength={12000}
+                    className="min-h-48 resize-y"
+                    onChange={(event) => setDescriptionDraft(event.target.value)}
+                  />
+                ) : descriptionText ? <Markdown text={descriptionText} /> : <Placeholder>Sem descrição.</Placeholder>}
               </TabsContent>
               {FILE_TABS.map((tab) => {
                 const content = files?.[tab.file]
