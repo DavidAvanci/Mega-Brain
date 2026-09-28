@@ -65,3 +65,20 @@ test('lockfilesMatch exige lockfiles existentes e o mesmo gerenciador', () => {
   expect(lockfilesMatch(npm, yarn)).toBe(false)
   expect(lockfilesMatch(npm, withoutLock)).toBe(false)
 })
+
+test('pnpm declarado no package.json instala e roda scripts com pnpm', () => {
+  const dir = repo({ 'package.json': '{"packageManager":"pnpm@10.33.0"}' })
+  expect(detectPackageManager(dir)).toBe('pnpm')
+  expect(installCommand(dir)).toEqual({ cmd: 'pnpm', args: ['install'] })
+  expect(runScriptCommand(dir, 'dev', ['--port', '3000'])).toEqual({ cmd: 'pnpm', args: ['dev', '--port', '3000'] })
+})
+
+test('pnpm-lock.yaml sozinho marca pnpm e é o lockfile comparado', () => {
+  const left = repo({ 'package.json': '{}', 'pnpm-lock.yaml': 'lockfileVersion: 9.0' })
+  const right = repo({ 'package.json': '{}', 'pnpm-lock.yaml': 'lockfileVersion: 9.0' })
+
+  expect(detectPackageManager(left)).toBe('pnpm')
+  expect(lockfilesMatch(left, right)).toBe(true)
+  writeFileSync(join(right, 'pnpm-lock.yaml'), 'lockfileVersion: 6.0')
+  expect(lockfilesMatch(left, right)).toBe(false)
+})
