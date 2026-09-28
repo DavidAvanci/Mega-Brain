@@ -52,7 +52,23 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
       signalTree: (pid, signal) => process.kill(-pid, signal),
     })
   const config = options.config
-  const workspaceAdapter = workspaceHttp(createWorkspaceService(config, runner, owner))
+  const windowsCodexHome = process.env.WSL_DISTRO_NAME
+    ? join('/mnt/c/Users', basename(config.directories.home), '.codex')
+    : undefined
+  const agentService = createAgentSessionService({
+    home: config.directories.home,
+    claudeHome: config.directories.claudeHome,
+    claudeProjects: config.directories.claudeProjects,
+    codexHomes: [process.env.MEGA_BRAIN_CODEX_HOME, join(config.directories.home, '.codex'), windowsCodexHome].filter(
+      (value): value is string => Boolean(value),
+    ),
+    workspaceDir: config.workspaceDir,
+    worktreesDir: config.worktreesDir,
+  })
+  const chat = createChatService(config, runner, owner)
+  const workspaceAdapter = workspaceHttp(
+    createWorkspaceService(config, runner, owner, () => agentService.list().sessions),
+  )
   // The workspace handler predates the common /api registry and intentionally
   // keeps its compact domain-relative paths. Normalize once at composition,
   // rather than teaching either HTTP transport a workspace-specific rule.
@@ -61,28 +77,13 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
       ...request,
       path: request.path.slice('/api/workspace'.length) || '/',
     })
-  const chat = createChatService(config, runner, owner)
   const jira = createJiraService(config.jira)
   const usage = createClaudeUsageService(config.directories.claudeCredentials)
   const coffee = coffeeHttp(createCoffeeService(runner, config.executables.powershell, owner))
   const repositories = repositoriesHttp(
     new RepositoryRegistry(repositoryCatalogFile(config.preferences.settingsFile), runner),
   )
-  const windowsCodexHome = process.env.WSL_DISTRO_NAME
-    ? join('/mnt/c/Users', basename(config.directories.home), '.codex')
-    : undefined
-  const agents = agentsHttp(
-    createAgentSessionService({
-      home: config.directories.home,
-      claudeHome: config.directories.claudeHome,
-      claudeProjects: config.directories.claudeProjects,
-      codexHomes: [process.env.MEGA_BRAIN_CODEX_HOME, join(config.directories.home, '.codex'), windowsCodexHome].filter(
-        (value): value is string => Boolean(value),
-      ),
-      workspaceDir: config.workspaceDir,
-      worktreesDir: config.worktreesDir,
-    }),
-  )
+  const agents = agentsHttp(agentService)
 
   for (const [method, path] of [
     ['GET', '/api/workspace'],
@@ -93,6 +94,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['POST', '/api/workspace'],
     ['POST', '/api/workspace/settings'],
     ['POST', '/api/workspace/open'],
+    ['POST', '/api/workspace/diff'],
     ['POST', '/api/workspace/terminal'],
     ['POST', '/api/workspace/prs/open'],
     ['POST', '/api/workspace/dev-env'],

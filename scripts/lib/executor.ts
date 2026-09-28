@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
+import { finishAgentUsage, startAgentUsage } from '../../server/workspace/agent-usage.ts'
 
 export interface ItemResult {
   status: 'done' | 'failed' | 'blocked'
@@ -142,9 +143,21 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
     const startedAt = Date.now()
     const settle = (result: ItemResult) => resolve({ ...result, durationMs: Date.now() - startedAt })
     const provider = process.env.MEGA_BRAIN_LLM_PROVIDER === 'chatgpt' ? 'chatgpt' : 'claude'
+    const cardId = process.env.MEGA_BRAIN_CARD_ID?.trim()
+    const itemId = options.prompt.match(/(?:^|\n)(?:Item:|Cenário:|Correção orientada por teste que falhou:)\s*([^\s—]+)/)?.[1]
+    const sessionName = [cardId, itemId ?? process.env.MEGA_BRAIN_STAGE_SCRIPT].filter(Boolean).join(' · ')
+    const cardPath = process.env.MEGA_BRAIN_CARD_PATH?.trim()
+    const usageId = cardPath ? startAgentUsage(cardPath, new Date(startedAt)) : undefined
+    let usageFinished = false
+    const finishUsage = (cost?: number) => {
+      if (!cardPath || !usageId || usageFinished) return
+      usageFinished = true
+      finishAgentUsage(cardPath, usageId, cost)
+    }
     const claudeArgs = [
       '-p',
       options.prompt,
+      ...(sessionName ? ['--name', sessionName] : []),
       '--model',
       options.model,
       ...(options.model.toLowerCase().includes('fable') ? ['--fallback-model', 'opus'] : []),
@@ -194,6 +207,7 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
     }, options.timeoutMs)
     child.on('error', (error) => {
       clearTimeout(timer)
+      finishUsage()
       settle({
         status: 'failed',
         note: `Falha ao iniciar ${provider === 'chatgpt' ? 'ChatGPT' : 'Claude'}: ${error.message}`,
@@ -202,10 +216,21 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
     child.on('close', (code) => {
       clearTimeout(timer)
       if (timedOut) {
+        finishUsage()
         settle({ status: 'failed', note: `Timeout após ${Math.round(options.timeoutMs / 60000)}min` })
         return
       }
       const result = provider === 'chatgpt' ? parseCodexResult(stdout) : parseResult(stdout)
+      let reportedCost = result?.costUsd
+      if (provider === 'claude' && reportedCost === undefined) {
+        try {
+          const rawCost = record(JSON.parse(stdout))?.total_cost_usd
+          if (typeof rawCost === 'number' && Number.isFinite(rawCost) && rawCost >= 0) reportedCost = rawCost
+        } catch {
+          // A malformed provider response can still be reported as a failed execution.
+        }
+      }
+      finishUsage(reportedCost)
       if (result) {
         if (provider === 'claude' && result.rateLimited && options.model.toLowerCase().includes('fable')) {
           runClaudeItem({ ...options, model: 'opus' }).then(settle)

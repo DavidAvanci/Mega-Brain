@@ -1,5 +1,5 @@
-import { closeSync, openSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { closeSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { claudeBin, codexBin } from '../agent-executable'
 import { nodeProcessRunner, type ProcessChild, type ProcessOwner, type ProcessRunner } from '../process'
 import { stderrJsonlLogger, type StructuredLogger } from '../logger'
@@ -9,6 +9,7 @@ import { readStageSettings } from './stage-settings'
 import { captureStageSnapshot } from './stage-snapshot'
 import { stageOwnedFiles, type Stage } from './stage-catalog'
 import { repositoryMentionContext } from '../repositories/mentions'
+import { claudeCostFromStream, finishAgentUsage, setAgentUsageProcess, startAgentUsage } from './agent-usage'
 
 export const AGENT_FILE = 'agent.json'
 
@@ -35,6 +36,7 @@ export function stageAgentCommand(
   if (stage.script) return stageScriptCommand(path, stage)
 
   const prompt = repositoryMentionContext((stage.prompt as (currentCard: CardData) => string)(card), settingsFile)
+  const sessionName = `${basename(path)} · ${stage.name}`
   if (provider === 'chatgpt') {
     return [
       codexBin(codex),
@@ -53,6 +55,8 @@ export function stageAgentCommand(
     [
       '-p',
       prompt,
+      '--name',
+      sessionName,
       '--model',
       model,
       ...(model.toLowerCase().includes('fable') ? ['--fallback-model', 'opus'] : []),
@@ -84,6 +88,7 @@ export function runStageAgent(
   const settings = settingsForStage(path, stage)
   const effectiveModel = model ?? settings.model
   if (model === undefined) captureStageSnapshot(path, stage.name, stageOwnedFiles(stage))
+  const usageId = stage.script ? undefined : startAgentUsage(path)
   const out = openSync(join(path, `${stage.name}.jsonl`), 'w')
   const err = openSync(join(path, `${stage.name}.log`), 'a')
   const [bin, args] = stageAgentCommand(path, stage, card, effectiveModel, settings.effort, provider, claude, codex, settingsFile)
@@ -99,15 +104,29 @@ export function runStageAgent(
       MEGA_BRAIN_SETTINGS_FILE: settingsFile ?? process.env.MEGA_BRAIN_SETTINGS_FILE,
       MEGA_BRAIN_LLM_PROVIDER: provider,
       MEGA_BRAIN_STAGE_SCRIPT: stage.script ? stage.name : undefined,
+      MEGA_BRAIN_CARD_ID: basename(path),
+      MEGA_BRAIN_CARD_PATH: path,
       MEGA_BRAIN_CLAUDE_BIN: claudeBin(claude),
       MEGA_BRAIN_CODEX_BIN: codex ?? process.env.MEGA_BRAIN_CODEX_BIN,
     },
   })
+  if (usageId) setAgentUsageProcess(path, usageId, child.pid, join(path, `${stage.name}.jsonl`))
   owner?.own(child, { tree: true, label: `stage:${stage.name}` })
   onSpawn?.(child)
   child.on('error', () =>
     (logger ?? stderrJsonlLogger(process.stderr)).event('workspace.stage.error', { stage: stage.name }),
   )
+  if (usageId) {
+    child.on('close', () => {
+      let cost: number | undefined
+      if (provider === 'claude') {
+        try {
+          cost = claudeCostFromStream(readFileSync(join(path, `${stage.name}.jsonl`), 'utf8'))
+        } catch {}
+      }
+      finishAgentUsage(path, usageId, cost)
+    })
+  }
   child.unref()
   closeSync(out)
   closeSync(err)

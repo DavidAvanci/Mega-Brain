@@ -8,13 +8,10 @@ export function AppToaster() {
     <Toaster
       className="mega-brain-toaster"
       theme={theme}
-      position="bottom-right"
+      position="top-right"
       closeButton
       toastOptions={{
         style: {
-          background: 'var(--card)',
-          color: 'var(--card-foreground)',
-          border: '1px solid var(--border)',
           borderRadius: 'var(--radius)',
           fontFamily: 'var(--font-ui)',
           fontSize: '0.875rem',

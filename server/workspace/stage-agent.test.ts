@@ -27,6 +27,15 @@ test('builds a Codex command with the configured executable and model settings',
   expect(args.at(-1)).toContain('/task-planning Refatorar serviço')
 })
 
+test('names Claude stage sessions after the card and stage', () => {
+  const planning = STAGES.find((stage) => stage.name === 'task-planning')!
+  const [, args] = stageAgentCommand('/tmp/CARD-123', planning, card, 'fable', 'low')
+  expect(args.slice(args.indexOf('--name'), args.indexOf('--name') + 2)).toEqual([
+    '--name',
+    'CARD-123 · task-planning',
+  ])
+})
+
 test('planning prompt resolves repository mentions from the active catalog', () => {
   const root = mkdtempSync(join(tmpdir(), 'mega-brain-stage-mention-'))
   const checkout = join(root, 'api')

@@ -10,7 +10,9 @@ import { deleteCard } from './worktree-lifecycle'
 import { listBoardCards } from './board-list'
 import { openEditor } from './launchers'
 import { createStageController } from './stage-controller'
-import { inspectCard, inspectCardDiff } from './card-inspection'
+import { inspectCard } from './card-inspection'
+import { createSmartDiffReview } from './smart-diff-review'
+import type { AgentSession } from '../../shared/domain/agents'
 import { completeWorkspaceConfig, type WorkspaceConfigInput } from './workspace-config'
 import { openAgentTerminal, openDevEnvironment, openDevEnvironmentAgent, openPullRequests } from './card-actions'
 import { updateCard } from './card-update'
@@ -46,9 +48,11 @@ export function createWorkspaceService(
   inputConfig: WorkspaceConfigInput,
   runner: ProcessRunner = nodeProcessRunner,
   owner?: ProcessOwner,
+  agentSessions: () => readonly AgentSession[] = () => [],
 ): WorkspaceService {
   const config = completeWorkspaceConfig(inputConfig)
   const stages = createStageController(config, runner, owner)
+  const diffReview = createSmartDiffReview(config, runner, owner)
   return {
     async handle(path, method, query, body) {
       let root = resolve(config.workspaceDir)
@@ -62,11 +66,25 @@ export function createWorkspaceService(
         if (path === '/settings/editors') return availableWorkspaceEditors(config)
         if (path === '/settings') return readWorkspaceSettings(config, root)
         if (path === '/')
-          return listBoardCards(root, resolve(config.worktreesDir), config.executables.git, runner, stages.start)
+          return listBoardCards(
+            root,
+            resolve(config.worktreesDir),
+            config.executables.git,
+            runner,
+            stages.start,
+            agentSessions(),
+          )
         const card = folder(query.get('name'))
         if (path === '/detail') return inspectCard(card, resolve(config.worktreesDir), config.executables.git, runner)
-        if (path === '/diff') return inspectCardDiff(card.path, config.executables.git, runner)
-        return listBoardCards(root, resolve(config.worktreesDir), config.executables.git, runner, stages.start)
+        if (path === '/diff') return diffReview.read(card.path)
+        return listBoardCards(
+          root,
+          resolve(config.worktreesDir),
+          config.executables.git,
+          runner,
+          stages.start,
+          agentSessions(),
+        )
       }
       if (method !== 'POST') throw new Error('Método não suportado')
       const data = (body ?? {}) as Record<string, unknown>
@@ -87,6 +105,7 @@ export function createWorkspaceService(
       if (path === '/') return createCard(root, data)
       const card = folder(data.name)
       const { name, path: cardPath } = card
+      if (path === '/diff') return diffReview.start(cardPath, data.regenerate === true)
       if (path === '/terminal') {
         openAgentTerminal(cardPath, config, runner)
         return { ok: true }

@@ -13,7 +13,7 @@ import type { ProcessRunner } from '../process'
 import { parseEnvironmentVariables } from './environment-files'
 
 const environmentKeys: RepositoryEnvironmentKey[] = ['local', 'staging', 'prod']
-const emptyEnvironment = (): RepositoryEnvironment => ({ enabled: false })
+const emptyEnvironment = (): RepositoryEnvironment => ({ enabled: true })
 const emptyRegistry = (): RepositoryRegistryFile => ({ version: 1, repositories: [] })
 
 export class RepositoryDirtyError extends Error {

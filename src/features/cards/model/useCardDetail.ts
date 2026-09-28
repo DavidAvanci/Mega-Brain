@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { fetchDetail, type WorktreeRepoInfo } from '../api/card-detail-api'
+import type { CardAgentUsage } from '../../../../shared/domain/agents'
 
 export interface CardDetailState {
   files: Record<string, string | null> | null
   repos: WorktreeRepoInfo[] | null
+  usage: CardAgentUsage | null
   error: string | null
 }
 
@@ -11,6 +13,7 @@ export interface CardDetailState {
 export function useCardDetail(cardId: string, refreshMs = 5_000): CardDetailState {
   const [files, setFiles] = useState<Record<string, string | null> | null>(null)
   const [repos, setRepos] = useState<WorktreeRepoInfo[] | null>(null)
+  const [usage, setUsage] = useState<CardAgentUsage | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -21,6 +24,7 @@ export function useCardDetail(cardId: string, refreshMs = 5_000): CardDetailStat
           if (cancelled) return
           setFiles(data.files)
           setRepos(data.repos ?? [])
+          setUsage(data.usage)
           setError(null)
         })
         .catch((cause: unknown) => {
@@ -34,5 +38,5 @@ export function useCardDetail(cardId: string, refreshMs = 5_000): CardDetailStat
     }
   }, [cardId, refreshMs])
 
-  return { files, repos, error }
+  return { files, repos, usage, error }
 }

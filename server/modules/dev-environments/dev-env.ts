@@ -527,6 +527,8 @@ async function orchestrate(
       if (front.repo === 'new-delivery-takeat' && plan.localBackend) {
         app.note = 'ajuste o .env.local manualmente para apontar pro backend local'
       }
+      // Sem CI=true o react-scripts encerra quando o stdin fecha
+      if (front.config.flavor === 'cra') env.CI = 'true'
       const extra = front.config.flavor === 'cra' ? [] : ['--port', String(port)]
       checkAborted(run)
       app.status = 'subindo'

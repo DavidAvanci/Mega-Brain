@@ -1,0 +1,185 @@
+import { createHash } from 'node:crypto'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { claudeBin, codexBin } from '../agent-executable'
+import type { ProcessOwner, ProcessRunner } from '../process'
+import type { MegaBrainConfig } from '../config'
+import { cardRepos } from './worktree-inspector'
+
+type Review = { schemaVersion: 2; sections: unknown[]; noise: unknown[] }
+type DiffDocument = { schemaVersion: 1; generatedAt: string; repositories: { name: string; review: Review }[] }
+type DiffState = {
+  status: 'running' | 'error' | 'ready'
+  result?: DiffDocument
+  error?: string
+  steps?: string[]
+  started: boolean
+}
+
+function readDocument(cardPath: string): DiffDocument | undefined {
+  try {
+    const value = JSON.parse(readFileSync(join(cardPath, 'diff.json'), 'utf8')) as DiffDocument
+    if (value.schemaVersion === 1 && Array.isArray(value.repositories)) return value
+  } catch {
+    /* No completed review yet. */
+  }
+  return undefined
+}
+
+function validatedReview(path: string): Review {
+  const value = JSON.parse(readFileSync(path, 'utf8')) as Review
+  if (value.schemaVersion !== 2 || !Array.isArray(value.sections) || !Array.isArray(value.noise))
+    throw new Error('O agente não produziu uma revisão Smart Diff válida')
+  if (
+    value.sections.some(
+      (section) => !section || typeof section !== 'object' || !Array.isArray((section as { files?: unknown }).files),
+    )
+  )
+    throw new Error('O agente produziu seções de revisão inválidas')
+  return value
+}
+
+function exec(runner: ProcessRunner, command: string, args: string[], cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    runner.execFile(command, args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) reject(new Error(stderr.trim() || error.message))
+      else resolve(stdout)
+    })
+  })
+}
+
+function reviewPrompt(
+  cardPath: string,
+  jobs: { name: string; report: string; output: string; cache: string }[],
+  skill: string,
+): string {
+  return [
+    '/smart-diff-review',
+    `Leia ${join(skill, 'SKILL.md')} e aplique a skill aos relatórios Smart Diff abaixo.`,
+    'Os relatórios já foram gerados com master...HEAD. Não execute o Smart Diff novamente.',
+    'Para cada relatório, rode prepare, leia todos os patches, escreva as decisões em decisions.json e rode assemble até validar.',
+    'Use o cache indicado. Não edite o JSON final à mão. Trabalhe somente nos arquivos dentro da pasta do card.',
+    `Pasta do card: ${cardPath}`,
+    ...jobs.map(
+      (job) =>
+        `Repositório ${job.name}: report=${job.report}; saída=${job.output}; cache=${job.cache}; trabalho=${resolve(job.output, '..')}`,
+    ),
+  ].join('\n')
+}
+
+export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRunner, owner?: ProcessOwner) {
+  const states = new Map<string, DiffState>()
+
+  function step(cardPath: string, message: string): void {
+    const current = states.get(cardPath)
+    if (current?.status === 'running') states.set(cardPath, { ...current, steps: [...(current.steps ?? []), message] })
+  }
+
+  async function generate(cardPath: string): Promise<void> {
+    step(cardPath, 'Identificando repositórios do card')
+    const repos = cardRepos(cardPath)
+    const work = join(cardPath, '.smart-diff-review')
+    mkdirSync(work, { recursive: true })
+    const smartDiff = join(
+      process.env.SMART_DIFF_DIR || join(homedir(), 'smart-diff'),
+      'packages/cli/bin/smart-diff.cjs',
+    )
+    const skill = process.env.SMART_DIFF_REVIEW_SKILL_DIR || join(homedir(), '.claude/skills/smart-diff-review')
+    if (repos.length && !existsSync(smartDiff)) throw new Error(`Smart Diff não encontrado: ${smartDiff}`)
+    if (repos.length && !existsSync(join(skill, 'SKILL.md')))
+      throw new Error(`Skill /smart-diff-review não encontrada: ${skill}`)
+    const jobs = []
+    for (const repo of repos) {
+      step(cardPath, `Rodando a ferramenta Smart Diff em ${repo.name}`)
+      const dir = join(work, createHash('sha256').update(repo.name).digest('hex').slice(0, 16))
+      mkdirSync(dir, { recursive: true })
+      const report = join(dir, 'report.json')
+      const output = join(dir, 'review.json')
+      const cache = join(dir, 'cache.json')
+      rmSync(output, { force: true })
+      const result = await exec(
+        runner,
+        process.execPath,
+        [smartDiff, '--range', 'master...HEAD', '--format', 'json'],
+        repo.path,
+      )
+      const parsed = JSON.parse(result) as { schemaVersion?: number; readingOrder?: unknown[] }
+      if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.readingOrder))
+        throw new Error(`Smart Diff retornou um relatório inválido para ${repo.name}`)
+      writeFileSync(report, result)
+      jobs.push({ name: repo.name, report, output, cache })
+    }
+    if (jobs.length) {
+      step(cardPath, 'Rodando o agente de revisão')
+      const prompt = reviewPrompt(cardPath, jobs, skill)
+      const codex = config.preferences.llmProvider === 'chatgpt'
+      const command = codex ? codexBin(config.executables.codex) : claudeBin(config.executables.claude)
+      const args = codex
+        ? ['exec', '--dangerously-bypass-approvals-and-sandbox', prompt]
+        : ['-p', prompt, '--dangerously-skip-permissions']
+      const out = openSync(join(work, 'agent.log'), 'w')
+      const err = openSync(join(work, 'agent-error.log'), 'w')
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const child = runner.spawn(command, args, { cwd: cardPath, stdio: ['ignore', out, err] })
+          owner?.own(child, { label: 'smart-diff-review' })
+          child.once('error', reject)
+          child.once('close', (code) =>
+            code === 0
+              ? resolve()
+              : reject(new Error(`Agente de revisão terminou com código ${code ?? 'desconhecido'}`)),
+          )
+        })
+      } finally {
+        closeSync(out)
+        closeSync(err)
+      }
+    }
+    step(cardPath, 'Validando e salvando a revisão')
+    const document: DiffDocument = {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      repositories: jobs.map((job) => ({ name: job.name, review: validatedReview(job.output) })),
+    }
+    const temporary = join(cardPath, 'diff.json.tmp')
+    writeFileSync(temporary, `${JSON.stringify(document, null, 2)}\n`)
+    renameSync(temporary, join(cardPath, 'diff.json'))
+    states.set(cardPath, { status: 'ready', result: document, started: true })
+  }
+
+  return {
+    read(cardPath: string): DiffState {
+      const current = states.get(cardPath)
+      if (current) return current
+      const result = readDocument(cardPath)
+      if (result) return { status: 'ready', result, started: true }
+      if (existsSync(join(cardPath, '.smart-diff-review', 'started.json')))
+        return {
+          status: 'error',
+          error: 'A revisão anterior foi interrompida. Gere um novo Smart Diff para tentar novamente.',
+          started: true,
+        }
+      return { status: 'error', error: 'O diff ainda não foi gerado', started: false }
+    },
+    start(cardPath: string, regenerate = false): DiffState {
+      const current = this.read(cardPath)
+      if (current.status === 'running' || (current.started && !regenerate)) return current
+      const work = join(cardPath, '.smart-diff-review')
+      mkdirSync(work, { recursive: true })
+      writeFileSync(join(work, 'started.json'), `${JSON.stringify({ startedAt: new Date().toISOString() })}\n`)
+      const running: DiffState = { status: 'running', steps: ['Iniciando revisão Smart Diff'], started: true }
+      states.set(cardPath, running)
+      void generate(cardPath).catch((error: unknown) => {
+        const latest = states.get(cardPath)
+        states.set(cardPath, {
+          status: 'error',
+          error: error instanceof Error ? error.message : String(error),
+          steps: latest?.steps,
+          started: true,
+        })
+      })
+      return running
+    },
+  }
+}

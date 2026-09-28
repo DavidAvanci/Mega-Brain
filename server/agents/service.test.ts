@@ -11,6 +11,28 @@ function jsonl(path: string, events: unknown[], modifiedAt = new Date('2026-09-2
 }
 
 describe('agent session service', () => {
+  test('keeps a card association for a finished session started in the card folder', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mega-brain-card-session-'))
+    const workspaceDir = join(root, 'cards-link')
+    const cwd = join(root, 'cards', 'MB-123')
+    const codexHome = join(root, '.codex')
+    mkdirSync(cwd, { recursive: true })
+    symlinkSync(join(root, 'cards'), workspaceDir, 'dir')
+    jsonl(join(codexHome, 'sessions', '2026', '09', '20', 'card.jsonl'), [
+      { type: 'session_meta', payload: { id: 'card-session', cwd } },
+      { type: 'event_msg', payload: { type: 'task_complete' } },
+    ])
+    const sessions = createAgentSessionService({
+      home: root,
+      claudeProjects: join(root, '.claude', 'projects'),
+      codexHomes: [codexHome],
+      workspaceDir,
+      now: () => new Date('2026-09-20T12:01:00.000Z'),
+      processes: () => [],
+    }).list().sessions
+    expect(sessions[0]).toMatchObject({ id: 'card-session', cardId: 'MB-123', name: 'MB-123' })
+  })
+
   test('extracts only the first card segment inside the real worktrees root', () => {
     const root = mkdtempSync(join(tmpdir(), 'mega-brain-worktree-path-'))
     const worktreesDir = join(root, 'worktrees')
@@ -88,7 +110,9 @@ describe('agent session service', () => {
       },
       {
         type: 'assistant',
+        effort: 'high',
         message: {
+          model: 'claude-sonnet-4-5',
           content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'src/App.tsx' } }],
         },
       },
@@ -106,6 +130,7 @@ describe('agent session service', () => {
           timestamp: '2026-09-19T10:00:00.000Z',
           payload: { id: 'codex-past', cwd: pastCwd },
         },
+        { type: 'turn_context', payload: { model: 'gpt-5.6-sol', effort: 'medium' } },
         {
           type: 'response_item',
           payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Revise o dashboard' }] },
@@ -140,6 +165,8 @@ describe('agent session service', () => {
     expect(result.sessions[0]).toMatchObject({
       id: 'claude-active',
       provider: 'claude',
+      model: 'claude-sonnet-4-5',
+      effort: 'high',
       status: 'rodando',
       name: 'Implementar monitor de agentes',
       title: 'Implemente a tela de agentes',
@@ -151,6 +178,8 @@ describe('agent session service', () => {
     expect(result.sessions[1]).toMatchObject({
       id: 'codex-past',
       provider: 'codex',
+      model: 'gpt-5.6-sol',
+      effort: 'medium',
       status: 'concluido',
       name: 'Revisar dashboard antigo',
       title: 'Revise o dashboard',

@@ -3,6 +3,7 @@ import { FolderOpenIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { ApiError } from '@/shared/api/api-client'
@@ -591,11 +592,7 @@ export function RepositoriesPage() {
             )}
             {decisionAction === 'discard' && (
               <label className="flex items-center gap-2 text-sm text-destructive">
-                <input
-                  type="checkbox"
-                  checked={confirmDiscard}
-                  onChange={(event) => setConfirmDiscard(event.target.checked)}
-                />
+                <Checkbox checked={confirmDiscard} onCheckedChange={setConfirmDiscard} />
                 Confirmo que quero descartar as alterações locais
               </label>
             )}

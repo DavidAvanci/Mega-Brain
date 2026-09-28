@@ -1,6 +1,7 @@
 export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'morto'
 
 export interface AgentInfo {
+  provider?: AgentProvider
   sessionId?: string
   stage?: string
   status: AgentStatus
@@ -13,9 +14,18 @@ export interface AgentInfo {
 
 export type AgentProvider = 'claude' | 'codex'
 
+export interface CardAgentUsage {
+  durationMs: number
+  costUsd: number
+  runs: number
+  unpricedRuns: number
+}
+
 export interface AgentSession {
   id: string
   provider: AgentProvider
+  model?: string
+  effort?: string
   status: AgentStatus
   cardId?: string
   cwd: string

@@ -4,6 +4,9 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { BrainIcon } from './BrainIcon'
 import { brainSvg } from './brainBranding'
 
+const setIcon = vi.hoisted(() => vi.fn())
+vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ setIcon }) }))
+
 afterEach(() => vi.unstubAllGlobals())
 
 test('favicon follows palette and mode changes and restores the saved palette on reload', async () => {
@@ -56,4 +59,47 @@ test('brain uses the palette primary and keeps its raster source transparent', (
   expect(source).toContain('stroke="#a44f91"')
   expect(source).not.toContain('<rect')
   expect(source).not.toContain('fill="#fff')
+})
+
+
+test('saved palette updates the Windows icon when its stylesheet becomes ready after theme import', async () => {
+  vi.resetModules()
+  setIcon.mockReset()
+  const frames: FrameRequestCallback[] = []
+  const root = { dataset: {} as Record<string, string>, classList: { toggle: vi.fn() } }
+  const favicon = { href: '/brain.svg' }
+  vi.stubGlobal('window', {
+    __TAURI_INTERNALS__: {},
+    __TAURI__: { core: { invoke: vi.fn() } },
+    matchMedia: () => ({ matches: false, addEventListener: vi.fn() }),
+  })
+  vi.stubGlobal('navigator', { userAgent: 'Windows' })
+  vi.stubGlobal('localStorage', {
+    getItem: () => JSON.stringify({ mode: 'light', palette: 'berry', typography: 'classic', shape: 'classic' }),
+  })
+  vi.stubGlobal('document', {
+    documentElement: root,
+    querySelector: () => favicon,
+    createElement: () => ({
+      getContext: () => ({ clearRect: vi.fn(), drawImage: vi.fn() }),
+      toBlob: (callback: (blob: Blob) => void) => callback(new Blob(['icon'], { type: 'image/png' })),
+    }),
+  })
+  vi.stubGlobal('getComputedStyle', () => ({
+    getPropertyValue: () => stylesheetReady ? '#a44f91' : '',
+  }))
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
+  vi.stubGlobal('Image', class { src = ''; decode = async () => {} })
+  let stylesheetReady = false
+
+  await import('./theme')
+  expect(root.dataset.palette).toBe('berry')
+  expect(setIcon).not.toHaveBeenCalled()
+  expect(frames).toHaveLength(1)
+
+  stylesheetReady = true
+  frames[0](0)
+  await vi.waitFor(() => expect(setIcon).toHaveBeenCalledOnce())
+  expect(decodeURIComponent(favicon.href.split(',')[1] ?? '')).toContain('stroke="#a44f91"')
+  expect(setIcon.mock.calls[0][0]).toBeInstanceOf(ArrayBuffer)
 })

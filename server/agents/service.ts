@@ -111,6 +111,8 @@ function sessionFromFile(
   let title: string | undefined
   let startedAt: string | undefined
   let activity: string | undefined
+  let model: string | undefined
+  let effort: string | undefined
   let failed = false
   let waiting = false
   let codexTurnOpen = false
@@ -138,12 +140,18 @@ function sessionFromFile(
       if (!title && event.type === 'user') title = eventText(message?.content)
       if (event.type === 'user') waiting = false
       if (event.type === 'assistant') {
+        if (typeof message?.model === 'string' && message.model.trim()) model = message.model
+        if (typeof event.effort === 'string' && event.effort.trim()) effort = event.effort
         waiting = message?.stop_reason === 'end_turn'
         const tool = toolUse(event)
         if (tool) activity = [tool.name, summarizeAgentInput(record(tool.input))].filter(Boolean).join(': ')
       }
       if (event.type === 'result' && (event.is_error || event.subtype !== 'success')) failed = true
     } else {
+      if (event.type === 'turn_context') {
+        if (typeof payload?.model === 'string' && payload.model.trim()) model = payload.model
+        if (typeof payload?.effort === 'string' && payload.effort.trim()) effort = payload.effort
+      }
       if (!title && event.type === 'response_item' && payload?.type === 'message' && payload.role === 'user') {
         const candidate = eventText(payload.content)
         if (candidate && !candidate.trimStart().startsWith('<')) title = candidate
@@ -168,6 +176,8 @@ function sessionFromFile(
   return {
     id,
     provider: file.provider,
+    model,
+    effort,
     status,
     cwd,
     title: cleanTitle(title, cwd),
@@ -198,6 +208,20 @@ function realWorktreesRoot(worktreesDir: string | undefined): string | undefined
   } catch {
     return undefined
   }
+}
+
+function cardIdFromWorkspaceCwd(cwd: string, workspaceDir: string | undefined, cardIds: Set<string>): string | undefined {
+  if (!workspaceDir || !cwd) return undefined
+  let realWorkspaceDir: string
+  try {
+    realWorkspaceDir = realpathSync(workspaceDir)
+  } catch {
+    return undefined
+  }
+  const withinRoot = relative(realWorkspaceDir, resolve(cwd))
+  if (!withinRoot || withinRoot === '..' || withinRoot.startsWith(`..${sep}`) || isAbsolute(withinRoot)) return undefined
+  const cardId = withinRoot.split(sep)[0]
+  return cardIds.has(cardId) ? cardId : undefined
 }
 
 function normalizedSessionCwd(cwd: string): string | undefined {
@@ -364,12 +388,15 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
         .flatMap((session) => {
           const name = cachedNames.get(`${session.provider}:${session.id}`)
           if (isInternalResourcesSession(session, name)) return []
-          const normalizedCwd = worktreesRoot ? normalizedSessionCwd(session.cwd) : undefined
+          const normalizedCwd = normalizedSessionCwd(session.cwd)
           const worktreeCardId =
             normalizedCwd && worktreesRoot ? cardIdFromWorktreeCwd(normalizedCwd, worktreesRoot) : undefined
           const cardId =
-            cardByCwd.get(session.cwd) ?? (worktreeCardId && cardIds.has(worktreeCardId) ? worktreeCardId : undefined)
-          return [{ ...session, ...(name ? { name } : {}), ...(cardId ? { cardId } : {}) }]
+            cardByCwd.get(session.cwd) ??
+            (normalizedCwd ? cardIdFromWorkspaceCwd(normalizedCwd, options.workspaceDir, cardIds) : undefined) ??
+            (worktreeCardId && cardIds.has(worktreeCardId) ? worktreeCardId : undefined)
+          const displayName = name ?? (session.provider === 'codex' ? cardId : undefined)
+          return [{ ...session, ...(displayName ? { name: displayName } : {}), ...(cardId ? { cardId } : {}) }]
         }),
       scannedAt: now.toISOString(),
     }

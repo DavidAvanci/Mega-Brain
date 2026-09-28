@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { RepositoryMentionTextarea } from '@/components/RepositoryMentionTextarea'
-import { AppSelect } from '@/components/ui/select'
 import { createCard } from '../model/card-commands'
 import { fetchMegaBrainSettings } from '../api/card-detail-api'
 import { useCardTriage } from '../model/useCardTriage'
@@ -120,17 +119,28 @@ function CardForm({ onDone }: { onDone: () => void }) {
         onKeyDown={onKeyDown}
       />
       {layaEnabled === false && (
-        <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-          Nível do fluxo
-          <AppSelect
-            value={flow}
-            ariaLabel="Nível do fluxo"
-            onValueChange={setFlow}
-            options={FLOW_LEVELS.map((level) => ({ value: level, label: FLOW_LABELS[level] }))}
-            className="bg-card"
-          />
+        <fieldset className="grid gap-1 text-xs font-medium text-muted-foreground">
+          <legend className="mb-1">Nível do fluxo</legend>
+          <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted p-1">
+            {FLOW_LEVELS.map((level) => (
+              <label key={level} className="cursor-pointer">
+                <input
+                  type="radio"
+                  name="card-flow"
+                  value={level}
+                  checked={flow === level}
+                  disabled={pending}
+                  onChange={() => setFlow(level)}
+                  className="peer sr-only"
+                />
+                <span className="flex h-7 items-center justify-center rounded-md px-2 text-xs transition-colors peer-checked:bg-primary peer-checked:text-primary-foreground peer-checked:shadow-sm peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring peer-disabled:cursor-not-allowed peer-disabled:opacity-50">
+                  {FLOW_LABELS[level]}
+                </span>
+              </label>
+            ))}
+          </div>
           <span className="font-normal">{FLOW_DESCRIPTIONS[flow]}</span>
-        </label>
+        </fieldset>
       )}
       {layaEnabled && (
         <div className="grid gap-2 text-xs" aria-live="polite">

@@ -11,6 +11,7 @@ import { loadMegaBrainConfig, type MegaBrainConfig } from '../config'
 import { nodeProcessRunner, type ProcessChild, type ProcessOwner, type ProcessRunner } from '../process'
 import { assertTestWorkspace } from '../test-safety'
 import { repositoryMentionContext } from '../repositories/mentions'
+import { finishAgentUsage, startAgentUsage } from '../workspace/agent-usage'
 
 const DEFAULT_PROJECTS_ROOT = loadMegaBrainConfig().directories.claudeProjects
 const TRANSCRIPT_TAIL_BYTES = 512 * 1024
@@ -178,6 +179,8 @@ function streamChat(
   aborted: WeakSet<ProcessChild>,
   owner?: ProcessOwner,
 ): void {
+  const usageId = startAgentUsage(path)
+  let costUsd: number | undefined
   const child = runner.spawn(claudeBin(executable), chatArgs(text, resolveSession(path, projectsRoot)), {
     cwd: path,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -196,6 +199,8 @@ function streamChat(
     const lines = buffer.split('\n')
     buffer = lines.pop() ?? ''
     for (const line of lines) {
+      const usageEvent = jsonRecord(line)
+      if (usageEvent?.type === 'result' && typeof usageEvent.total_cost_usd === 'number') costUsd = usageEvent.total_cost_usd
       const settings = settingsEvent(line)
       if (settings) emit(settings)
       const event = chatEvent(line)
@@ -209,6 +214,7 @@ function streamChat(
   })
   child.on('error', () => finish({ type: 'done', error: 'Falha ao iniciar o agente Claude.' }))
   child.on('close', (code, signal) => {
+    finishAgentUsage(path, usageId, costUsd)
     if (running.get(path) === child) running.delete(path)
     if (signal || aborted.has(child)) return finish({ type: 'done', error: 'Interrompido' })
     finish({ type: 'done', error: `O agente saiu sem responder (exit ${code ?? 'desconhecido'}).` })
@@ -225,6 +231,7 @@ function streamCodexChat(
   aborted: WeakSet<ProcessChild>,
   owner?: ProcessOwner,
 ): void {
+  const usageId = startAgentUsage(path)
   const args = ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', text]
   const child = runner.spawn(codexBin(executable), args, {
     cwd: path,
@@ -263,6 +270,7 @@ function streamCodexChat(
   })
   child.on('error', () => finish({ type: 'done', error: 'Falha ao iniciar a CLI do Codex.' }))
   child.on('close', (code, signal) => {
+    finishAgentUsage(path, usageId)
     if (running.get(path) === child) running.delete(path)
     if (signal || aborted.has(child)) return finish({ type: 'done', error: 'Interrompido' })
     if (settled) return

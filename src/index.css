@@ -571,9 +571,24 @@
 /* Sonner follows the active palette, typography, and corner preference. */
 .mega-brain-toaster [data-sonner-toast] {
   corner-shape: var(--corner-profile, round);
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  box-shadow: 0 12px 32px color-mix(in oklch, var(--foreground) 12%, transparent);
+}
+.mega-brain-toaster [data-sonner-toast][data-type='success'] {
+  border-color: color-mix(in oklch, #169b62 45%, var(--border));
+  border-left-color: #169b62;
+  background: color-mix(in oklch, #169b62 8%, var(--card));
 }
 .mega-brain-toaster [data-sonner-toast][data-type='success'] [data-icon] {
-  color: var(--primary);
+  color: #169b62;
+}
+.mega-brain-toaster [data-sonner-toast][data-type='error'] {
+  border-color: color-mix(in oklch, var(--destructive) 50%, var(--border));
+  border-left-color: var(--destructive);
+  background: color-mix(in oklch, var(--destructive) 9%, var(--card));
 }
 .mega-brain-toaster [data-sonner-toast][data-type='error'] [data-icon] {
   color: var(--destructive);

@@ -173,6 +173,13 @@ function LoadingLines() {
   )
 }
 
+function formatAgentTime(durationMs: number): string {
+  const seconds = Math.floor(durationMs / 1000)
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return hours ? `${hours}h ${minutes}min` : minutes ? `${minutes}min ${seconds % 60}s` : `${seconds}s`
+}
+
 function PrLinksList({ card }: { card: Card }) {
   return (
     <div className="flex flex-col gap-5 py-1">
@@ -382,7 +389,7 @@ function ActionBar({ card, onDeleted }: { card: Card; onDeleted: () => void }) {
 }
 
 export function CardModal({ card, initialTab, onClose }: { card: Card; initialTab?: string; onClose: () => void }) {
-  const { files, repos, error } = useCardDetail(card.id)
+  const { files, repos, usage, error } = useCardDetail(card.id)
   const agents = activeAgents(card)
   const [activeTab, setActiveTab] = useState(
     initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description'),
@@ -402,10 +409,22 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
                 <span className="tabular-nums">criado {relativeTime(card.createdAt)}</span>
               </div>
               <DialogTitle className="text-lg leading-snug">{card.title}</DialogTitle>
-              {agents.map((agent) => {
+              {usage && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground" aria-label="Uso acumulado dos agentes">
+                  <span>Tempo dos agentes: <strong className="font-medium text-foreground">{formatAgentTime(usage.durationMs)}</strong></span>
+                  <span title={usage.unpricedRuns ? `${usage.unpricedRuns} execução(ões) sem custo informado pela CLI` : undefined}>
+                    Custo: <strong className="font-medium text-foreground">
+                      {usage.runs > 0 && usage.unpricedRuns === usage.runs
+                        ? 'indisponível'
+                        : `$${usage.costUsd.toFixed(usage.costUsd > 0 && usage.costUsd < 0.01 ? 4 : 2)}${usage.unpricedRuns ? ' (parcial)' : ''}`}
+                    </strong>
+                  </span>
+                </div>
+              )}
+              {agents.map((agent, index) => {
                 const progress = agent.status === 'rodando' ? agent.progress : undefined
                 return (
-                  <div key={agent.stage ?? 'autonomo'} className="flex flex-col gap-1.5">
+                  <div key={`${agent.stage ?? 'autonomo'}-${index}`} className="flex flex-col gap-1.5">
                     <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                       <AgentBadge agent={agent} cardId={card.id} />
                       <StageResetButton agent={agent} cardId={card.id} />

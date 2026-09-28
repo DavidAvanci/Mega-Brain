@@ -265,8 +265,8 @@ export function CardBody({
       )}
       {agents.length > 0 && (
         <div className="mt-2 flex flex-col gap-1.5">
-          {agents.map((agent) => (
-            <AgentLine key={agent.stage ?? 'autonomo'} agent={agent} cardId={card.id} />
+          {agents.map((agent, index) => (
+            <AgentLine key={`${agent.stage ?? 'autonomo'}-${index}`} agent={agent} cardId={card.id} />
           ))}
         </div>
       )}

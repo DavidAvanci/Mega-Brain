@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { readDevEnv } from '../modules/dev-environments/dev-env'
 import { prStates } from '../platform/pr-status'
 import type { ProcessRunner } from '../process'
-import { agentCwds, externalAgentCwd, readExternalAgent } from '../agent-process'
+import type { AgentInfo, AgentSession } from '../../shared/domain/agents'
 import { readCard, type CardData } from './card-record'
 import { AGENT_FILE } from './stage-agent'
 import { canRetryStageWithOpus, readAgent, stageEndedDueToRateLimit } from './stage-agent-status'
@@ -21,9 +21,16 @@ export function listBoardCards(
   git: string | undefined,
   runner: ProcessRunner,
   startStage: BoardStageStarter,
+  sessions: readonly AgentSession[] = [],
 ) {
   mkdirSync(root, { recursive: true })
-  const activeCwds = agentCwds()
+  const activeSessionsByCard = new Map<string, AgentSession[]>()
+  for (const session of sessions) {
+    if (!session.cardId || (session.status !== 'rodando' && session.status !== 'aguardando')) continue
+    const group = activeSessionsByCard.get(session.cardId)
+    if (group) group.push(session)
+    else activeSessionsByCard.set(session.cardId, [session])
+  }
   return readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
     .flatMap((entry) => {
@@ -58,10 +65,22 @@ export function listBoardCards(
       }
       const advanced = advanceStage(path, card, agent, startStage)
       if (advanced !== card) agent = readAgent(path)
-      const agents = agent ? [agent] : []
-      if (agent?.status !== 'rodando') {
-        const cwd = externalAgentCwd(path, activeCwds)
-        if (cwd) agents.push(readExternalAgent(cwd))
+      const activeSessions = activeSessionsByCard.get(entry.name) ?? []
+      const stageSession =
+        agent?.status === 'rodando'
+          ? activeSessions.find((session) => session.id === agent.sessionId || session.cwd === realpathSync(path))
+          : undefined
+      const agents: AgentInfo[] = agent
+        ? [{ ...agent, ...(stageSession ? { status: stageSession.status, provider: stageSession.provider } : {}) }]
+        : []
+      for (const session of activeSessions) {
+        if (session === stageSession) continue
+        agents.push({
+          status: session.status,
+          provider: session.provider,
+          startedAt: session.startedAt,
+          activity: session.activity,
+        })
       }
       const prUrls = Object.values(advanced.prs?.staging ?? {}).concat(Object.values(advanced.prs?.master ?? {}))
       const cardFile = join(path, 'card.json')

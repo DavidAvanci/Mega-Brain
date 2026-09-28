@@ -1,9 +1,11 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { parseChatSettings, createChatService } from './service'
+import { createWorkspaceService } from '../workspace/service'
+import { createAgentSessionService } from '../agents/service'
 import type { ProcessOwner, ProcessRunner } from '../process'
 
 function fakeRunner() {
@@ -157,3 +159,60 @@ test('chat sends validated repository context for registered mentions', async ()
   expect(prompt).toContain('@unknown')
   await service.shutdown?.()
 })
+
+test.each(['claude', 'chatgpt'] as const)(
+  'board shows a running %s card chat and clears it on exit',
+  async (provider) => {
+    const root = mkdtempSync(join(tmpdir(), 'mega-brain-chat-card-'))
+    const actualWorkspace = join(root, 'workspace')
+    const workspaceAlias = join(root, 'workspace-alias')
+    const config = {
+      ...testConfig(actualWorkspace),
+      workspaceDir: workspaceAlias,
+      preferences: {
+        settingsFile: join(root, 'settings.json'),
+        editor: 'cursor' as const,
+        editorCommand: '',
+        llmProvider: provider,
+        onboardingCompleted: true,
+      },
+    }
+    symlinkSync(actualWorkspace, workspaceAlias, 'dir')
+    const fake = fakeRunner()
+    const chat = createChatService(config, fake.runner)
+    let running = false
+    const providerName = provider === 'chatgpt' ? 'codex' : 'claude'
+    const agentService = createAgentSessionService({
+      home: root,
+      claudeProjects: join(root, 'projects'),
+      workspaceDir: workspaceAlias,
+      processes: () => (running ? [{ pid: 123, provider: providerName, cwd: join(actualWorkspace, 'card') }] : []),
+    })
+    const workspace = createWorkspaceService(
+      { workspaceDir: workspaceAlias, executables: {} },
+      fake.runner,
+      undefined,
+      () => agentService.list().sessions,
+    )
+    const board = async () =>
+      (await workspace.handle('/', 'GET', new URLSearchParams(), undefined)) as Array<{
+        agents: Array<{ status: string; provider?: string }>
+      }>
+
+    expect((await board())[0].agents).toEqual([])
+    chat.send('card', 'oi', () => {})
+    running = true
+    expect(agentService.list().sessions[0]).toMatchObject({ cardId: 'card', provider: providerName, status: 'rodando' })
+    expect((await board())[0].agents).toContainEqual({
+      status: 'rodando',
+      provider: providerName,
+      startedAt: expect.any(String),
+      activity: undefined,
+    })
+
+    running = false
+    fake.children[0].emit('close', 0, null)
+    expect((await board())[0].agents).toEqual([])
+    await chat.shutdown?.()
+  },
+)

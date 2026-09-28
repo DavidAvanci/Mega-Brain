@@ -3,6 +3,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { FolderOpenIcon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
 import { fetchDetectedEditors } from './features/cards/api/card-detail-api'
 import { isTauriDesktop, pickDesktopWslDirectory } from './desktopBootstrap'
 import type { EditorDiscovery, EditorPreference, GeneralSettingsInput, LlmProvider } from '../shared/domain/settings'
@@ -279,12 +280,11 @@ export function GeneralSettingsForm({
           uma LAN confiável.
         </p>
         <label className="flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={value.layaEnabled}
             disabled={disabled}
-            onChange={(event) => update({ layaEnabled: event.target.checked })}
-          />{' '}
+            onCheckedChange={(checked) => update({ layaEnabled: checked })}
+          />
           Habilitar Laya
         </label>
         <label className="grid gap-1 text-xs font-medium">
@@ -329,12 +329,11 @@ export function GeneralSettingsForm({
               : 'Nenhuma chave cadastrada.'}
         </p>
         <label className="flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={value.layaRemoveSavedKey ?? false}
             disabled={disabled}
-            onChange={(event) => update({ layaRemoveSavedKey: event.target.checked, layaApiKey: '' })}
-          />{' '}
+            onCheckedChange={(checked) => update({ layaRemoveSavedKey: checked, layaApiKey: '' })}
+          />
           Remover chave salva ao salvar
         </label>
       </section>
