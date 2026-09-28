@@ -1,4 +1,6 @@
 import { memo, useState } from 'react'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { Download01Icon, Refresh01Icon, Settings02Icon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import type {
   Repository,
@@ -6,7 +8,6 @@ import type {
   RepositoryMigrationResult,
   RepositoryStatus,
 } from '../../../shared/domain/repositories'
-import { RepositoryGitActions } from './RepositoryGitActions'
 import { repositoryStatusLabel } from './repository-view-model'
 
 const environmentKeys: RepositoryEnvironmentKey[] = ['local', 'staging', 'prod']
@@ -44,6 +45,11 @@ export const RepositoryRow = memo(function RepositoryRow({
     status?.state === 'diverged' ||
     status?.state === 'no-upstream'
   const icon = !status ? '◌' : error ? '!' : warning ? '▲' : status.source === 'remote' ? '✓' : '◌'
+  const canVerifyRemote =
+    status?.available &&
+    status.source === 'local' &&
+    (status.state === 'up-to-date' || status.state === 'behind')
+  const canPullRemote = status?.available && status.source === 'remote' && status.state === 'behind' && !status.dirty
   const configuredMigrations = environmentKeys.filter((key) => repository.environments[key]?.migration?.backend)
 
   return (
@@ -66,6 +72,30 @@ export const RepositoryRow = memo(function RepositoryRow({
             >
               <span aria-hidden="true">{icon}</span>
               {state}
+              {canVerifyRemote && (
+                <button
+                  type="button"
+                  aria-label={`Verificar remoto de ${repository.displayName}`}
+                  title="Verificar remoto"
+                  disabled={!!operation}
+                  onClick={() => onVerify(repository.id)}
+                  className="ml-0.5 inline-flex size-4 items-center justify-center rounded hover:bg-muted disabled:opacity-50"
+                >
+                  <HugeiconsIcon icon={Refresh01Icon} strokeWidth={2} className="size-3.5" />
+                </button>
+              )}
+              {canPullRemote && (
+                <button
+                  type="button"
+                  aria-label={`Atualizar checkout de ${repository.displayName}`}
+                  title="Atualizar checkout"
+                  disabled={!!operation}
+                  onClick={() => onPull(repository.id)}
+                  className="ml-0.5 inline-flex size-4 items-center justify-center rounded hover:bg-muted disabled:opacity-50"
+                >
+                  <HugeiconsIcon icon={Download01Icon} strokeWidth={2} className="size-3.5" />
+                </button>
+              )}
             </span>
             {status?.dirty && <span className="text-amber-700 dark:text-amber-300">● Alterações locais</span>}
             {status?.ahead !== undefined && (status.ahead > 0 || (status.behind ?? 0) > 0) && (
@@ -75,14 +105,33 @@ export const RepositoryRow = memo(function RepositoryRow({
             )}
           </div>
         </div>
-        <RepositoryGitActions
-          repository={repository}
-          status={status}
-          busy={!!operation}
-          onVerify={onVerify}
-          onPull={onPull}
-          onSettings={onSettings}
-        />
+        <div className="flex shrink-0 flex-col items-end gap-0.5">
+          <label className="inline-flex h-7 cursor-pointer items-center gap-1.5 px-1 text-xs">
+            <input
+              type="checkbox"
+              role="switch"
+              checked={repository.active}
+              onChange={() => onToggleActive(repository.id)}
+              aria-label={`${repository.active ? 'Desativar' : 'Ativar'} ${repository.displayName}`}
+              className="peer sr-only"
+            />
+            <span
+              aria-hidden="true"
+              className="relative h-4 w-7 rounded-full bg-muted transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-3 after:rounded-full after:bg-background after:shadow-sm after:transition-transform peer-checked:bg-primary peer-checked:after:translate-x-3 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2"
+            />
+            {repository.active ? 'Ativo' : 'Inativo'}
+          </label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Configurações de ${repository.displayName}`}
+            title="Configurações"
+            onClick={() => onSettings(repository.id)}
+          >
+            <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
+          </Button>
+        </div>
       </div>
       <Button
         type="button"
@@ -132,36 +181,6 @@ export const RepositoryRow = memo(function RepositoryRow({
                 Ir para master
               </Button>
             )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!!operation}
-              onClick={() => onVerify(repository.id)}
-            >
-              Verificar remoto
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={
-                !!operation ||
-                !status?.available ||
-                status.dirty ||
-                status.state !== 'behind' ||
-                status.source !== 'remote'
-              }
-              onClick={() => onPull(repository.id)}
-            >
-              Atualizar checkout
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => onToggleActive(repository.id)}>
-              {repository.active ? 'Desativar' : 'Ativar'}
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => onSettings(repository.id)}>
-              Configurações
-            </Button>
           </div>
           {configuredMigrations.map((key) => {
             const config = repository.environments[key].migration!
