@@ -55,14 +55,14 @@ export const RepositoryRow = memo(function RepositoryRow({
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="min-w-0 break-words text-base font-semibold">{repository.displayName}</h3>
-            <code className="max-w-full break-all rounded bg-muted px-2 py-0.5 text-xs">{repository.alias}</code>
+            <code className="max-w-full break-all rounded-[min(var(--radius-md),12px)] bg-muted px-2 py-0.5 text-xs">{repository.alias}</code>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded border px-2 py-0.5 font-medium">
+            <span className="rounded-[min(var(--radius-md),12px)] border px-2 py-0.5 font-medium">
               Branch: {status?.available ? status.branch || 'detached' : status ? 'indisponível' : 'carregando…'}
             </span>
             <span
-              className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-medium ${error ? 'border-destructive/40 text-destructive' : warning ? 'border-amber-600/40 text-amber-700 dark:text-amber-300' : status?.source === 'remote' ? 'border-emerald-600/40 text-emerald-700 dark:text-emerald-300' : 'text-muted-foreground'}`}
+              className={`inline-flex items-center gap-1 rounded-[min(var(--radius-md),12px)] border px-2 py-0.5 font-medium ${error ? 'border-destructive/40 text-destructive' : warning ? 'border-amber-600/40 text-amber-700 dark:text-amber-300' : status?.source === 'remote' ? 'border-emerald-600/40 text-emerald-700 dark:text-emerald-300' : 'text-muted-foreground'}`}
             >
               <span aria-hidden="true">{icon}</span>
               {state}

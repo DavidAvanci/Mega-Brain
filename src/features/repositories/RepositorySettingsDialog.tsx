@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { requestJson } from '@/shared/api/request-json'
@@ -157,7 +158,7 @@ function EnvironmentForm({
   return (
     <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => void save(event)}>
       <label className="col-span-full flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
+        <Checkbox checked={enabled} onCheckedChange={setEnabled} />
         Ambiente habilitado
       </label>
       {environmentKey === 'local' ? (
@@ -184,7 +185,7 @@ function EnvironmentForm({
       <section className="col-span-full grid gap-2 rounded-md border p-3">
         <h3 className="text-sm font-medium">Migração após atualização do checkout</h3>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={backend} onChange={(event) => setBackend(event.target.checked)} />
+          <Checkbox checked={backend} onCheckedChange={setBackend} />
           Backend com migração
         </label>
         <Field

@@ -22,10 +22,32 @@ export interface CardDetail {
   usage: CardAgentUsage
 }
 
-export interface RepoDiff {
-  name: string
-  diff: string
+export interface SmartDiffFile {
+  path: string
+  patch: string
+  explanation: { before?: string; after?: string; tests?: string }
+}
+
+export interface SmartDiffReview {
+  schemaVersion: 2
+  readingGuide?: string
+  sections: { title: string; summary: string; files: SmartDiffFile[] }[]
+  noise: { path: string; reason: string; source: string }[]
+  warnings?: string[]
+}
+
+export interface CardDiffDocument {
+  schemaVersion: 1
+  generatedAt: string
+  repositories: { name: string; review: SmartDiffReview }[]
+}
+
+export interface DiffState {
+  status: 'running' | 'ready' | 'error'
+  result?: CardDiffDocument
   error?: string
+  steps?: string[]
+  started: boolean
 }
 
 export interface ChatHistory {
@@ -52,12 +74,15 @@ export function fetchDetail(name: string): Promise<CardDetail> {
   return requestJson(`/api/workspace/detail?name=${encodeURIComponent(name)}`, 'Falha ao ler os detalhes da task')
 }
 
-export async function fetchDiff(name: string): Promise<RepoDiff[]> {
-  const data = await requestJson<{ repos: RepoDiff[] }>(
-    `/api/workspace/diff?name=${encodeURIComponent(name)}`,
-    'Falha ao gerar o diff da task',
-  )
-  return data.repos
+export function fetchDiff(name: string): Promise<DiffState> {
+  return requestJson<DiffState>(`/api/workspace/diff?name=${encodeURIComponent(name)}`, 'Falha ao ler o diff da task')
+}
+
+export function startDiff(name: string, regenerate = false): Promise<DiffState> {
+  return requestJson<DiffState>('/api/workspace/diff', 'Falha ao iniciar o diff da task', {
+    method: 'POST',
+    body: { name, regenerate },
+  })
 }
 
 export function fetchChat(name: string): Promise<ChatHistory> {

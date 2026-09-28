@@ -11,7 +11,7 @@ export function parseEnvironmentVariables(
     const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
     if (!match || (allowedKeys && !allowedKeys.has(match[1]))) continue
     let value = match[2]
-    if (value.startsWith('\"') && value.endsWith('\"')) {
+    if (value.startsWith('"') && value.endsWith('"')) {
       try { value = JSON.parse(value) as string } catch { value = value.slice(1, -1) }
     } else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1)
     result[match[1]] = value

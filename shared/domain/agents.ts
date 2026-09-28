@@ -24,6 +24,8 @@ export interface CardAgentUsage {
 export interface AgentSession {
   id: string
   provider: AgentProvider
+  model?: string
+  effort?: string
   status: AgentStatus
   cardId?: string
   cwd: string

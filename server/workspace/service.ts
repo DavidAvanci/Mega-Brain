@@ -8,10 +8,11 @@ import { createCard } from './card-folder'
 import { createWorkspacePathResolver } from './path'
 import { deleteCard } from './worktree-lifecycle'
 import { listBoardCards } from './board-list'
-import type { AgentSession } from '../../shared/domain/agents'
 import { openEditor } from './launchers'
 import { createStageController } from './stage-controller'
-import { inspectCard, inspectCardDiff } from './card-inspection'
+import { inspectCard } from './card-inspection'
+import { createSmartDiffReview } from './smart-diff-review'
+import type { AgentSession } from '../../shared/domain/agents'
 import { completeWorkspaceConfig, type WorkspaceConfigInput } from './workspace-config'
 import { openAgentTerminal, openDevEnvironment, openDevEnvironmentAgent, openPullRequests } from './card-actions'
 import { updateCard } from './card-update'
@@ -51,6 +52,7 @@ export function createWorkspaceService(
 ): WorkspaceService {
   const config = completeWorkspaceConfig(inputConfig)
   const stages = createStageController(config, runner, owner)
+  const diffReview = createSmartDiffReview(config, runner, owner)
   return {
     async handle(path, method, query, body) {
       let root = resolve(config.workspaceDir)
@@ -74,7 +76,7 @@ export function createWorkspaceService(
           )
         const card = folder(query.get('name'))
         if (path === '/detail') return inspectCard(card, resolve(config.worktreesDir), config.executables.git, runner)
-        if (path === '/diff') return inspectCardDiff(card.path, config.executables.git, runner)
+        if (path === '/diff') return diffReview.read(card.path)
         return listBoardCards(
           root,
           resolve(config.worktreesDir),
@@ -103,6 +105,7 @@ export function createWorkspaceService(
       if (path === '/') return createCard(root, data)
       const card = folder(data.name)
       const { name, path: cardPath } = card
+      if (path === '/diff') return diffReview.start(cardPath, data.regenerate === true)
       if (path === '/terminal') {
         openAgentTerminal(cardPath, config, runner)
         return { ok: true }

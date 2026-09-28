@@ -110,7 +110,9 @@ describe('agent session service', () => {
       },
       {
         type: 'assistant',
+        effort: 'high',
         message: {
+          model: 'claude-sonnet-4-5',
           content: [{ type: 'tool_use', name: 'Read', input: { file_path: 'src/App.tsx' } }],
         },
       },
@@ -128,6 +130,7 @@ describe('agent session service', () => {
           timestamp: '2026-09-19T10:00:00.000Z',
           payload: { id: 'codex-past', cwd: pastCwd },
         },
+        { type: 'turn_context', payload: { model: 'gpt-5.6-sol', effort: 'medium' } },
         {
           type: 'response_item',
           payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Revise o dashboard' }] },
@@ -162,6 +165,8 @@ describe('agent session service', () => {
     expect(result.sessions[0]).toMatchObject({
       id: 'claude-active',
       provider: 'claude',
+      model: 'claude-sonnet-4-5',
+      effort: 'high',
       status: 'rodando',
       name: 'Implementar monitor de agentes',
       title: 'Implemente a tela de agentes',
@@ -173,6 +178,8 @@ describe('agent session service', () => {
     expect(result.sessions[1]).toMatchObject({
       id: 'codex-past',
       provider: 'codex',
+      model: 'gpt-5.6-sol',
+      effort: 'medium',
       status: 'concluido',
       name: 'Revisar dashboard antigo',
       title: 'Revise o dashboard',

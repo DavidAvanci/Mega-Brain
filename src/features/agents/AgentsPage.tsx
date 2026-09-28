@@ -146,6 +146,10 @@ function AgentRow({
               {meta.label}
             </span>
           </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Modelo: <span className="font-mono text-foreground">{session.model ?? 'não informado'}</span>
+            {' · '}Effort: <span className="font-mono text-foreground">{session.effort ?? 'não informado'}</span>
+          </p>
           {session.name && session.name !== session.title ? (
             <p className="mt-1 truncate text-xs text-muted-foreground">{session.title}</p>
           ) : null}

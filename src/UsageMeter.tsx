@@ -23,17 +23,7 @@ function resetLabel(usage: UsageWindow): string {
   return ` · reseta ${at}`
 }
 
-function Meter({
-  label,
-  usage,
-  name,
-  stacked,
-}: {
-  label: string
-  usage: UsageWindow
-  name: string
-  stacked: boolean
-}) {
+function Meter({ label, usage, name, stacked }: { label: string; usage: UsageWindow; name: string; stacked: boolean }) {
   const pct = Math.round(usage.utilization)
   return (
     <Tip side={stacked ? 'right' : 'bottom'} label={`Uso do Claude (${name}): ${pct}%${resetLabel(usage)}`}>
@@ -57,13 +47,7 @@ function Meter({
   )
 }
 
-export function UsageMeter({
-  className,
-  layout = 'inline',
-}: {
-  className?: string
-  layout?: 'inline' | 'stacked'
-}) {
+export function UsageMeter({ className, layout = 'inline' }: { className?: string; layout?: 'inline' | 'stacked' }) {
   const [usage, setUsage] = useState<ClaudeUsage | null>(null)
 
   useEffect(() => {
@@ -77,6 +61,7 @@ export function UsageMeter({
         const data = await apiClient().json<ClaudeUsage>('/api/claude/usage', {
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
         })
+        if (!data || typeof data !== 'object') throw new Error('Resposta de uso inválida')
         if (active)
           setUsage((previous) =>
             data.fiveHour || data.sevenDay || data.fable ? data : { ...(previous ?? data), stale: true },
@@ -114,7 +99,9 @@ export function UsageMeter({
         <span
           role="status"
           className="text-xs text-amber-600 dark:text-amber-400"
-          title={usage.updatedAt ? `Última atualização: ${new Date(usage.updatedAt).toLocaleString('pt-BR')}` : undefined}
+          title={
+            usage.updatedAt ? `Última atualização: ${new Date(usage.updatedAt).toLocaleString('pt-BR')}` : undefined
+          }
         >
           Dados desatualizados
         </span>

@@ -91,6 +91,9 @@ function persist(next: ThemeSettings): void {
 }
 
 apply()
+// The theme can be imported through App before the stylesheet is ready. Retry
+// on the first painted frame so the saved palette also colors the window icon.
+if (typeof requestAnimationFrame === 'function') requestAnimationFrame(updateBrainBranding)
 colorScheme.addEventListener('change', () => {
   if (settings.mode !== 'system') return
   apply()
