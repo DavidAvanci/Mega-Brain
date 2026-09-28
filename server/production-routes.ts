@@ -91,6 +91,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['GET', '/api/workspace/settings/editors'],
     ['GET', '/api/workspace/detail'],
     ['GET', '/api/workspace/diff'],
+    ['GET', '/api/workspace/diff/standard'],
     ['POST', '/api/workspace'],
     ['POST', '/api/workspace/settings'],
     ['POST', '/api/workspace/open'],

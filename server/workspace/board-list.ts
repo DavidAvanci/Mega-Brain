@@ -22,6 +22,7 @@ export function listBoardCards(
   runner: ProcessRunner,
   startStage: BoardStageStarter,
   sessions: readonly AgentSession[] = [],
+  isSmartDiffRunning: (path: string) => boolean = () => false,
 ) {
   mkdirSync(root, { recursive: true })
   const activeSessionsByCard = new Map<string, AgentSession[]>()
@@ -93,6 +94,7 @@ export function listBoardCards(
         createdAt: new Date(stat.birthtimeMs || stat.mtimeMs).toISOString(),
         updatedAt,
         agents,
+        smartDiffRunning: isSmartDiffRunning(path),
         devEnv: readDevEnv(path),
         prStates: prUrls.length ? prStates(prUrls) : undefined,
         ...advanced,

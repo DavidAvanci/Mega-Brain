@@ -59,6 +59,7 @@ export interface Card {
   flow: FlowLevel
   jiraStatus?: string
   agents?: AgentInfo[]
+  smartDiffRunning?: boolean
   devEnv?: DevEnvInfo
   prs?: PrLinks
   prStates?: Record<string, PrState>

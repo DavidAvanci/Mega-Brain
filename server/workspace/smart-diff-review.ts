@@ -57,7 +57,7 @@ function reviewPrompt(
   return [
     '/smart-diff-review',
     `Leia ${join(skill, 'SKILL.md')} e aplique a skill aos relatórios Smart Diff abaixo.`,
-    'Os relatórios já foram gerados com master...HEAD. Não execute o Smart Diff novamente.',
+    'Os relatórios já foram gerados com origin/master...HEAD. Não execute o Smart Diff novamente.',
     'Para cada relatório, rode prepare, leia todos os patches, escreva as decisões em decisions.json e rode assemble até validar.',
     'Use o cache indicado. Não edite o JSON final à mão. Trabalhe somente nos arquivos dentro da pasta do card.',
     `Pasta do card: ${cardPath}`,
@@ -101,7 +101,7 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
       const result = await exec(
         runner,
         process.execPath,
-        [smartDiff, '--range', 'master...HEAD', '--format', 'json'],
+        [smartDiff, '--range', 'origin/master...HEAD', '--format', 'json'],
         repo.path,
       )
       const parsed = JSON.parse(result) as { schemaVersion?: number; readingOrder?: unknown[] }
@@ -149,6 +149,9 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
   }
 
   return {
+    isRunning(cardPath: string): boolean {
+      return states.get(cardPath)?.status === 'running'
+    },
     read(cardPath: string): DiffState {
       const current = states.get(cardPath)
       if (current) return current

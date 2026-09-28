@@ -50,6 +50,12 @@ export interface DiffState {
   started: boolean
 }
 
+export interface RepoDiff {
+  name: string
+  diff: string
+  error?: string
+}
+
 export interface ChatHistory {
   sessionId: string | null
   entries: ChatEntry[]
@@ -76,6 +82,14 @@ export function fetchDetail(name: string): Promise<CardDetail> {
 
 export function fetchDiff(name: string): Promise<DiffState> {
   return requestJson<DiffState>(`/api/workspace/diff?name=${encodeURIComponent(name)}`, 'Falha ao ler o diff da task')
+}
+
+export async function fetchStandardDiff(name: string): Promise<RepoDiff[]> {
+  const data = await requestJson<{ repos: RepoDiff[] }>(
+    `/api/workspace/diff/standard?name=${encodeURIComponent(name)}`,
+    'Falha ao ler o diff padrão da task',
+  )
+  return data.repos
 }
 
 export function startDiff(name: string, regenerate = false): Promise<DiffState> {

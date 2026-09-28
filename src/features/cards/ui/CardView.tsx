@@ -247,6 +247,13 @@ export function CardBody({
             </Tip>
           )}
           <FlowIndicator flow={card.flow} />
+          {card.smartDiffRunning && (
+            <Tip label="Smart Diff em execução">
+              <span role="status" aria-label="Smart Diff em execução" className="inline-flex size-4 items-center justify-center">
+                <Spinner className="size-3" />
+              </span>
+            </Tip>
+          )}
         </span>
       </div>
       {interactive ? (
