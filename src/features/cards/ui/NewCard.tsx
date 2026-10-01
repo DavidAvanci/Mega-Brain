@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { PlusSignIcon } from '@hugeicons/core-free-icons'
@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { RepositoryMentionTextarea } from '@/components/RepositoryMentionTextarea'
 import { createCard } from '../model/card-commands'
+import { TEST_CARD } from '../model/test-card'
 import { fetchMegaBrainSettings } from '../api/card-detail-api'
 import { useCardTriage } from '../model/useCardTriage'
 import { TRIAGE_UNAVAILABLE_MESSAGES } from '../../../../shared/domain/card-triage'
@@ -18,16 +19,20 @@ function CardForm({ onDone }: { onDone: () => void }) {
   const [flow, setFlow] = useState<FlowLevel>('dificil')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [layaEnabled, setLayaEnabled] = useState<boolean | null>(null)
+  const [jevEnabled, setJevEnabled] = useState<boolean | null>(null)
+  const createdAnalysis = useRef<string | null>(null)
   const triage = useCardTriage()
   useEffect(() => {
     let mounted = true
     void fetchMegaBrainSettings()
       .then((settings) => {
-        if (mounted) setLayaEnabled(settings.general.layaEnabled)
+        if (mounted) setJevEnabled(settings.general.jevEnabled === true)
       })
       .catch(() => {
-        if (mounted) setError('Não foi possível carregar as configurações. Tente abrir o formulário novamente.')
+        if (mounted) {
+          setJevEnabled(false)
+          setError('Não foi possível carregar as configurações. Você pode criar o card escolhendo o fluxo manualmente.')
+        }
       })
     return () => {
       mounted = false
@@ -36,6 +41,7 @@ function CardForm({ onDone }: { onDone: () => void }) {
 
   const edit = (field: 'title' | 'description', value: string) => {
     triage.invalidate()
+    createdAnalysis.current = null
     setError(null)
     if (field === 'title') setTitle(value)
     else setDescription(value)
@@ -43,6 +49,7 @@ function CardForm({ onDone }: { onDone: () => void }) {
 
   const close = () => {
     triage.invalidate()
+    createdAnalysis.current = null
     setTitle('')
     setDescription('')
     setFlow('dificil')
@@ -50,20 +57,23 @@ function CardForm({ onDone }: { onDone: () => void }) {
     onDone()
   }
 
-  const create = async (selectedFlow: FlowLevel, usedSuggestion = false) => {
-    const trimmed = title.trim()
+  const create = async (selectedFlow: FlowLevel, usedSuggestion = false, input = { title, description }) => {
+    const trimmed = input.title.trim()
     if (!trimmed || pending) return
     setPending(true)
     setError(null)
     try {
-      await createCard(trimmed, description, selectedFlow)
-      if (layaEnabled) {
+      await createCard(trimmed, input.description, selectedFlow)
+      if (jevEnabled) {
         const suggestion = usedSuggestion && triage.state.status === 'suggested' ? triage.state : undefined
         const evidence = suggestion?.evidence
-        toast.success(`Card criado como ${FLOW_LABELS[selectedFlow]}`, {
-          description: evidence
-            ? `Laya ${evidence.source === 'cache' ? '(cache)' : '(gateway)'} · ${suggestion?.modelVersion} · análise ${evidence.analysisId}`
-            : 'Criado sem aplicar uma sugestão da Laya.',
+        const confidence = suggestion
+          ? (suggestion.probabilities[selectedFlow] * 100).toLocaleString('pt-BR', { maximumFractionDigits: 0 })
+          : undefined
+        toast.success(`Card criado com dificuldade ${FLOW_LABELS[selectedFlow]}`, {
+          description: suggestion
+            ? `${confidence}% confiança • ${evidence ? Math.round(evidence.durationMs) : '—'}ms`
+            : undefined,
         })
       }
       close()
@@ -74,6 +84,21 @@ function CardForm({ onDone }: { onDone: () => void }) {
     }
   }
 
+  useEffect(() => {
+    if (jevEnabled !== true || triage.state.status !== 'suggested' || pending) return
+    const analysisId = triage.state.evidence?.analysisId ?? `${title.trim()}\0${description}`
+    if (createdAnalysis.current === analysisId) return
+    createdAnalysis.current = analysisId
+    void create(triage.state.suggestedFlow, true)
+  }, [description, jevEnabled, pending, title, triage.state])
+
+  const createTestCard = () => {
+    if (pending || triage.state.status === 'loading') return
+    triage.invalidate()
+    createdAnalysis.current = null
+    void create('dificil', false, TEST_CARD)
+  }
+
   const analyze = () => {
     if (!title.trim() || title.trim().length > 500 || description.length > 12000 || pending) return
     setError(null)
@@ -81,10 +106,9 @@ function CardForm({ onDone }: { onDone: () => void }) {
   }
 
   const primaryAction = () => {
-    if (layaEnabled) {
-      if (triage.state.status === 'suggested') void create(triage.state.suggestedFlow, true)
-      else analyze()
-    } else if (layaEnabled === false) void create(flow)
+    if (jevEnabled) {
+      if (triage.state.status !== 'suggested') analyze()
+    } else if (jevEnabled === false) void create(flow)
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -95,7 +119,6 @@ function CardForm({ onDone }: { onDone: () => void }) {
   }
   const validInput = Boolean(title.trim()) && title.trim().length <= 500 && description.length <= 12000
   const result = triage.state
-  const hasResponse = result.status === 'suggested'
 
   return (
     <div className="flex flex-col gap-2">
@@ -118,7 +141,7 @@ function CardForm({ onDone }: { onDone: () => void }) {
         onValueChange={(value) => edit('description', value)}
         onKeyDown={onKeyDown}
       />
-      {layaEnabled === false && (
+      {jevEnabled === false && (
         <fieldset className="grid gap-1 text-xs font-medium text-muted-foreground">
           <legend className="mb-1">Nível do fluxo</legend>
           <div className="grid grid-cols-3 gap-1 rounded-lg border bg-muted p-1">
@@ -142,49 +165,15 @@ function CardForm({ onDone }: { onDone: () => void }) {
           <span className="font-normal">{FLOW_DESCRIPTIONS[flow]}</span>
         </fieldset>
       )}
-      {layaEnabled && (
+      {jevEnabled && (
         <div className="grid gap-2 text-xs" aria-live="polite">
           <p className="text-muted-foreground">
-            A Laya analisará o título e a descrição antes da criação. O fluxo padrão sem sugestão é Difícil.
+            O Jev analisará o título e a descrição e criará o card automaticamente no fluxo com maior porcentagem. Sem
+            análise, você pode criar como Difícil.
           </p>
-          {result.status === 'loading' && <p role="status">Consultando o gateway Laya…</p>}
-          {hasResponse && (
-            <div className="grid gap-1 rounded-md border p-3" data-testid="laya-response">
-              <p className="font-medium">
-                {result.evidence?.source === 'cache'
-                  ? 'Resultado em cache de uma resposta da Laya'
-                  : 'Resposta recebida da Laya'}
-              </p>
-              <p>Sugestão: {FLOW_LABELS[result.suggestedFlow]}</p>
-              <div className="grid gap-1" aria-label="Probabilidades da Laya">
-                {FLOW_LEVELS.map((level) => (
-                  <div key={level} className="flex justify-between gap-3">
-                    <span>{FLOW_LABELS[level]}</span>
-                    <span>
-                      {(result.probabilities[level] * 100).toLocaleString('pt-BR', {
-                        minimumFractionDigits: 1,
-                        maximumFractionDigits: 1,
-                      })}
-                      %
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {result.evidence && (
-                <div className="text-muted-foreground">
-                  <p>Modelo: {result.modelVersion}</p>
-                  <p>Processada em: {new Date(result.evidence.processedAt).toLocaleString('pt-BR')}</p>
-                  <p>
-                    Tempo: {result.evidence.durationMs} ms
-                    {result.evidence.gatewayMs === undefined ? '' : ` · gateway: ${result.evidence.gatewayMs} ms`}
-                  </p>
-                  <p className="break-all">ID da análise: {result.evidence.analysisId}</p>
-                </div>
-              )}
-            </div>
-          )}
+          {result.status === 'loading' && <p role="status">Consultando o Jev…</p>}
           {result.status === 'unavailable' && (
-            <p role="alert">A Laya não retornou uma análise: {TRIAGE_UNAVAILABLE_MESSAGES[result.reasonCode]}</p>
+            <p role="alert">O Jev não retornou uma análise: {TRIAGE_UNAVAILABLE_MESSAGES[result.reasonCode]}</p>
           )}
           {result.status === 'error' && <p role="alert">{result.message}</p>}
           {!validInput && title.trim() && (
@@ -198,24 +187,24 @@ function CardForm({ onDone }: { onDone: () => void }) {
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        {layaEnabled === false && (
-          <Button size="sm" onClick={() => void create(flow)} disabled={!title.trim() || pending}>
-            {pending ? 'Criando…' : 'Adicionar'}
+        {jevEnabled !== true && (
+          <Button
+            size="sm"
+            onClick={() => void create(flow)}
+            disabled={jevEnabled === null || !title.trim() || pending}
+          >
+            {jevEnabled === null ? 'Carregando…' : pending ? 'Criando…' : 'Adicionar'}
           </Button>
         )}
-        {layaEnabled && (
+        {jevEnabled && (
           <>
-            {result.status === 'suggested' ? (
-              <Button size="sm" onClick={() => void create(result.suggestedFlow, true)} disabled={pending}>
-                {pending ? 'Criando…' : `Criar card como ${FLOW_LABELS[result.suggestedFlow]}`}
-              </Button>
-            ) : (
+            {result.status !== 'suggested' && (
               <Button size="sm" onClick={analyze} disabled={!validInput || pending || result.status === 'loading'}>
                 {result.status === 'loading'
                   ? 'Analisando…'
-                  : hasResponse || result.status === 'unavailable' || result.status === 'error'
+                  : result.status === 'unavailable' || result.status === 'error'
                     ? 'Tentar análise novamente'
-                    : 'Analisar com Laya'}
+                    : 'Analisar com Jev'}
               </Button>
             )}
             <Button
@@ -228,6 +217,16 @@ function CardForm({ onDone }: { onDone: () => void }) {
             </Button>
           </>
         )}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto text-xs text-muted-foreground"
+          title="Criar uma cópia do MB-069 com dificuldade Difícil"
+          onClick={createTestCard}
+          disabled={pending || result.status === 'loading'}
+        >
+          Criar card teste
+        </Button>
         <Button size="sm" variant="ghost" onClick={close} disabled={pending}>
           Cancelar
         </Button>

@@ -6,7 +6,7 @@ import {
   ChatGptIcon,
   ClaudeIcon,
   Clock01Icon,
-  Folder01Icon,
+  Task01Icon,
   RefreshIcon,
   SparklesIcon,
   StopIcon,
@@ -56,6 +56,14 @@ function elapsed(startedAt: string): string {
   const hours = Math.floor(totalMinutes / 60)
   if (hours < 24) return `há ${hours}h`
   return `há ${Math.floor(hours / 24)}d`
+}
+
+function displayModel(model: string): string {
+  const value = model.trim()
+  const isGpt = /^gpt-/i.test(value)
+  const normalized = value.replace(/^(claude|gpt)-/i, '').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-/g, ' ')
+  const formatted = normalized.replace(/\b\w+/g, (word) => word[0]?.toUpperCase() + word.slice(1))
+  return isGpt ? `GPT ${formatted}` : formatted
 }
 
 function StopAgentButton({ session }: { session: AgentSession }) {
@@ -140,16 +148,19 @@ function AgentRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="max-w-full truncate font-sans font-semibold">{session.name ?? session.title}</h3>
-            <span className="text-xs text-muted-foreground">{provider.label}</span>
+            <span className="text-xs text-muted-foreground">{DATE_FORMAT.format(new Date(session.updatedAt))}</span>
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className={cn('size-2 rounded-full', meta.dot, isActive(session) && 'animate-pulse')} />
               {meta.label}
             </span>
+            {session.model || session.effort ? (
+              <span className="inline-flex items-center rounded-full border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                {session.model ? displayModel(session.model) : null}
+                {session.model && session.effort ? <span className="mx-1.5 size-1 rounded-full bg-current" /> : null}
+                {session.effort ? session.effort[0]?.toUpperCase() + session.effort.slice(1) : null}
+              </span>
+            ) : null}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Modelo: <span className="font-mono text-foreground">{session.model ?? 'não informado'}</span>
-            {' · '}Effort: <span className="font-mono text-foreground">{session.effort ?? 'não informado'}</span>
-          </p>
           {session.name && session.name !== session.title ? (
             <p className="mt-1 truncate text-xs text-muted-foreground">{session.title}</p>
           ) : null}
@@ -163,7 +174,7 @@ function AgentRow({
               title={`Abrir ${card.id}: ${card.title}`}
               onClick={() => onOpenCard(card.id)}
             >
-              <HugeiconsIcon icon={Folder01Icon} strokeWidth={1.8} className="size-3.5 shrink-0" />
+              <HugeiconsIcon icon={Task01Icon} strokeWidth={1.8} className="size-3.5 shrink-0" />
               <span className="truncate">
                 <span className="font-mono font-medium">{card.id}</span> · {card.title}
               </span>
@@ -175,7 +186,7 @@ function AgentRow({
                 session.name ? 'mt-1.5' : 'mt-2',
               )}
             >
-              <HugeiconsIcon icon={Folder01Icon} strokeWidth={1.8} className="size-3.5 shrink-0" />
+              <HugeiconsIcon icon={Task01Icon} strokeWidth={1.8} className="size-3.5 shrink-0" />
               <span className="truncate font-mono" title={session.cwd}>
                 {session.cwd || 'Diretório não identificado'}
               </span>
@@ -189,7 +200,7 @@ function AgentRow({
       <div className="flex flex-col items-start gap-1 text-xs whitespace-nowrap text-muted-foreground sm:items-end">
         <span className="inline-flex items-center gap-1.5">
           <HugeiconsIcon icon={Clock01Icon} strokeWidth={1.8} className="size-3.5" />
-          {isActive(session) ? elapsed(session.startedAt) : DATE_FORMAT.format(new Date(session.updatedAt))}
+          {elapsed(session.startedAt)}
         </span>
         {session.pid ? <span className="font-mono opacity-70">PID {session.pid}</span> : null}
         {isActive(session) && session.pid ? <StopAgentButton session={session} /> : null}

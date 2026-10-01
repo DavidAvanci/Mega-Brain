@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { DiffTab } from './DiffTab'
 
-const mocks = vi.hoisted(() => ({ fetchDiff: vi.fn(), startDiff: vi.fn() }))
+const mocks = vi.hoisted(() => ({ fetchDiff: vi.fn(), fetchStandardDiff: vi.fn(), startDiff: vi.fn() }))
 vi.mock('../api/card-detail-api', () => mocks)
 vi.mock('@/theme', () => ({ useTheme: () => 'light' }))
 vi.mock('@/components/ui/button', () => ({ Button: 'button' }))
@@ -27,6 +27,7 @@ beforeEach(() => {
   document.body.append(host)
   root = createRoot(host)
   mocks.startDiff.mockResolvedValue({ status: 'running', started: true })
+  mocks.fetchStandardDiff.mockResolvedValue([])
 })
 
 afterEach(async () => {

@@ -131,6 +131,10 @@ export function render(text: string): Rendered {
         const label = this.parser.parseInline(tokens)
         return safe ? `<a href="${escape(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>` : label
       },
+      codespan({ text }: Tokens.Codespan) {
+        const path = /(?:^|\s)(?:\.{0,2}[\\/]|[a-z]:[\\/]|[^\s]+[\\/][^\s]+)/i.test(text)
+        return `<code${path ? ' class="markdown-path"' : ''}>${escape(text)}</code>`
+      },
       html(token) {
         return safeMarkdownHtml(token.text)
       },

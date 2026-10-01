@@ -18,6 +18,7 @@ export interface WorkspaceFolder {
   status: string
   flow?: FlowLevel
   agents?: AgentInfo[] | null
+  smartDiffRunning?: boolean
   devEnv?: DevEnvInfo | null
   prs?: PrLinks | null
   prStates?: Record<string, PrState> | null
@@ -39,6 +40,7 @@ export function toCards(folders: WorkspaceFolder[], jiraStatuses: Readonly<Recor
     flow: folder.flow ?? 'dificil',
     jiraStatus: jiraStatuses[folder.name.toUpperCase()],
     agents: folder.agents ?? undefined,
+    smartDiffRunning: folder.smartDiffRunning ?? false,
     devEnv: folder.devEnv ?? undefined,
     prs: folder.prs ?? undefined,
     prStates: folder.prStates ?? undefined,

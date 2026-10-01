@@ -63,8 +63,8 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void) {
     setSettings((current) => {
       if (!current) return current
       const general: GeneralSettingsInput = { ...current.general }
-      delete general.layaApiKey
-      delete general.layaRemoveSavedKey
+      delete general.jevApiKey
+      delete general.jevRemoveSavedKey
       return { ...current, general }
     })
     onClose()

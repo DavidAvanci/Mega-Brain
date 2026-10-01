@@ -24,7 +24,7 @@ export interface MegaBrainConfig {
   workspaceDir: string
   worktreesDir: string
   jira: JiraEnv
-  laya: {
+  jev: {
     enabled: boolean
     savedKey?: string
     environmentKey?: string
@@ -145,12 +145,12 @@ export function loadMegaBrainConfig(options: LoadMegaBrainConfigOptions = {}): M
       email: optional(env.JIRA_EMAIL) ?? savedString(saved.jiraEmail),
       token: optional(env.JIRA_API_TOKEN) ?? savedString(saved.jiraApiToken),
     },
-    laya: {
-      enabled: saved.layaEnabled === true,
-      savedKey: savedString(saved.layaApiKey),
-      environmentKey: optional(env.LAYA_API_KEY),
-      savedBaseUrl: savedString(saved.layaBaseUrl),
-      environmentBaseUrl: optional(env.LAYA_BASE_URL),
+    jev: {
+      enabled: saved.jevEnabled === true,
+      savedKey: savedString(saved.jevApiKey),
+      environmentKey: optional(env.TYPESAFE_API_KEY),
+      savedBaseUrl: savedString(saved.jevBaseUrl),
+      environmentBaseUrl: optional(env.TYPESAFE_BASE_URL),
     },
     directories: {
       home,

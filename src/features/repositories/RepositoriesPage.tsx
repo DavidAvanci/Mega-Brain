@@ -346,6 +346,20 @@ export function RepositoriesPage() {
     setEditingId(id)
   }
 
+  const openRepositoryInEditor = async (id: string) => {
+    setOperation(id, 'open-editor')
+    try {
+      await requestJson('/api/repositories/open', 'Falha ao abrir o repositório no editor configurado', {
+        method: 'POST',
+        body: { id },
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setOperation(id, null)
+    }
+  }
+
   const rowActions = useRef({
     verifyRemote,
     pull,
@@ -353,10 +367,21 @@ export function RepositoriesPage() {
     migrate,
     toggleActive,
     openEditor,
+    openRepositoryInEditor,
     repositories,
     operations,
   })
-  rowActions.current = { verifyRemote, pull, goToMaster, migrate, toggleActive, openEditor, repositories, operations }
+  rowActions.current = {
+    verifyRemote,
+    pull,
+    goToMaster,
+    migrate,
+    toggleActive,
+    openEditor,
+    openRepositoryInEditor,
+    repositories,
+    operations,
+  }
   const onRowVerify = useCallback((id: string) => {
     if (!rowActions.current.operations[id]) void rowActions.current.verifyRemote(id)
   }, [])
@@ -375,6 +400,12 @@ export function RepositoriesPage() {
     if (selected) void rowActions.current.toggleActive(selected)
   }, [])
   const onRowSettings = useCallback((id: string) => rowActions.current.openEditor(id), [])
+  const onRowOpenEditor = useCallback(
+    (id: string) => {
+      if (!rowActions.current.operations[id]) void rowActions.current.openRepositoryInEditor(id)
+    },
+    [],
+  )
 
   return (
     <main className="min-h-0 min-w-0 flex-1 overflow-auto bg-background p-5 md:p-8" aria-label="Página Repositórios">
@@ -539,6 +570,7 @@ export function RepositoriesPage() {
               onMigrate={onRowMigrate}
               onToggleActive={onRowToggleActive}
               onSettings={onRowSettings}
+              onOpenEditor={onRowOpenEditor}
             />
           ))}
         </section>

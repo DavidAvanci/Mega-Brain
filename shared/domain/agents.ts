@@ -21,6 +21,17 @@ export interface CardAgentUsage {
   unpricedRuns: number
 }
 
+export interface CardAgentUsageEntry {
+  id: string
+  label?: string
+  provider?: AgentProvider
+  model?: string
+  startedAt: string
+  finishedAt?: string
+  durationMs: number
+  costUsd?: number
+}
+
 export interface AgentSession {
   id: string
   provider: AgentProvider

@@ -7,7 +7,7 @@ import { expect, test } from 'vitest'
 import type { ProcessChild, ProcessRunner } from '../process'
 import { createWorkspaceService } from './service'
 
-test('opening diff runs Smart Diff against master, reviews the report, and saves diff.json', async () => {
+test('opening diff runs Smart Diff against the GitHub default branch, reviews the report, and saves diff.json', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mega-brain-smart-diff-'))
   const card = join(root, 'card')
   const repo = join(root, 'repo')
@@ -23,6 +23,8 @@ test('opening diff runs Smart Diff against master, reviews the report, and saves
       _options: unknown,
       callback: (error: Error | null, stdout: string, stderr: string) => void,
     ) {
+      if (command === 'gh') return callback(null, 'main\n', '')
+      if (command === 'git') return callback(null, '', '')
       calls.smartDiff.push([command, ...args])
       callback(null, JSON.stringify({ schemaVersion: 1, readingOrder: [] }), '')
     },
@@ -62,7 +64,7 @@ test('opening diff runs Smart Diff against master, reviews the report, and saves
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(calls.smartDiff).toHaveLength(1)
-  expect(calls.smartDiff[0]).toContain('master...HEAD')
+  expect(calls.smartDiff[0]).toContain('FETCH_HEAD...HEAD')
   expect(calls.agent).toHaveLength(1)
   expect(calls.agent[0].join(' ')).toContain('/smart-diff-review')
   expect(existsSync(join(card, 'diff.json'))).toBe(true)

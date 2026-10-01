@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { reportDesktopApiFailure } from '../../../desktopConnection'
-import type { FlowLevel, Status } from '../../../../shared/domain/cards'
+import type { Card, FlowLevel, Status } from '../../../../shared/domain/cards'
 import {
   createWorkspaceCard,
   deleteWorkspaceCard,
@@ -24,6 +24,8 @@ const AGENT_STATUSES: ReadonlySet<Status> = new Set([
   'aguardando-deploy',
 ])
 const userInitiatedStatusChanges = new Map<string, { status: Status; expiresAt: number }>()
+const pendingMoves = new Map<string, Pick<Card, 'status' | 'agents'>>()
+let refreshVersion = 0
 let jiraStatuses: Record<string, string> = {}
 let timer: number | undefined
 
@@ -54,13 +56,26 @@ async function migrateLegacy(folders: Awaited<ReturnType<typeof listWorkspace>>)
 }
 
 export async function refresh(): Promise<void> {
+  const version = ++refreshVersion
   try {
     const folders = await listWorkspace()
+    if (version !== refreshVersion) return
     if (await migrateLegacy(folders)) return refresh()
-    setCardsState({ cards: toCards(folders, jiraStatuses), error: null, loaded: true })
-    jiraStatuses = await fetchJiraStatuses(folders)
-    setCardsState({ cards: toCards(folders, jiraStatuses) })
+    if (version !== refreshVersion) return
+    const cards = toCards(folders, jiraStatuses).map((card) => {
+      const pending = pendingMoves.get(card.id)
+      return pending ? { ...card, ...pending } : card
+    })
+    setCardsState({ cards, error: null, loaded: true })
+    const nextJiraStatuses = await fetchJiraStatuses(folders)
+    if (version !== refreshVersion) return
+    jiraStatuses = nextJiraStatuses
+    // Jira only updates its labels; never reapply an older workspace snapshot.
+    setCardsState({
+      cards: cardsState().cards.map((card) => ({ ...card, jiraStatus: jiraStatuses[card.id.toUpperCase()] })),
+    })
   } catch (error) {
+    if (version !== refreshVersion) return
     reportDesktopApiFailure(error)
     setCardsState({ error: message(error), loaded: true })
   }
@@ -85,28 +100,46 @@ export async function deleteCard(name: string): Promise<void> {
   await refresh()
 }
 
+export async function updateCardDescription(name: string, description: string): Promise<void> {
+  await updateWorkspaceCard(name, { description }, 'Falha ao atualizar a descrição')
+  await refresh()
+}
+
 export function moveCard(id: string, status: Status): void {
+  ++refreshVersion
   userInitiatedStatusChanges.set(id, { status, expiresAt: Date.now() + USER_ACTION_WINDOW_MS })
-  setCardsState({
-    cards: cardsState().cards.map((card) => {
-      if (card.id !== id) return card
-      const startingAgent = AGENT_STATUSES.has(status) && card.status !== status
-      const external = (card.agents ?? []).filter((agent) => !agent.stage)
-      return {
-        ...card,
-        status,
-        agents: startingAgent ? [{ status: 'rodando' as const, phase: 'Iniciando agente' }, ...external] : card.agents,
-      }
-    }),
+  const cards = cardsState().cards.map((card) => {
+    if (card.id !== id) return card
+    const startingAgent = AGENT_STATUSES.has(status) && card.status !== status
+    const external = (card.agents ?? []).filter((agent) => !agent.stage)
+    return {
+      ...card,
+      status,
+      agents: startingAgent ? [{ status: 'rodando' as const, phase: 'Iniciando agente' }, ...external] : card.agents,
+    }
   })
+  const moved = cards.find((card) => card.id === id)
+  const pending = { status, agents: moved?.agents }
+  pendingMoves.set(id, pending)
+  setCardsState({ cards })
+  const settle = () => {
+    if (pendingMoves.get(id) !== pending) return
+    pendingMoves.delete(id)
+    ++refreshVersion
+  }
   updateWorkspaceCard(id, { status }, 'Falha ao mover o card')
-    .then(() =>
-      transitionJiraStatus(id, status).then((next) => {
+    .then(() => {
+      settle()
+      return transitionJiraStatus(id, status).then((next) => {
         if (next) jiraStatuses[id.toUpperCase()] = next
-      }),
-    )
+      })
+    })
     .then(refresh)
-    .catch((error) => setCardsState({ error: message(error) }))
+    .catch(async (error) => {
+      settle()
+      await refresh()
+      setCardsState({ error: message(error) })
+    })
 }
 
 export function consumeUserInitiatedStatusChange(id: string, status: Status): boolean {

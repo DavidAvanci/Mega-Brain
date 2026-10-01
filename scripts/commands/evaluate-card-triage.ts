@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { validateTriageInput } from '../../server/card-triage/service'
-import { createLayaClient, parseLayaEvaluation } from '../../server/integrations/laya/client'
-import { LayaFailure } from '../../server/integrations/laya/types'
+import { createJevClient, parseJevEvaluation } from '../../server/integrations/jev/client'
+import { JevFailure } from '../../server/integrations/jev/types'
 import type { CardTriageResult } from '../../shared/domain/card-triage'
 import { MODEL_VERSION, POLICY_VERSION } from '../../server/card-triage/policy-config'
 import { decideTriage } from '../../server/card-triage/policy'
@@ -14,11 +14,8 @@ const path = option('--input')
 const mode = option('--mode')
 if (!path || !['replay', 'live'].includes(mode)) throw new Error('Use --input dataset.json --mode replay|live')
 const budget = Number(option('--budget'))
-if (
-  mode === 'live' &&
-  (!Number.isSafeInteger(budget) || budget < 1 || !process.env.LAYA_API_KEY || !process.env.LAYA_BASE_URL)
-)
-  throw new Error('Live exige --budget N, LAYA_API_KEY e LAYA_BASE_URL')
+if (mode === 'live' && (!Number.isSafeInteger(budget) || budget < 1 || !process.env.TYPESAFE_API_KEY))
+  throw new Error('Live exige --budget N, TYPESAFE_API_KEY')
 const data = JSON.parse(readFileSync(path, 'utf8')) as {
   examples: Array<{
     id: string
@@ -30,7 +27,7 @@ const data = JSON.parse(readFileSync(path, 'utf8')) as {
   }>
 }
 if (!Array.isArray(data.examples)) throw new Error('Dataset inválido')
-const client = createLayaClient()
+const client = createJevClient()
 const rows: EvaluationRow[] = []
 for (const example of data.examples) {
   if (
@@ -51,16 +48,16 @@ for (const example of data.examples) {
       mode === 'live'
         ? await client(
             validateTriageInput({ title: example.title, description: example.description }),
-            process.env.LAYA_API_KEY!,
-            process.env.LAYA_BASE_URL!,
+            process.env.TYPESAFE_API_KEY!,
+            process.env.TYPESAFE_BASE_URL,
           )
-        : parseLayaEvaluation(example.answers)
+        : parseJevEvaluation(example.answers)
     result = decideTriage(answers)
     inputTokens = answers.usage.input_tokens
     outputTokens = answers.usage.output_tokens
   } catch (error) {
     if (mode === 'replay') throw error
-    const reasonCode = error instanceof LayaFailure ? error.code : 'external_error'
+    const reasonCode = error instanceof JevFailure ? error.code : 'external_error'
     result = {
       status: 'unavailable',
       reasonCode,

@@ -10,7 +10,7 @@ import { deleteCard } from './worktree-lifecycle'
 import { listBoardCards } from './board-list'
 import { openEditor } from './launchers'
 import { createStageController } from './stage-controller'
-import { inspectCard } from './card-inspection'
+import { inspectCard, inspectCardDiff } from './card-inspection'
 import { createSmartDiffReview } from './smart-diff-review'
 import type { AgentSession } from '../../shared/domain/agents'
 import { completeWorkspaceConfig, type WorkspaceConfigInput } from './workspace-config'
@@ -73,10 +73,12 @@ export function createWorkspaceService(
             runner,
             stages.start,
             agentSessions(),
+            diffReview.isRunning,
           )
         const card = folder(query.get('name'))
         if (path === '/detail') return inspectCard(card, resolve(config.worktreesDir), config.executables.git, runner)
         if (path === '/diff') return diffReview.read(card.path)
+        if (path === '/diff/standard') return inspectCardDiff(card.path, config.executables.git, runner)
         return listBoardCards(
           root,
           resolve(config.worktreesDir),
@@ -84,6 +86,7 @@ export function createWorkspaceService(
           runner,
           stages.start,
           agentSessions(),
+          diffReview.isRunning,
         )
       }
       if (method !== 'POST') throw new Error('Método não suportado')

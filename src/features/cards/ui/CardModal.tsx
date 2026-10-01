@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
+  ArrowRight01Icon,
   ComputerTerminal01Icon,
   Copy01Icon,
   Delete02Icon,
@@ -23,7 +24,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { AppSelect } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { deleteCard, moveCard, openFolder, openPrs, openTerminal, setCardFlow } from '../model/card-commands'
+import { deleteCard, moveCard, openFolder, openPrs, openTerminal, setCardFlow, updateCardDescription } from '../model/card-commands'
 import { type WorktreeRepoInfo } from '../api/card-detail-api'
 import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 import { PrChip, StageResetButton } from './CardView'
@@ -32,7 +33,9 @@ import { Markdown } from '@/Markdown'
 import { countTasks, type TaskCounts } from '@/markdownFormat'
 import { relativeTime } from '@/relativeTime'
 import { Tip } from '@/Tip'
+import { Textarea } from '@/components/ui/textarea'
 import { useCardDetail } from '../model/useCardDetail'
+import type { CardAgentUsageEntry } from '../../../../shared/domain/agents'
 import {
   FLOW_DESCRIPTIONS,
   FLOW_LABELS,
@@ -175,9 +178,39 @@ function LoadingLines() {
 
 function formatAgentTime(durationMs: number): string {
   const seconds = Math.floor(durationMs / 1000)
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  return hours ? `${hours}h ${minutes}min` : minutes ? `${minutes}min ${seconds % 60}s` : `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}min ${seconds % 60}s`
+}
+
+function usageEntryTitle(entry: CardAgentUsageEntry): string {
+  const labels: Record<string, string> = {
+    'task-planning': 'Planejamento',
+    'run-task-checklist': 'Desenvolvimento',
+    'run-test-checklist': 'Testes automáticos',
+    'stage-task': 'Publicação em staging',
+    'master-pr-task': 'Publicação em produção',
+    chat: 'Chat',
+  }
+  const label = entry.label ? (labels[entry.label] ?? entry.label) : 'Execução sem categoria'
+  const provider = entry.provider === 'claude' ? 'Claude' : entry.provider === 'codex' ? 'Codex' : undefined
+  return [label, provider, entry.model].filter(Boolean).join(' · ')
+}
+
+function formatUsageDate(value: string): string {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return 'Data desconhecida'
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatUsageCost(costUsd: number | undefined): string {
+  if (costUsd === undefined) return 'Não informado'
+  return `$${costUsd.toFixed(costUsd > 0 && costUsd < 0.01 ? 4 : 2).replace('.', ',')}`
 }
 
 function PrLinksList({ card }: { card: Card }) {
@@ -389,11 +422,30 @@ function ActionBar({ card, onDeleted }: { card: Card; onDeleted: () => void }) {
 }
 
 export function CardModal({ card, initialTab, onClose }: { card: Card; initialTab?: string; onClose: () => void }) {
-  const { files, repos, usage, error } = useCardDetail(card.id)
+  const { files, repos, usage, usageBreakdown, error } = useCardDetail(card.id)
   const agents = activeAgents(card)
   const [activeTab, setActiveTab] = useState(
     initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description'),
   )
+  const [editingDescription, setEditingDescription] = useState(false)
+  const [descriptionDraft, setDescriptionDraft] = useState(card.description)
+  const [descriptionText, setDescriptionText] = useState(card.description)
+  const [savingDescription, setSavingDescription] = useState(false)
+  const [descriptionError, setDescriptionError] = useState<string | null>(null)
+
+  const saveDescription = async () => {
+    setSavingDescription(true)
+    setDescriptionError(null)
+    try {
+      await updateCardDescription(card.id, descriptionDraft)
+      setDescriptionText(descriptionDraft)
+      setEditingDescription(false)
+    } catch (cause) {
+      setDescriptionError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSavingDescription(false)
+    }
+  }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -410,16 +462,51 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
               </div>
               <DialogTitle className="text-lg leading-snug">{card.title}</DialogTitle>
               {usage && (
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums text-muted-foreground" aria-label="Uso acumulado dos agentes">
-                  <span>Tempo dos agentes: <strong className="font-medium text-foreground">{formatAgentTime(usage.durationMs)}</strong></span>
-                  <span title={usage.unpricedRuns ? `${usage.unpricedRuns} execução(ões) sem custo informado pela CLI` : undefined}>
-                    Custo: <strong className="font-medium text-foreground">
-                      {usage.runs > 0 && usage.unpricedRuns === usage.runs
-                        ? 'indisponível'
-                        : `$${usage.costUsd.toFixed(usage.costUsd > 0 && usage.costUsd < 0.01 ? 4 : 2)}${usage.unpricedRuns ? ' (parcial)' : ''}`}
+                <details className="group w-full text-xs">
+                  <summary
+                    className="flex cursor-pointer list-none items-center gap-1.5 whitespace-nowrap text-muted-foreground select-none [&::-webkit-details-marker]:hidden"
+                    aria-label="Uso acumulado dos agentes"
+                  >
+                    <HugeiconsIcon
+                      icon={ArrowRight01Icon}
+                      strokeWidth={2}
+                      className="size-3 shrink-0 transition-transform group-open:rotate-90"
+                    />
+                    <span>Gastos dos agentes:</span>
+                    <strong className="font-medium tabular-nums text-foreground">
+                      {formatAgentTime(usage.durationMs)} • ${usage.costUsd.toFixed(2).replace('.', ',')}
                     </strong>
-                  </span>
-                </div>
+                    {usage.unpricedRuns > 0 && (
+                      <span title={`${usage.unpricedRuns} execução(ões) sem custo informado pela CLI`}>
+                        <Spinner className="size-3" aria-label="Custo parcial dos agentes" />
+                      </span>
+                    )}
+                  </summary>
+                  {usageBreakdown.length > 0 && (
+                    <div className="mt-1.5 rounded-md border bg-muted/20 px-2 py-1.5">
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Valores em USD reportados pelo provedor; custos ausentes não são estimados.
+                      </p>
+                      <ol className="mt-1 max-h-36 divide-y overflow-y-auto border-t">
+                        {usageBreakdown.map((entry) => (
+                          <li key={entry.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 py-1.5">
+                            <span className="truncate font-medium text-foreground" title={usageEntryTitle(entry)}>
+                              {usageEntryTitle(entry)}
+                            </span>
+                            <strong className="text-right font-medium tabular-nums text-foreground">
+                              {entry.costUsd === undefined && !entry.finishedAt
+                                ? 'Em andamento'
+                                : formatUsageCost(entry.costUsd)}
+                            </strong>
+                            <span className="col-span-2 text-[11px] text-muted-foreground">
+                              {formatUsageDate(entry.startedAt)} · {formatAgentTime(entry.durationMs)}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                </details>
               )}
               {agents.map((agent, index) => {
                 const progress = agent.status === 'rodando' ? agent.progress : undefined
@@ -480,7 +567,35 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
                 )}
               </TabsList>
               <TabsContent value="description" className="overflow-y-auto px-5 py-4">
-                {card.description ? <Markdown text={card.description} /> : <Placeholder>Sem descrição.</Placeholder>}
+                <div className="mb-3 flex justify-end">
+                  {editingDescription ? (
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="sm" disabled={savingDescription} onClick={() => {
+                        setDescriptionDraft(card.description)
+                        setDescriptionError(null)
+                        setEditingDescription(false)
+                      }}>Cancelar</Button>
+                      <Button size="sm" disabled={savingDescription} onClick={() => void saveDescription()}>
+                        {savingDescription ? 'Salvando…' : 'Salvar descrição'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => {
+                      setDescriptionDraft(card.description)
+                      setEditingDescription(true)
+                    }}>Editar descrição</Button>
+                  )}
+                </div>
+                {descriptionError && <p className="mb-2 text-xs text-destructive" role="alert">{descriptionError}</p>}
+                {editingDescription ? (
+                  <Textarea
+                    aria-label="Descrição do card"
+                    value={descriptionDraft}
+                    maxLength={12000}
+                    className="min-h-48 resize-y"
+                    onChange={(event) => setDescriptionDraft(event.target.value)}
+                  />
+                ) : descriptionText ? <Markdown text={descriptionText} /> : <Placeholder>Sem descrição.</Placeholder>}
               </TabsContent>
               {FILE_TABS.map((tab) => {
                 const content = files?.[tab.file]

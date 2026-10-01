@@ -16,7 +16,7 @@ import { WORKTREES } from './env.ts'
 import { activeRepositoryCompanionGroup, activeRepositoryPath, assertRegisteredWorktree } from '../../server/repositories/catalog.ts'
 import { currentBranch, defaultBranch, git, hasRef } from './git.ts'
 import { JIRA_KEY } from './jira.ts'
-import { installCommand } from './packageManager.ts'
+import { detectPackageManager, installCommand, lockfileName } from './packageManager.ts'
 import { readPlan } from './plan.ts'
 
 export interface TaskInfo {
@@ -312,8 +312,8 @@ export function projectEnvironmentIssue(dir: string): string | null {
   } catch {
     return 'package.json inválido'
   }
-  const manager = installCommand(dir).cmd
-  const lockfile = manager === 'yarn' ? 'yarn.lock' : 'package-lock.json'
+  const manager = detectPackageManager(dir)
+  const lockfile = lockfileName(manager)
   if (!existsSync(join(dir, lockfile))) return `Dependências não verificáveis: falta ${lockfile} para ${manager}`
   // O Node do executor só decide o install; com node_modules vinculado o repo roda sob o Node do agente.
   if (!existsSync(join(dir, 'node_modules'))) {

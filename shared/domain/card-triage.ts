@@ -1,6 +1,6 @@
 import { FLOW_LEVELS, type FlowLevel } from './cards'
 
-export const CARD_TRIAGE_POLICY_VERSION = 'card-triage-laya-2-direct-choice'
+export const CARD_TRIAGE_POLICY_VERSION = 'card-triage-jev-3-max-probability-auto-create'
 
 export interface CardTriageInput {
   title: string
@@ -22,9 +22,9 @@ interface Versioned {
   evidence?: {
     analysisId: string
     processedAt: string
-    source: 'gateway' | 'cache'
+    source: 'api' | 'cache'
     durationMs: number
-    gatewayMs?: number
+    costUsd?: number
   }
 }
 export type CardTriageResult =
@@ -32,10 +32,10 @@ export type CardTriageResult =
   | (Versioned & { status: 'unavailable'; reasonCode: UnavailableReason; retryable: boolean })
 
 export function validateCardTriageResponse(value: unknown): CardTriageResult {
-  if (!value || typeof value !== 'object') throw new Error('Resposta inválida da triagem Laya.')
+  if (!value || typeof value !== 'object') throw new Error('Resposta inválida da triagem Jev.')
   const result = value as CardTriageResult
   if (result.policyVersion !== CARD_TRIAGE_POLICY_VERSION)
-    throw new Error('O backend da triagem Laya está desatualizado. Reinicie o Mega Brain com a versão atualizada.')
+    throw new Error('O backend da triagem Jev está desatualizado. Reinicie o Mega Brain com a versão atualizada.')
   if (result.status === 'unavailable') return result
   if (
     result.status !== 'suggested' ||
@@ -47,17 +47,17 @@ export function validateCardTriageResponse(value: unknown): CardTriageResult {
     }) ||
     Math.abs(FLOW_LEVELS.reduce((sum, flow) => sum + result.probabilities[flow], 0) - 1) > 0.01
   )
-    throw new Error('A resposta da Laya não contém as porcentagens de Simples, Médio e Difícil.')
+    throw new Error('A resposta do Jev não contém as porcentagens de Simples, Médio e Difícil.')
   return result
 }
 
 export const TRIAGE_UNAVAILABLE_MESSAGES: Record<UnavailableReason, string> = {
   disabled: 'Triagem desabilitada. Você pode criar o card como Difícil sem sugestão.',
-  missing_key: 'Configure a chave Laya para sugerir. Você pode criar o card como Difícil sem sugestão.',
-  missing_url: 'Configure o endereço do gateway Laya. Você pode criar o card como Difícil sem sugestão.',
-  invalid_url: 'Endereço do gateway Laya inválido. Revise a configuração.',
-  invalid_key: 'Chave Laya rejeitada. Revise a configuração ou crie o card como Difícil sem sugestão.',
-  rate_limited: 'Limite da Laya atingido. Tente novamente mais tarde ou crie o card como Difícil sem sugestão.',
+  missing_key: 'Configure a chave Jev para sugerir. Você pode criar o card como Difícil sem sugestão.',
+  missing_url: 'Configure o endereço do API TypeSafe. Você pode criar o card como Difícil sem sugestão.',
+  invalid_url: 'Endereço do API TypeSafe inválido. Revise a configuração.',
+  invalid_key: 'Chave Jev rejeitada. Revise a configuração ou crie o card como Difícil sem sugestão.',
+  rate_limited: 'Limite do Jev atingido. Tente novamente mais tarde ou crie o card como Difícil sem sugestão.',
   timeout: 'A análise demorou demais. Tente novamente ou crie o card como Difícil sem sugestão.',
   busy: 'Há análises em andamento. Tente novamente ou crie o card como Difícil sem sugestão.',
   external_error: 'Não foi possível sugerir agora. Você pode criar o card como Difícil sem sugestão.',

@@ -21,6 +21,8 @@ import { createWorkspaceService } from './workspace/service'
 import { RepositoryRegistry } from './repositories/registry'
 import { repositoryCatalogFile } from './repositories/catalog'
 import { repositoriesHttp } from './repositories/http'
+import { editorExecutable } from './app-settings'
+import { openEditor } from './workspace/launchers'
 
 /** The one production composition root for both HTTP transports. */
 export type ProductionRouteHandler = ApiHandler | SseHandler
@@ -80,9 +82,11 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   const jira = createJiraService(config.jira)
   const usage = createClaudeUsageService(config.directories.claudeCredentials)
   const coffee = coffeeHttp(createCoffeeService(runner, config.executables.powershell, owner))
-  const repositories = repositoriesHttp(
-    new RepositoryRegistry(repositoryCatalogFile(config.preferences.settingsFile), runner),
-  )
+  const repositoryRegistry = new RepositoryRegistry(repositoryCatalogFile(config.preferences.settingsFile), runner)
+  const repositories = repositoriesHttp(repositoryRegistry, async (id) => {
+    const path = await repositoryRegistry.checkoutPath(id)
+    openEditor(path, editorExecutable(config), runner)
+  })
   const agents = agentsHttp(agentService)
 
   for (const [method, path] of [
@@ -91,6 +95,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['GET', '/api/workspace/settings/editors'],
     ['GET', '/api/workspace/detail'],
     ['GET', '/api/workspace/diff'],
+    ['GET', '/api/workspace/diff/standard'],
     ['POST', '/api/workspace'],
     ['POST', '/api/workspace/settings'],
     ['POST', '/api/workspace/open'],
@@ -130,6 +135,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   add('POST', '/api/repositories/preview', repositories)
   add('POST', '/api/repositories/discover', repositories)
   add('GET', '/api/repositories/status', repositories)
+  add('POST', '/api/repositories/open', repositories)
   add('POST', '/api/repositories/verify', repositories)
   add('POST', '/api/repositories/pull', repositories)
   add('GET', '/api/repositories/migration', repositories)

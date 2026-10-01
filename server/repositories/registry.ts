@@ -73,6 +73,10 @@ export class RepositoryRegistry {
     return repo
   }
 
+  async checkoutPath(id: unknown): Promise<string> {
+    return (await this.getRepository(id)).path
+  }
+
   async preview(value: unknown): Promise<{ path: string; displayName: string; alias: string; origin?: string; duplicateId?: string }> {
     const path = await this.validatePath(value)
     const name = path.split(/[\\/]/).filter(Boolean).at(-1) ?? 'repository'
@@ -229,7 +233,9 @@ export class RepositoryRegistry {
       if (verified.state !== 'behind') return { ...verified, error: `Atualização indisponível: ${verified.state}` }
       const repository = await this.getRepository(id)
       try {
-        await this.git(repository.path, ['pull', '--ff-only', '--no-rebase'], 60_000)
+        // verifyRemoteUnlocked already fetched the upstream. Merge that exact
+        // tracking ref instead of fetching again as `git pull` would do.
+        await this.git(repository.path, ['merge', '--ff-only', '@{upstream}'], 60_000)
         const head = await this.git(repository.path, ['rev-parse', 'HEAD'])
         this.pulledHeads.set(id, head)
         return { ...await this.status(id), source: 'remote' }

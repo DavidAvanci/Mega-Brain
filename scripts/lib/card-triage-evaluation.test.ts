@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { evaluateRows, ruleBaseline, type EvaluationRow } from './card-triage-evaluation'
 
-const version = { modelVersion: 'laya:multilingual', policyVersion: 'test' }
+const version = { modelVersion: 'jev-1.13.0', policyVersion: 'test' }
 test('reports selective precision, coverage and difficult downgrade counts', () => {
   const rows: EvaluationRow[] = [
     {

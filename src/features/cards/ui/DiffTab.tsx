@@ -5,7 +5,14 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowDown01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { fetchDiff, startDiff, type CardDiffDocument, type SmartDiffFile } from '../api/card-detail-api'
+import {
+  fetchDiff,
+  fetchStandardDiff,
+  startDiff,
+  type CardDiffDocument,
+  type RepoDiff,
+  type SmartDiffFile,
+} from '../api/card-detail-api'
 import { fileLang, parseDiff, type FileDiff, type FileStatus } from '@/diff'
 import { useTheme, type Theme } from '@/theme'
 import '@git-diff-view/react/styles/diff-view.css'
@@ -53,7 +60,7 @@ type ReviewRow =
   | { kind: 'noise'; key: string; items: CardDiffDocument['repositories'][number]['review']['noise'] }
   | { kind: 'warning'; key: string; text: string }
 
-function prepareReview(document: CardDiffDocument | null) {
+function prepareReview(document: CardDiffDocument | null, collapsedSections: ReadonlySet<string> = new Set()) {
   const rows: ReviewRow[] = []
   let fileCount = 0
   let additions = 0
@@ -64,9 +71,10 @@ function prepareReview(document: CardDiffDocument | null) {
     repo.review.sections.forEach((section, sectionIndex) => {
       const sectionKey = `${prefix}:section:${sectionIndex}`
       rows.push({ kind: 'section', key: sectionKey, title: section.title, summary: section.summary })
+      const sectionCollapsed = collapsedSections.has(sectionKey)
       section.files.forEach((entry, entryIndex) => {
         const parsed = parsedFiles(entry)
-        if (!parsed.length) {
+        if (!parsed.length && !sectionCollapsed) {
           rows.push({
             kind: 'note',
             key: `${sectionKey}:note:${entryIndex}`,
@@ -78,14 +86,15 @@ function prepareReview(document: CardDiffDocument | null) {
           fileCount++
           additions += file.additions
           deletions += file.deletions
-          rows.push({
-            kind: 'file',
-            key: `${sectionKey}:file:${entryIndex}:${fileIndex}`,
-            fileKey: rowKey(repo.name, file),
-            file,
-            explanation: entry.explanation,
-            lines: file.raw.split('\n').length,
-          })
+          if (!sectionCollapsed)
+            rows.push({
+              kind: 'file',
+              key: `${sectionKey}:file:${entryIndex}:${fileIndex}`,
+              fileKey: rowKey(repo.name, file),
+              file,
+              explanation: entry.explanation,
+              lines: file.raw.split('\n').length,
+            })
         })
       })
     })
@@ -133,6 +142,58 @@ function Counts({ additions, deletions }: { additions: number; deletions: number
 
 function FileNote({ children }: { children: string }) {
   return <p className="px-3 py-4 text-center text-xs text-muted-foreground">{children}</p>
+}
+
+function StandardDiff({
+  repos,
+  mode,
+  theme,
+  collapsed,
+  onToggle,
+}: {
+  repos: (RepoDiff & { files: FileDiff[] })[]
+  mode: DiffModeEnum
+  theme: Theme
+  collapsed: ReadonlySet<string>
+  onToggle: (key: string) => void
+}) {
+  const files = repos.flatMap((repo) => repo.files)
+  if (!repos.length)
+    return <p className="py-10 text-center text-xs text-muted-foreground">Sem repositórios vinculados à task.</p>
+  if (!files.length && repos.every((repo) => !repo.error))
+    return <p className="py-10 text-center text-xs text-muted-foreground">Sem alterações nos repositórios.</p>
+  return (
+    <div className="space-y-3">
+      {repos.map((repo) => (
+        <section key={repo.name} className="space-y-2">
+          <h3 className="border-b pb-1 text-xs font-semibold tracking-wider uppercase">{repo.name}</h3>
+          {repo.error && <p className="text-xs text-destructive">{repo.error}</p>}
+          {repo.files.map((file) => {
+            const key = rowKey(repo.name, file)
+            return (
+              <div key={key} className="overflow-clip rounded-md border">
+                <FileHeader rowKey={key} file={file} open={!collapsed.has(key)} onToggle={onToggle} />
+                {!collapsed.has(key) &&
+                  (file.binary ? (
+                    <FileNote>Arquivo binário, sem preview.</FileNote>
+                  ) : !file.hasHunks ? (
+                    <FileNote>Sem alterações de conteúdo.</FileNote>
+                  ) : (
+                    <DiffView
+                      diffFile={getDiffFile(file, theme)}
+                      diffViewMode={mode}
+                      diffViewTheme={theme}
+                      diffViewHighlight={shouldHighlight(file)}
+                      diffViewFontSize={12}
+                    />
+                  ))}
+              </div>
+            )
+          })}
+        </section>
+      ))}
+    </div>
+  )
 }
 
 function FileHeader({
@@ -230,16 +291,24 @@ const FileCard = memo(function FileCard({
 })
 
 export function DiffTab({ cardId }: { cardId: string }) {
+  const theme = useTheme()
   const [document, setDocument] = useState<CardDiffDocument | null>(null)
   const [status, setStatus] = useState<'checking' | 'idle' | 'running' | 'ready' | 'error'>('checking')
   const [error, setError] = useState<string | null>(null)
   const [split, setSplit] = useState(true)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [openNoise, setOpenNoise] = useState<ReadonlySet<string>>(new Set())
+  const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(new Set())
   const [tick, setTick] = useState(0)
   const generationRequest = useRef<{ cardId: string; regenerate: boolean } | null>(null)
   const [steps, setSteps] = useState<string[]>([])
   const [started, setStarted] = useState(false)
+  const [standardRepos, setStandardRepos] = useState<(RepoDiff & { files: FileDiff[] })[] | null>(null)
+  const [standardCollapsed, setStandardCollapsed] = useState<ReadonlySet<string>>(new Set())
+
+  useEffect(() => {
+    setCollapsedSections(new Set())
+  }, [cardId])
 
   useEffect(() => {
     let cancelled = false
@@ -252,11 +321,13 @@ export function DiffTab({ cardId }: { cardId: string }) {
         setSteps(state.steps ?? [])
         setStarted(state.started)
         if (state.status === 'running') {
+          setStandardRepos(null)
           timer = setTimeout(poll, 1500)
           return
         }
         setError(state.started ? (state.error ?? null) : null)
         if (state.result) {
+          setStandardRepos(null)
           setDocument(state.result)
           const saved = collapseState.get(cardId) ?? { collapsed: new Set<string>(), seen: new Set<string>() }
           const next = new Set(saved.collapsed)
@@ -273,6 +344,12 @@ export function DiffTab({ cardId }: { cardId: string }) {
           saved.collapsed = next
           collapseState.set(cardId, saved)
           setCollapsed(next)
+        } else {
+          // A review may not exist yet or generation may have failed. Keep the
+          // original Git diff available in either case.
+          const standard = await fetchStandardDiff(cardId)
+          if (cancelled) return
+          setStandardRepos(standard.map((repo) => ({ ...repo, files: parseDiff(repo.diff) })))
         }
       } catch (reason) {
         if (!cancelled) {
@@ -282,6 +359,7 @@ export function DiffTab({ cardId }: { cardId: string }) {
       }
     }
     setDocument(null)
+    setStandardRepos(null)
     const request = generationRequest.current?.cardId === cardId ? generationRequest.current : null
     generationRequest.current = null
     setStatus(request ? 'running' : 'checking')
@@ -316,7 +394,23 @@ export function DiffTab({ cardId }: { cardId: string }) {
     [cardId],
   )
 
-  const prepared = useMemo(() => prepareReview(document), [document])
+  const prepared = useMemo(() => prepareReview(document, collapsedSections), [document, collapsedSections])
+  const toggleSection = useCallback((key: string) => {
+    setCollapsedSections((previous) => {
+      const next = new Set(previous)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+  const toggleStandard = useCallback((key: string) => {
+    setStandardCollapsed((previous) => {
+      const next = new Set(previous)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
   const rows = prepared.rows
   const scroll = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
@@ -327,7 +421,7 @@ export function DiffTab({ cardId }: { cardId: string }) {
       const row = rows[index]
       if (row.kind === 'file') return collapsed.has(row.fileKey) ? 110 : 110 + Math.min(row.lines * 19, 1200)
       if (row.kind === 'repo') return row.readingGuide ? 90 : 42
-      if (row.kind === 'section') return 72
+      if (row.kind === 'section') return collapsedSections.has(row.key) ? 46 : 72
       if (row.kind === 'noise') return 56
       return 48
     },
@@ -378,10 +472,21 @@ export function DiffTab({ cardId }: { cardId: string }) {
       <div ref={scroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         {error && <p className="text-xs text-destructive">{error}</p>}
         {checking && <p className="py-10 text-center text-xs text-muted-foreground">Consultando revisão salva…</p>}
-        {status === 'idle' && (
-          <p className="py-10 text-center text-xs text-muted-foreground">
-            Clique em Gerar Smart Diff para criar a revisão deste card.
-          </p>
+        {(status === 'idle' || status === 'error') && standardRepos !== null && (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              {status === 'idle'
+                ? 'Smart Diff ainda não gerado. Exibindo o diff padrão.'
+                : 'Smart Diff indisponível. Exibindo o diff padrão.'}
+            </p>
+            <StandardDiff
+              repos={standardRepos}
+              mode={split ? DiffModeEnum.Split : DiffModeEnum.Unified}
+              theme={theme}
+              collapsed={standardCollapsed}
+              onToggle={toggleStandard}
+            />
+          </div>
         )}
         {(loading || (status === 'error' && steps.length > 0)) && (
           <ol className="space-y-2 text-xs" aria-label="Etapas da revisão Smart Diff" aria-live="polite">
@@ -429,8 +534,20 @@ export function DiffTab({ cardId }: { cardId: string }) {
                   )}
                   {row.kind === 'section' && (
                     <div className="pt-1">
-                      <h4 className="text-sm font-semibold">{row.title}</h4>
-                      <p className="text-xs text-muted-foreground">{row.summary}</p>
+                      <button
+                        type="button"
+                        aria-expanded={!collapsedSections.has(row.key)}
+                        onClick={() => toggleSection(row.key)}
+                        className="flex w-full items-center gap-2 text-left"
+                      >
+                        <HugeiconsIcon
+                          icon={collapsedSections.has(row.key) ? ArrowRight01Icon : ArrowDown01Icon}
+                          strokeWidth={2}
+                          className="size-3.5 shrink-0 opacity-60"
+                        />
+                        <span className="text-sm font-semibold">{row.title}</span>
+                      </button>
+                      {!collapsedSections.has(row.key) && <p className="pl-5 text-xs text-muted-foreground">{row.summary}</p>}
                     </div>
                   )}
                   {row.kind === 'file' && (
