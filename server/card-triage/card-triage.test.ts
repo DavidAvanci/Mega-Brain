@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from 'vitest'
 import { loadMegaBrainConfig } from '../config'
-import { createLayaClient } from '../integrations/laya/client'
-import { LayaFailure, type LayaEvaluation } from '../integrations/laya/types'
+import { createJevClient } from '../integrations/jev/client'
+import { JevFailure, type JevEvaluation } from '../integrations/jev/types'
 import { decideTriage } from './policy'
 import { createCardTriageService, validateTriageInput } from './service'
 import { cardTriageHttp } from './http'
@@ -14,16 +14,16 @@ function evaluation(
     medio: choice === 'medio' ? 1 : 0,
     dificil: choice === 'dificil' ? 1 : 0,
   },
-): LayaEvaluation {
+): JevEvaluation {
   return {
-    modelVersion: 'laya:multilingual',
+    modelVersion: 'jev-1.13.0',
     answers: { difficulty: { choice, confidence: 0.55, probabilities } },
     usage: { input_tokens: 10, output_tokens: 2 },
   }
 }
 
 describe('triage policy', () => {
-  test('uses the single Laya choice directly and returns all three probabilities', () => {
+  test('uses the single Jev choice directly and returns all three probabilities', () => {
     for (const flow of ['simples', 'medio', 'dificil'] as const) {
       const result = decideTriage(evaluation(flow))
       expect(result).toMatchObject({ status: 'suggested', suggestedFlow: flow })
@@ -36,38 +36,32 @@ describe('triage policy', () => {
   })
 })
 
-describe('Laya adapter', () => {
+describe('Jev adapter', () => {
   test('sends only state and versioned questions, validates the answer', async () => {
     const fetcher = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-      expect(String(url)).toBe('http://192.168.0.66:3000/v1/systemone')
+      expect(String(url)).toBe('https://api.typesafe.ai/v1/systemone')
       expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer private')
       expect(new Headers(init?.headers).has('Origin')).toBe(false)
       const body = JSON.parse(String(init?.body))
       expect(body.state).toEqual({ title: 'Título', description: 'Descrição' })
-      expect(body.model).toBe('auto')
+      expect(body.model).toBe('jev-latest')
       expect(Object.keys(body.questions)).toEqual(['difficulty'])
       expect(Object.keys(body.questions.difficulty.criteria)).toEqual(['simples', 'medio', 'dificil'])
       const data = evaluation()
       return new Response(
         JSON.stringify({
-          model: 'laya-rl-agent',
-          routing: { model: 'multilingual' },
+          model: 'jev-1.13.0',
           ...data,
           answers: Object.fromEntries(
             Object.entries(data.answers).map(([id, answer]) => [id, { type: 'choice', ...answer }]),
           ),
         }),
-        { status: 200, headers: { 'x-laya-gateway-ms': '42' } },
+        { status: 200 },
       )
     }) as typeof fetch
-    const result = await createLayaClient(fetcher)(
-      { title: 'Título', description: 'Descrição' },
-      'private',
-      'http://192.168.0.66:3000',
-    )
+    const result = await createJevClient(fetcher)({ title: 'Título', description: 'Descrição' }, 'private')
     expect(result.answers.difficulty.choice).toBe('simples')
-    expect(result.modelVersion).toBe('laya:multilingual')
-    expect(result.gatewayMs).toBe(42)
+    expect(result.modelVersion).toBe('jev-1.13.0')
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
   test('rejects an unknown checkpoint and incomplete Choice distribution', async () => {
@@ -75,79 +69,89 @@ describe('Laya adapter', () => {
     const answer = Object.fromEntries(
       Object.entries(data.answers).map(([id, item]) => [id, { type: 'choice', ...item }]),
     )
-    const unknown = createLayaClient(
+    const unknown = createJevClient(
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ routing: { model: 'unknown' }, answers: answer, usage: data.usage }), {
+          new Response(JSON.stringify({ model: 'unknown', answers: answer, usage: data.usage }), {
             status: 200,
           }),
       ) as typeof fetch,
     )
-    await expect(unknown({ title: 'a', description: '' }, 'private', 'http://192.168.0.66:3000')).rejects.toMatchObject(
-      { code: 'external_error' },
-    )
+    await expect(unknown({ title: 'a', description: '' }, 'private', 'https://api.typesafe.ai')).rejects.toMatchObject({
+      code: 'external_error',
+    })
     const incomplete = {
       ...answer,
       difficulty: { type: 'choice', choice: 'simples', confidence: 0.9, probabilities: { simples: 1 } },
     }
-    const malformed = createLayaClient(
+    const malformed = createJevClient(
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ routing: { model: 'english' }, answers: incomplete, usage: data.usage }), {
+          new Response(JSON.stringify({ model: 'jev-1.13.0', answers: incomplete, usage: data.usage }), {
             status: 200,
           }),
       ) as typeof fetch,
     )
     await expect(
-      malformed({ title: 'a', description: '' }, 'private', 'http://192.168.0.66:3000'),
+      malformed({ title: 'a', description: '' }, 'private', 'https://api.typesafe.ai'),
     ).rejects.toMatchObject({ code: 'external_error' })
   })
   test('preserves Retry-After without exposing provider body', async () => {
-    const limited = createLayaClient(
+    const limited = createJevClient(
       vi.fn(
         async () => new Response('private provider error', { status: 429, headers: { 'retry-after': '5' } }),
       ) as typeof fetch,
     )
-    await expect(limited({ title: 'a', description: '' }, 'private', 'http://192.168.0.66:3000')).rejects.toMatchObject(
-      {
-        code: 'rate_limited',
-        retryAfter: 5,
-      },
-    )
+    await expect(limited({ title: 'a', description: '' }, 'private', 'https://api.typesafe.ai')).rejects.toMatchObject({
+      code: 'rate_limited',
+      retryAfter: 5,
+    })
   })
   test.each([
     [403, 'external_error'],
     [502, 'external_error'],
     [503, 'busy'],
+    [529, 'busy'],
     [504, 'timeout'],
     [413, 'external_error'],
   ])('maps gateway HTTP %i to %s', async (status, code) => {
-    const client = createLayaClient(vi.fn(async () => new Response('private error', { status })) as typeof fetch)
-    await expect(client({ title: 'a', description: '' }, 'private', 'http://192.168.0.66:3000')).rejects.toMatchObject({
+    const client = createJevClient(vi.fn(async () => new Response('private error', { status })) as typeof fetch)
+    await expect(client({ title: 'a', description: '' }, 'private', 'https://api.typesafe.ai')).rejects.toMatchObject({
       code,
     })
   })
   test('sanitizes authentication and malformed responses', async () => {
-    const unauthorized = createLayaClient(vi.fn(async () => new Response('secret', { status: 401 })) as typeof fetch)
+    const unauthorized = createJevClient(vi.fn(async () => new Response('secret', { status: 401 })) as typeof fetch)
     await expect(
-      unauthorized({ title: 'a', description: '' }, 'private', 'http://192.168.0.66:3000'),
+      unauthorized({ title: 'a', description: '' }, 'private', 'https://api.typesafe.ai'),
     ).rejects.toMatchObject({
       code: 'invalid_key',
     })
-    const malformed = createLayaClient(vi.fn(async () => new Response('{}', { status: 200 })) as typeof fetch)
+    const malformed = createJevClient(vi.fn(async () => new Response('{}', { status: 200 })) as typeof fetch)
     await expect(
-      malformed({ title: 'a', description: '' }, 'private', 'http://192.168.0.66:3000'),
-    ).rejects.toBeInstanceOf(LayaFailure)
+      malformed({ title: 'a', description: '' }, 'private', 'https://api.typesafe.ai'),
+    ).rejects.toBeInstanceOf(JevFailure)
   })
 })
 
 describe('triage service and route', () => {
   const config = () => {
-    const value = loadMegaBrainConfig({ env: {}, homeDir: '/tmp/laya-triage-test' })
-    value.laya = { enabled: true, savedKey: 'private', savedBaseUrl: 'http://192.168.0.66:3000' }
+    const value = loadMegaBrainConfig({ env: {}, homeDir: '/tmp/jev-triage-test' })
+    value.jev = { enabled: true, savedKey: 'private', savedBaseUrl: 'https://api.typesafe.ai' }
     return value
   }
-  test('validates limits and returns 400 without consulting Laya', async () => {
+  test('uses the hosted API by default and requires a TypeSafe credential', async () => {
+    const value = config()
+    delete value.jev.savedBaseUrl
+    const evaluate = vi.fn(async () => evaluation())
+    const service = createCardTriageService(value, { evaluate })
+    expect(await service.triage({ title: 'a', description: '' })).toMatchObject({ status: 'suggested' })
+    expect(evaluate).toHaveBeenCalledWith({ title: 'a', description: '' }, 'private', 'https://api.typesafe.ai')
+    delete value.jev.savedKey
+    expect(await service.triage({ title: 'a', description: '' })).toMatchObject({ reasonCode: 'missing_key' })
+    expect(evaluate).toHaveBeenCalledTimes(1)
+  })
+  test('validates limits and returns 400 without consulting Jev', async () => {
     expect(() => validateTriageInput({ title: '', description: '' })).toThrow()
     expect(() => validateTriageInput({ title: 'x'.repeat(501), description: '' })).toThrow()
     expect(() => validateTriageInput({ title: 'x', description: 'x'.repeat(12001) })).toThrow()
@@ -177,20 +181,25 @@ describe('triage service and route', () => {
     expect(fields).toMatchObject([{ result: 'suggested', cacheHit: false, inputTokens: 10 }])
   })
   test('deduplicates and caches successful requests', async () => {
-    const evaluate = vi.fn(async () => ({ ...evaluation(), gatewayMs: 42 }))
+    const evaluate = vi.fn(async () => evaluation())
     const service = createCardTriageService(config(), { evaluate })
     const input = { title: 'a', description: '' }
     const [a, b] = await Promise.all([service.triage(input), service.triage(input)])
     expect(a).toEqual(b)
     const cached = await service.triage(input)
-    expect(a.evidence).toMatchObject({ source: 'gateway', gatewayMs: 42 })
-    expect(cached.evidence).toMatchObject({ source: 'cache', analysisId: a.evidence?.analysisId })
+    expect(a.evidence).toMatchObject({ source: 'api', costUsd: (10 * 0.042) / 1_000_000 })
+    expect(cached.evidence).toMatchObject({
+      source: 'cache',
+      analysisId: a.evidence?.analysisId,
+      costUsd: 0,
+      durationMs: 0,
+    })
     expect(evaluate).toHaveBeenCalledTimes(1)
   })
   test('limits concurrent calls and invalidates cache after a credential change', async () => {
     const value = config()
     let release!: () => void
-    const pending = new Promise<LayaEvaluation>((resolve) => {
+    const pending = new Promise<JevEvaluation>((resolve) => {
       release = () => resolve(evaluation())
     })
     const evaluate = vi.fn(async () => pending)
@@ -200,15 +209,15 @@ describe('triage service and route', () => {
     expect((await service.triage({ title: 'three', description: '' })).status).toBe('unavailable')
     release()
     await Promise.all([one, two])
-    value.laya.savedKey = 'next-key'
+    value.jev.savedKey = 'next-key'
     await service.triage({ title: 'one', description: '' })
     expect(evaluate).toHaveBeenCalledTimes(2)
-    value.laya.savedBaseUrl = 'http://192.168.0.67:3000'
+    value.jev.savedBaseUrl = 'https://other.typesafe.test'
     await service.triage({ title: 'one', description: '' })
     expect(evaluate).toHaveBeenCalledTimes(3)
-    value.laya.enabled = false
+    value.jev.enabled = false
     await service.triage({ title: 'one', description: '' })
-    value.laya.enabled = true
+    value.jev.enabled = true
     await service.triage({ title: 'one', description: '' })
     expect(evaluate).toHaveBeenCalledTimes(4)
   })
@@ -220,7 +229,7 @@ describe('triage service and route', () => {
     if (!get || !post || !('length' in get)) throw new Error('Missing route')
     expect((await get({ ...request, method: 'GET' })).status).toBe(405)
     const disabled = config()
-    disabled.laya.enabled = false
+    disabled.jev.enabled = false
     const disabledPost = createProductionRouteTable({ config: disabled }).get('POST /api/card-triage')
     if (!disabledPost) throw new Error('Missing route')
     expect(await disabledPost({ ...request, method: 'POST', body: { title: 'A', description: '' } })).toMatchObject({
@@ -229,7 +238,7 @@ describe('triage service and route', () => {
   })
   test('disabled mode does not call the model', async () => {
     const value = config()
-    value.laya.enabled = false
+    value.jev.enabled = false
     const evaluate = vi.fn(async () => evaluation())
     expect((await createCardTriageService(value, { evaluate }).triage({ title: 'a', description: '' })).status).toBe(
       'unavailable',

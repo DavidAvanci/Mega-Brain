@@ -2,11 +2,14 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { CardTriageInput, CardTriageResult, UnavailableReason } from '../../shared/domain/card-triage'
 import type { MegaBrainConfig } from '../config'
 import type { StructuredLogger } from '../logger'
-import { createLayaClient } from '../integrations/laya/client'
-import { LayaFailure, type LayaEvaluation } from '../integrations/laya/types'
-import { normalizeLayaBaseUrl } from '../integrations/laya/url'
+import { createJevClient } from '../integrations/jev/client'
+import { JevFailure, type JevEvaluation } from '../integrations/jev/types'
+import { DEFAULT_JEV_BASE_URL, normalizeJevBaseUrl } from '../integrations/jev/url'
 import { decideTriage } from './policy'
 import { MODEL_VERSION, POLICY_VERSION } from './policy-config'
+
+// https://docs.typesafe.ai/models: $0.042 per million input tokens; output is free.
+const JEV_INPUT_COST_PER_MILLION = 0.042
 
 export function validateTriageInput(value: unknown): CardTriageInput {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Entrada inválida')
@@ -22,12 +25,12 @@ export function validateTriageInput(value: unknown): CardTriageInput {
 export function createCardTriageService(
   config: MegaBrainConfig,
   options: {
-    evaluate?: (input: CardTriageInput, key: string, baseUrl: string, signal?: AbortSignal) => Promise<LayaEvaluation>
+    evaluate?: (input: CardTriageInput, key: string, baseUrl: string, signal?: AbortSignal) => Promise<JevEvaluation>
     now?: () => number
     logger?: StructuredLogger
   } = {},
 ) {
-  const evaluate = options.evaluate ?? createLayaClient()
+  const evaluate = options.evaluate ?? createJevClient()
   const now = options.now ?? Date.now
   const cache = new Map<string, { expires: number; result: CardTriageResult }>()
   const inflight = new Map<string, Promise<CardTriageResult>>()
@@ -43,25 +46,23 @@ export function createCardTriageService(
   })
   async function triage(value: CardTriageInput): Promise<CardTriageResult> {
     const input = validateTriageInput(value)
-    const key = config.laya.environmentKey || config.laya.savedKey
-    const rawBaseUrl = config.laya.environmentBaseUrl || config.laya.savedBaseUrl
-    if (!config.laya.enabled || !key || !rawBaseUrl) {
+    const key = config.jev.environmentKey || config.jev.savedKey
+    const rawBaseUrl = config.jev.environmentBaseUrl || config.jev.savedBaseUrl || DEFAULT_JEV_BASE_URL
+    if (!config.jev.enabled || !key || !rawBaseUrl) {
       cache.clear()
       inflight.clear()
       scope = ''
       retryAfter = 0
-      return unavailable(!config.laya.enabled ? 'disabled' : !key ? 'missing_key' : 'missing_url')
+      return unavailable(!config.jev.enabled ? 'disabled' : !key ? 'missing_key' : 'missing_url')
     }
     let baseUrl: string
     try {
-      baseUrl = normalizeLayaBaseUrl(rawBaseUrl)
+      baseUrl = normalizeJevBaseUrl(rawBaseUrl)
     } catch {
       return unavailable('invalid_url')
     }
     const nextScope = createHash('sha256')
-      .update(
-        [key, baseUrl, config.workspaceDir, String(config.laya.enabled), MODEL_VERSION, POLICY_VERSION].join('\0'),
-      )
+      .update([key, baseUrl, config.workspaceDir, String(config.jev.enabled), MODEL_VERSION, POLICY_VERSION].join('\0'))
       .digest('hex')
     if (scope !== nextScope) {
       scope = nextScope
@@ -84,7 +85,9 @@ export function createCardTriageService(
         cacheHit: true,
         durationMs: 0,
       })
-      return hit.result.evidence ? { ...hit.result, evidence: { ...hit.result.evidence, source: 'cache' } } : hit.result
+      return hit.result.evidence
+        ? { ...hit.result, evidence: { ...hit.result.evidence, source: 'cache', costUsd: 0, durationMs: 0 } }
+        : hit.result
     }
     cache.delete(id)
     const existing = inflight.get(id)
@@ -100,9 +103,9 @@ export function createCardTriageService(
           evidence: {
             analysisId: randomUUID(),
             processedAt: new Date(now()).toISOString(),
-            source: 'gateway',
+            source: 'api',
             durationMs: Math.max(0, now() - started),
-            ...(response.gatewayMs === undefined ? {} : { gatewayMs: response.gatewayMs }),
+            costUsd: (response.usage.input_tokens * JEV_INPUT_COST_PER_MILLION) / 1_000_000,
           },
         }
         options.logger?.event('card_triage', {
@@ -120,10 +123,10 @@ export function createCardTriageService(
         }
         return result
       } catch (error) {
-        const reason = error instanceof LayaFailure ? error.code : 'external_error'
+        const reason = error instanceof JevFailure ? error.code : 'external_error'
         if (
           scope === nextScope &&
-          error instanceof LayaFailure &&
+          error instanceof JevFailure &&
           (error.code === 'rate_limited' || error.code === 'busy') &&
           error.retryAfter
         )

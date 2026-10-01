@@ -21,6 +21,17 @@ export interface CardAgentUsage {
   unpricedRuns: number
 }
 
+export interface CardAgentUsageEntry {
+  id: string
+  label?: string
+  provider?: AgentProvider
+  model?: string
+  startedAt: string
+  finishedAt?: string
+  durationMs: number
+  costUsd?: number
+}
+
 export interface AgentSession {
   id: string
   provider: AgentProvider
@@ -31,8 +42,6 @@ export interface AgentSession {
   cwd: string
   title: string
   name?: string
-  model?: string
-  effort?: string
   startedAt: string
   updatedAt: string
   activity?: string

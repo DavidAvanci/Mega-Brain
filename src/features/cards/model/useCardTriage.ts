@@ -33,7 +33,7 @@ export function useCardTriage() {
       if (generation.current === current && !abort.signal.aborted)
         setState({
           status: 'error',
-          message: error instanceof Error ? error.message : 'Não foi possível consultar a Laya.',
+          message: error instanceof Error ? error.message : 'Não foi possível consultar o Jev.',
         })
     } finally {
       if (controller.current === abort) controller.current = null

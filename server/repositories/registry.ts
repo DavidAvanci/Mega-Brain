@@ -73,6 +73,10 @@ export class RepositoryRegistry {
     return repo
   }
 
+  async checkoutPath(id: unknown): Promise<string> {
+    return (await this.getRepository(id)).path
+  }
+
   async preview(value: unknown): Promise<{ path: string; displayName: string; alias: string; origin?: string; duplicateId?: string }> {
     const path = await this.validatePath(value)
     const name = path.split(/[\\/]/).filter(Boolean).at(-1) ?? 'repository'

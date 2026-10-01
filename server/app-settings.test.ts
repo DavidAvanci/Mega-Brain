@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, statSync } from 'node:fs'
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
@@ -110,9 +110,9 @@ test('keeps the Jira token out of responses, preserves it on blank input and sup
   expect(config.jira).toEqual({ site: undefined, email: undefined, token: undefined })
 })
 
-test('keeps Laya credentials private and honors environment precedence and explicit removal', () => {
-  const home = mkdtempSync(join(tmpdir(), 'mega-brain-laya-settings-'))
-  const config = loadMegaBrainConfig({ homeDir: home, env: { LAYA_API_KEY: 'environment-secret' } })
+test('keeps Jev credentials private and honors environment precedence and explicit removal', () => {
+  const home = mkdtempSync(join(tmpdir(), 'mega-brain-jev-settings-'))
+  const config = loadMegaBrainConfig({ homeDir: home, env: { TYPESAFE_API_KEY: 'environment-secret' } })
   const base = {
     editor: 'cursor' as const,
     editorCommand: '',
@@ -126,39 +126,70 @@ test('keeps Laya credentials private and honors environment precedence and expli
   }
   const saved = writeGeneralSettings(config, {
     ...base,
-    layaEnabled: true,
-    layaBaseUrl: 'http://192.168.0.66:3000',
-    layaApiKey: 'saved-secret',
+    jevEnabled: true,
+    jevBaseUrl: 'https://api.typesafe.ai',
+    jevApiKey: 'saved-secret',
   })
   expect(saved).toMatchObject({
-    layaEnabled: true,
-    layaConfigured: true,
-    layaCredentialSource: 'environment',
+    jevEnabled: true,
+    jevConfigured: true,
+    jevCredentialSource: 'environment',
   })
   expect(JSON.stringify(saved)).not.toContain('secret')
-  expect(config.laya).toMatchObject({
+  expect(config.jev).toMatchObject({
     enabled: true,
     savedKey: 'saved-secret',
     environmentKey: 'environment-secret',
-    savedBaseUrl: 'http://192.168.0.66:3000',
+    savedBaseUrl: 'https://api.typesafe.ai',
   })
-  expect(statSync(config.preferences.settingsFile).mode & 0o777).toBe(0o600)
+  if (process.platform !== 'win32') expect(statSync(config.preferences.settingsFile).mode & 0o777).toBe(0o600)
   const persisted = readFileSync(config.preferences.settingsFile, 'utf8')
   expect(persisted).toContain('saved-secret')
   expect(persisted).not.toContain('environment-secret')
+  expect(loadMegaBrainConfig({ homeDir: home, env: {} }).jev).toMatchObject({
+    enabled: true,
+    savedKey: 'saved-secret',
+    savedBaseUrl: 'https://api.typesafe.ai',
+  })
   writeGeneralSettings(config, base)
-  expect(config.laya).toMatchObject({ enabled: true, savedKey: 'saved-secret' })
-  writeGeneralSettings(config, { ...base, layaRemoveSavedKey: true })
-  expect(config.laya.savedKey).toBeUndefined()
-  expect(readGeneralSettings(config).layaCredentialSource).toBe('environment')
+  expect(config.jev).toMatchObject({ enabled: true, savedKey: 'saved-secret' })
+  writeGeneralSettings(config, { ...base, jevRemoveSavedKey: true })
+  expect(config.jev.savedKey).toBeUndefined()
+  expect(readGeneralSettings(config).jevCredentialSource).toBe('environment')
   expect(readFileSync(config.preferences.settingsFile, 'utf8')).not.toContain('saved-secret')
 })
 
-test('validates the gateway origin, honors LAYA_BASE_URL and never exposes URL credentials', () => {
-  const home = mkdtempSync(join(tmpdir(), 'mega-brain-laya-url-'))
+test('does not reuse Laya credentials or silently enable hosted triage during migration', () => {
+  const home = mkdtempSync(join(tmpdir(), 'mega-brain-jev-migration-'))
+  const settingsFile = join(home, 'settings.json')
+  writeFileSync(
+    settingsFile,
+    JSON.stringify({ layaEnabled: true, layaApiKey: 'old-secret', layaBaseUrl: 'http://lan:3000' }),
+  )
   const config = loadMegaBrainConfig({
     homeDir: home,
-    env: { LAYA_API_KEY: 'env-key', LAYA_BASE_URL: 'http://gateway.local:3000' },
+    env: { MEGA_BRAIN_SETTINGS_FILE: settingsFile, LAYA_API_KEY: 'old-env-secret', LAYA_BASE_URL: 'http://lan:3000' },
+  })
+  expect(config.jev).toEqual({
+    enabled: false,
+    savedKey: undefined,
+    environmentKey: undefined,
+    savedBaseUrl: undefined,
+    environmentBaseUrl: undefined,
+  })
+  expect(readGeneralSettings(config)).toMatchObject({
+    jevEnabled: false,
+    jevConfigured: false,
+    jevActiveBaseUrl: 'https://api.typesafe.ai',
+    jevUrlSource: 'default',
+  })
+})
+
+test('validates the API origin, honors TYPESAFE_BASE_URL and never exposes URL credentials', () => {
+  const home = mkdtempSync(join(tmpdir(), 'mega-brain-jev-url-'))
+  const config = loadMegaBrainConfig({
+    homeDir: home,
+    env: { TYPESAFE_API_KEY: 'env-key', TYPESAFE_BASE_URL: 'https://gateway.local' },
   })
   const base = {
     editor: 'cursor',
@@ -171,23 +202,32 @@ test('validates the gateway origin, honors LAYA_BASE_URL and never exposes URL c
     jiraApiToken: '',
     onboardingCompleted: true,
   }
-  expect(() => writeGeneralSettings(config, { ...base, layaBaseUrl: 'http://user:pass@192.168.0.66:3000' })).toThrow(
-    'origem HTTP(S)',
+  expect(() => writeGeneralSettings(config, { ...base, jevBaseUrl: 'https://user:pass@api.typesafe.ai' })).toThrow(
+    'origem HTTPS',
   )
-  expect(() => writeGeneralSettings(config, { ...base, layaBaseUrl: 'http://192.168.0.66:3000/v1/systemone' })).toThrow(
-    'origem HTTP(S)',
+  expect(() => writeGeneralSettings(config, { ...base, jevBaseUrl: 'https://api.typesafe.ai/v1/systemone' })).toThrow(
+    'origem HTTPS',
   )
-  const saved = writeGeneralSettings(config, { ...base, layaEnabled: true, layaBaseUrl: 'http://192.168.0.66:3000/' })
+  expect(() => writeGeneralSettings(config, { ...base, jevBaseUrl: 'http://api.typesafe.ai' })).toThrow('origem HTTPS')
+  const saved = writeGeneralSettings(config, { ...base, jevEnabled: true, jevBaseUrl: 'https://api.typesafe.ai/' })
   expect(saved).toMatchObject({
-    layaBaseUrl: 'http://192.168.0.66:3000',
-    layaActiveBaseUrl: 'http://gateway.local:3000',
-    layaUrlSource: 'environment',
-    layaConfigured: true,
+    jevBaseUrl: 'https://api.typesafe.ai',
+    jevActiveBaseUrl: 'https://gateway.local',
+    jevUrlSource: 'environment',
+    jevConfigured: true,
   })
   expect(readFileSync(config.preferences.settingsFile, 'utf8')).not.toContain('gateway.local')
-  config.laya.environmentBaseUrl = 'http://user:pass@gateway.local:3000'
+  config.jev.environmentBaseUrl = 'https://user:pass@gateway.local'
   const publicSettings = readGeneralSettings(config)
-  expect(publicSettings.layaActiveBaseUrl).toBe('')
-  expect(publicSettings.layaConfigured).toBe(false)
+  expect(publicSettings.jevActiveBaseUrl).toBe('')
+  expect(publicSettings.jevConfigured).toBe(false)
   expect(JSON.stringify(publicSettings)).not.toContain('pass')
+  delete config.jev.environmentBaseUrl
+  const defaults = writeGeneralSettings(config, { ...base, jevBaseUrl: '' })
+  expect(defaults).toMatchObject({
+    jevBaseUrl: '',
+    jevActiveBaseUrl: 'https://api.typesafe.ai',
+    jevUrlSource: 'default',
+    jevConfigured: true,
+  })
 })

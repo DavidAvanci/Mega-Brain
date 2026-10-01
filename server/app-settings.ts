@@ -5,15 +5,15 @@ import type { GeneralSettings, GeneralSettingsInput } from '../shared/domain/set
 import type { MegaBrainConfig } from './config'
 import { resolveOptionalExecutable } from './platform'
 import { detectEditors } from './editor-detection'
-import { normalizeLayaBaseUrl } from './integrations/laya/url'
+import { DEFAULT_JEV_BASE_URL, normalizeJevBaseUrl } from './integrations/jev/url'
 
 const EDITORS = new Set(['cursor', 'vscode', 'windsurf', 'zed', 'sublime', 'intellij', 'webstorm', 'pycharm', 'custom'])
 const PROVIDERS = new Set(['claude', 'chatgpt'])
 
-function safeLayaBaseUrl(value: string | undefined): string {
+function safeJevBaseUrl(value: string | undefined): string {
   if (!value) return ''
   try {
-    return normalizeLayaBaseUrl(value)
+    return normalizeJevBaseUrl(value)
   } catch {
     return ''
   }
@@ -21,14 +21,14 @@ function safeLayaBaseUrl(value: string | undefined): string {
 
 export function readGeneralSettings(config: MegaBrainConfig): GeneralSettings {
   const jiraConfigured = Boolean(config.jira.site && config.jira.email && config.jira.token)
-  const activeBaseUrl = safeLayaBaseUrl(config.laya.environmentBaseUrl || config.laya.savedBaseUrl)
+  const activeBaseUrl = safeJevBaseUrl(config.jev.environmentBaseUrl || config.jev.savedBaseUrl || DEFAULT_JEV_BASE_URL)
   return {
-    layaEnabled: config.laya.enabled,
-    layaBaseUrl: safeLayaBaseUrl(config.laya.savedBaseUrl),
-    layaActiveBaseUrl: activeBaseUrl,
-    layaUrlSource: config.laya.environmentBaseUrl ? 'environment' : config.laya.savedBaseUrl ? 'saved' : 'none',
-    layaConfigured: Boolean((config.laya.environmentKey || config.laya.savedKey) && activeBaseUrl),
-    layaCredentialSource: config.laya.environmentKey ? 'environment' : config.laya.savedKey ? 'saved' : 'none',
+    jevEnabled: config.jev.enabled,
+    jevBaseUrl: safeJevBaseUrl(config.jev.savedBaseUrl),
+    jevActiveBaseUrl: activeBaseUrl,
+    jevUrlSource: config.jev.environmentBaseUrl ? 'environment' : config.jev.savedBaseUrl ? 'saved' : 'default',
+    jevConfigured: Boolean((config.jev.environmentKey || config.jev.savedKey) && activeBaseUrl),
+    jevCredentialSource: config.jev.environmentKey ? 'environment' : config.jev.savedKey ? 'saved' : 'none',
     editor: config.preferences.editor,
     editorCommand: config.preferences.editorCommand,
     workspaceDir: resolve(config.workspaceDir),
@@ -72,24 +72,24 @@ export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): G
     if (!jiraSite || !jiraEmail || !jiraApiToken) throw new Error('Preencha site, e-mail e token da API do Jira')
   }
 
-  const layaApiKey = typeof input.layaApiKey === 'string' ? input.layaApiKey.trim() : ''
-  const savedLayaKey = input.layaRemoveSavedKey === true ? undefined : layaApiKey || config.laya.savedKey
-  const layaEnabled = input.layaEnabled === undefined ? config.laya.enabled : input.layaEnabled === true
+  const jevApiKey = typeof input.jevApiKey === 'string' ? input.jevApiKey.trim() : ''
+  const savedJevKey = input.jevRemoveSavedKey === true ? undefined : jevApiKey || config.jev.savedKey
+  const jevEnabled = input.jevEnabled === undefined ? config.jev.enabled : input.jevEnabled === true
   const savedBaseUrl =
-    input.layaBaseUrl === undefined
-      ? safeLayaBaseUrl(config.laya.savedBaseUrl) || undefined
-      : typeof input.layaBaseUrl === 'string' && input.layaBaseUrl.trim()
-        ? normalizeLayaBaseUrl(input.layaBaseUrl)
+    input.jevBaseUrl === undefined
+      ? safeJevBaseUrl(config.jev.savedBaseUrl) || undefined
+      : typeof input.jevBaseUrl === 'string' && input.jevBaseUrl.trim()
+        ? normalizeJevBaseUrl(input.jevBaseUrl)
         : undefined
-  const activeBaseUrl = safeLayaBaseUrl(config.laya.environmentBaseUrl || savedBaseUrl)
+  const activeBaseUrl = safeJevBaseUrl(config.jev.environmentBaseUrl || savedBaseUrl || DEFAULT_JEV_BASE_URL)
 
   const settings: GeneralSettings = {
-    layaEnabled,
-    layaBaseUrl: savedBaseUrl ?? '',
-    layaActiveBaseUrl: activeBaseUrl,
-    layaUrlSource: config.laya.environmentBaseUrl ? 'environment' : savedBaseUrl ? 'saved' : 'none',
-    layaConfigured: Boolean((config.laya.environmentKey || savedLayaKey) && activeBaseUrl),
-    layaCredentialSource: config.laya.environmentKey ? 'environment' : savedLayaKey ? 'saved' : 'none',
+    jevEnabled,
+    jevBaseUrl: savedBaseUrl ?? '',
+    jevActiveBaseUrl: activeBaseUrl,
+    jevUrlSource: config.jev.environmentBaseUrl ? 'environment' : savedBaseUrl ? 'saved' : 'default',
+    jevConfigured: Boolean((config.jev.environmentKey || savedJevKey) && activeBaseUrl),
+    jevCredentialSource: config.jev.environmentKey ? 'environment' : savedJevKey ? 'saved' : 'none',
     editor,
     editorCommand,
     workspaceDir: requiredAbsolutePath(input.workspaceDir, 'Workspace'),
@@ -110,16 +110,16 @@ export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): G
   try {
     writeFileSync(
       temporary,
-      `${JSON.stringify({ ...settings, layaApiKey: savedLayaKey ?? undefined, layaConfigured: undefined, layaCredentialSource: undefined, layaRemoveSavedKey: undefined, layaActiveBaseUrl: undefined, layaUrlSource: undefined, jiraConfigured: undefined }, null, 2)}\n`,
+      `${JSON.stringify({ ...settings, jevApiKey: savedJevKey ?? undefined, jevConfigured: undefined, jevCredentialSource: undefined, jevRemoveSavedKey: undefined, jevActiveBaseUrl: undefined, jevUrlSource: undefined, jiraConfigured: undefined }, null, 2)}\n`,
       { mode: 0o600, flag: 'wx' },
     )
     renameSync(temporary, file)
   } finally {
     rmSync(temporary, { force: true })
   }
-  config.laya.enabled = layaEnabled
-  config.laya.savedKey = savedLayaKey
-  config.laya.savedBaseUrl = savedBaseUrl
+  config.jev.enabled = jevEnabled
+  config.jev.savedKey = savedJevKey
+  config.jev.savedBaseUrl = savedBaseUrl
 
   config.workspaceDir = settings.workspaceDir
   config.worktreesDir = settings.worktreesDir

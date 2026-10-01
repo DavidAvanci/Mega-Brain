@@ -88,7 +88,13 @@ export function runStageAgent(
   const settings = settingsForStage(path, stage)
   const effectiveModel = model ?? settings.model
   if (model === undefined) captureStageSnapshot(path, stage.name, stageOwnedFiles(stage))
-  const usageId = stage.script ? undefined : startAgentUsage(path)
+  const usageId = stage.script
+    ? undefined
+    : startAgentUsage(path, new Date(), {
+        label: stage.name,
+        provider: provider === 'chatgpt' ? 'codex' : 'claude',
+        model: effectiveModel,
+      })
   const out = openSync(join(path, `${stage.name}.jsonl`), 'w')
   const err = openSync(join(path, `${stage.name}.log`), 'a')
   const [bin, args] = stageAgentCommand(path, stage, card, effectiveModel, settings.effort, provider, claude, codex, settingsFile)

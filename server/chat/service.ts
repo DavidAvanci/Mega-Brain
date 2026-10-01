@@ -179,7 +179,7 @@ function streamChat(
   aborted: WeakSet<ProcessChild>,
   owner?: ProcessOwner,
 ): void {
-  const usageId = startAgentUsage(path)
+  const usageId = startAgentUsage(path, new Date(), { label: 'chat', provider: 'claude' })
   let costUsd: number | undefined
   const child = runner.spawn(claudeBin(executable), chatArgs(text, resolveSession(path, projectsRoot)), {
     cwd: path,
@@ -231,7 +231,7 @@ function streamCodexChat(
   aborted: WeakSet<ProcessChild>,
   owner?: ProcessOwner,
 ): void {
-  const usageId = startAgentUsage(path)
+  const usageId = startAgentUsage(path, new Date(), { label: 'chat', provider: 'codex' })
   const args = ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', text]
   const child = runner.spawn(codexBin(executable), args, {
     cwd: path,

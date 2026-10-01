@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import type { ProcessRunner } from '../process'
 import { CARD_FILES } from './card-artifacts'
 import { readCard } from './card-record'
-import { readAgentUsage } from './agent-usage'
+import { readAgentUsageDetails } from './agent-usage'
 import { repoDiff, worktreeRepoInfo, cardRepos } from './worktree-inspector'
 import { cardWorktreeRepos } from './worktree-lifecycle'
 
@@ -19,8 +19,10 @@ export function inspectCard(
   runner: ProcessRunner,
 ) {
   const stored = readCard(card.path, card.name)
+  const usage = readAgentUsageDetails(card.path)
   return {
-    usage: readAgentUsage(card.path),
+    usage: usage.usage,
+    usageBreakdown: usage.breakdown,
     files: Object.fromEntries(
       CARD_FILES.map((file) => [
         file,

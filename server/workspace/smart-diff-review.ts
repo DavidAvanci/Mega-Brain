@@ -49,21 +49,29 @@ function exec(runner: ProcessRunner, command: string, args: string[], cwd: strin
   })
 }
 
+async function githubDefaultBranch(runner: ProcessRunner, repoPath: string): Promise<string> {
+  const branch = (
+    await exec(runner, 'gh', ['repo', 'view', '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name'], repoPath)
+  ).trim()
+  if (!branch) throw new Error('O GitHub não informou a branch padrão do repositório')
+  return branch
+}
+
 function reviewPrompt(
   cardPath: string,
-  jobs: { name: string; report: string; output: string; cache: string }[],
+  jobs: { name: string; baseBranch: string; report: string; output: string; cache: string }[],
   skill: string,
 ): string {
   return [
     '/smart-diff-review',
     `Leia ${join(skill, 'SKILL.md')} e aplique a skill aos relatórios Smart Diff abaixo.`,
-    'Os relatórios já foram gerados com origin/master...HEAD. Não execute o Smart Diff novamente.',
+    'Os relatórios já foram gerados contra a branch padrão remota de cada repositório. Não execute o Smart Diff novamente.',
     'Para cada relatório, rode prepare, leia todos os patches, escreva as decisões em decisions.json e rode assemble até validar.',
     'Use o cache indicado. Não edite o JSON final à mão. Trabalhe somente nos arquivos dentro da pasta do card.',
     `Pasta do card: ${cardPath}`,
     ...jobs.map(
       (job) =>
-        `Repositório ${job.name}: report=${job.report}; saída=${job.output}; cache=${job.cache}; trabalho=${resolve(job.output, '..')}`,
+        `Repositório ${job.name} (base origin/${job.baseBranch}): report=${job.report}; saída=${job.output}; cache=${job.cache}; trabalho=${resolve(job.output, '..')}`,
     ),
   ].join('\n')
 }
@@ -92,6 +100,13 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
     const jobs = []
     for (const repo of repos) {
       step(cardPath, `Rodando a ferramenta Smart Diff em ${repo.name}`)
+      const baseBranch = await githubDefaultBranch(runner, repo.path)
+      await exec(
+        runner,
+        config.executables.git || 'git',
+        ['fetch', '--no-tags', 'origin', `refs/heads/${baseBranch}`],
+        repo.path,
+      )
       const dir = join(work, createHash('sha256').update(repo.name).digest('hex').slice(0, 16))
       mkdirSync(dir, { recursive: true })
       const report = join(dir, 'report.json')
@@ -101,14 +116,14 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
       const result = await exec(
         runner,
         process.execPath,
-        [smartDiff, '--range', 'origin/master...HEAD', '--format', 'json'],
+        [smartDiff, '--range', 'FETCH_HEAD...HEAD', '--format', 'json'],
         repo.path,
       )
       const parsed = JSON.parse(result) as { schemaVersion?: number; readingOrder?: unknown[] }
       if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.readingOrder))
         throw new Error(`Smart Diff retornou um relatório inválido para ${repo.name}`)
       writeFileSync(report, result)
-      jobs.push({ name: repo.name, report, output, cache })
+      jobs.push({ name: repo.name, baseBranch, report, output, cache })
     }
     if (jobs.length) {
       step(cardPath, 'Rodando o agente de revisão')

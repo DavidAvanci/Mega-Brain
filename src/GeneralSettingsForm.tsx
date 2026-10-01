@@ -276,63 +276,62 @@ export function GeneralSettingsForm({
       <section className="grid gap-2">
         <h3 className="text-sm font-medium">Triagem de cards (experimental)</h3>
         <p className="text-xs text-muted-foreground">
-          Ao solicitar uma sugestão, título e descrição são enviados ao gateway Laya na rede local. HTTP sem TLS exige
-          uma LAN confiável.
+          Ao solicitar uma análise com Jev, título e descrição são enviados à API da TypeSafe por HTTPS.
         </p>
         <label className="flex items-center gap-2 text-xs">
           <Checkbox
-            checked={value.layaEnabled}
+            checked={value.jevEnabled}
             disabled={disabled}
-            onCheckedChange={(checked) => update({ layaEnabled: checked })}
+            onCheckedChange={(checked) => update({ jevEnabled: checked })}
           />
-          Habilitar Laya
+          Habilitar Jev
         </label>
         <label className="grid gap-1 text-xs font-medium">
-          URL do gateway Laya
+          URL da API TypeSafe
           <Input
             type="url"
-            value={value.layaBaseUrl}
+            value={value.jevBaseUrl}
             disabled={disabled}
             spellCheck={false}
-            placeholder="http://192.168.0.66:3000"
-            onChange={(event) => update({ layaBaseUrl: event.target.value })}
+            placeholder="https://api.typesafe.ai"
+            onChange={(event) => update({ jevBaseUrl: event.target.value })}
           />
           <span className="font-normal text-muted-foreground">
-            Informe a origem do gateway (porta 3000), sem /v1/systemone. O IP do exemplo pode mudar.
+            Deixe vazio para usar https://api.typesafe.ai. Informe apenas a origem HTTPS, sem /v1/systemone.
           </span>
         </label>
-        {value.layaUrlSource === 'environment' && (
+        {value.jevUrlSource === 'environment' && (
           <p className="text-[11px] text-muted-foreground">
-            {value.layaActiveBaseUrl
-              ? `LAYA_BASE_URL tem precedência: ${value.layaActiveBaseUrl}`
-              : 'LAYA_BASE_URL inválida; corrija a variável no backend.'}
+            {value.jevActiveBaseUrl
+              ? `TYPESAFE_BASE_URL tem precedência: ${value.jevActiveBaseUrl}`
+              : 'TYPESAFE_BASE_URL inválida; corrija a variável no backend.'}
           </p>
         )}
         <label className="grid gap-1 text-xs font-medium">
-          Chave do gateway Laya
+          Chave da API TypeSafe
           <Input
             type="password"
-            value={value.layaApiKey ?? ''}
+            value={value.jevApiKey ?? ''}
             disabled={disabled}
             autoComplete="new-password"
             placeholder={
-              value.layaCredentialSource !== 'none' ? 'Chave cadastrada — deixe vazio para manter' : 'Cole sua chave'
+              value.jevCredentialSource !== 'none' ? 'Chave cadastrada — deixe vazio para manter' : 'Cole sua chave'
             }
-            onChange={(event) => update({ layaApiKey: event.target.value, layaRemoveSavedKey: false })}
+            onChange={(event) => update({ jevApiKey: event.target.value, jevRemoveSavedKey: false })}
           />
         </label>
         <p className="text-[11px] text-muted-foreground">
-          {value.layaCredentialSource === 'environment'
-            ? 'Configurada por LAYA_API_KEY (tem precedência).'
-            : value.layaCredentialSource !== 'none'
+          {value.jevCredentialSource === 'environment'
+            ? 'Configurada por TYPESAFE_API_KEY (tem precedência).'
+            : value.jevCredentialSource !== 'none'
               ? 'Chave cadastrada; conexão ainda não validada.'
               : 'Nenhuma chave cadastrada.'}
         </p>
         <label className="flex items-center gap-2 text-xs">
           <Checkbox
-            checked={value.layaRemoveSavedKey ?? false}
+            checked={value.jevRemoveSavedKey ?? false}
             disabled={disabled}
-            onCheckedChange={(checked) => update({ layaRemoveSavedKey: checked, layaApiKey: '' })}
+            onCheckedChange={(checked) => update({ jevRemoveSavedKey: checked, jevApiKey: '' })}
           />
           Remover chave salva ao salvar
         </label>

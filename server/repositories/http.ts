@@ -1,7 +1,10 @@
 import type { ApiHandler, JsonResponse } from '../contracts'
 import { RepositoryDirtyError, type RepositoryRegistry } from './registry'
 
-export function repositoriesHttp(registry: RepositoryRegistry): ApiHandler {
+export function repositoriesHttp(
+  registry: RepositoryRegistry,
+  openRepository?: (id: string) => Promise<void>,
+): ApiHandler {
   return async (request) => {
     try {
       const id = request.query.get('id') ?? ''
@@ -20,6 +23,11 @@ export function repositoriesHttp(registry: RepositoryRegistry): ApiHandler {
         return json(200, await registry.writeEnvironmentVariables(id, body.environment, body.variables))
       }
       if (request.path === '/api/repositories/status' && request.method === 'GET') return json(200, await registry.status(id))
+      if (request.path === '/api/repositories/open' && request.method === 'POST') {
+        if (!openRepository) throw new Error('Abertura do editor não configurada')
+        await openRepository(String(record(request.body).id ?? ''))
+        return json(200, { ok: true })
+      }
       if (request.path === '/api/repositories/verify' && request.method === 'POST') {
         const body = record(request.body)
         return json(200, Array.isArray(body.ids) ? await registry.verifyRemotes(body.ids.filter((id): id is string => typeof id === 'string')) : await registry.verifyRemote(String(body.id ?? '')))

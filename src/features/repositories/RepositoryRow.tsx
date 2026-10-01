@@ -1,6 +1,6 @@
 import { memo, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Download01Icon, Refresh01Icon, Settings02Icon } from '@hugeicons/core-free-icons'
+import { Download01Icon, FolderOpenIcon, Refresh01Icon, Settings02Icon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import type {
   Repository,
@@ -24,6 +24,7 @@ export const RepositoryRow = memo(function RepositoryRow({
   onMigrate,
   onToggleActive,
   onSettings,
+  onOpenEditor,
 }: {
   repository: Repository
   status?: RepositoryStatus
@@ -35,6 +36,7 @@ export const RepositoryRow = memo(function RepositoryRow({
   onMigrate: (id: string, environment: RepositoryEnvironmentKey) => void
   onToggleActive: (id: string) => void
   onSettings: (id: string) => void
+  onOpenEditor: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const state = repositoryStatusLabel(status)
@@ -49,7 +51,7 @@ export const RepositoryRow = memo(function RepositoryRow({
     status?.available &&
     status.source === 'local' &&
     (status.state === 'up-to-date' || status.state === 'behind')
-  const canPullRemote = status?.available && status.source === 'remote' && status.state === 'behind' && !status.dirty
+  const isBehindRemote = status?.available && status.source === 'remote' && status.state === 'behind'
   const configuredMigrations = environmentKeys.filter((key) => repository.environments[key]?.migration?.backend)
 
   return (
@@ -84,14 +86,18 @@ export const RepositoryRow = memo(function RepositoryRow({
                   <HugeiconsIcon icon={Refresh01Icon} strokeWidth={2} className="size-3.5" />
                 </button>
               )}
-              {canPullRemote && (
+              {isBehindRemote && (
                 <button
                   type="button"
-                  aria-label={`Atualizar checkout de ${repository.displayName}`}
-                  title="Atualizar checkout"
-                  disabled={!!operation}
+                  aria-label={
+                    status.dirty
+                      ? `Checkout de ${repository.displayName} tem alterações locais; salve ou guarde essas alterações antes de atualizar`
+                      : `Atualizar checkout de ${repository.displayName}`
+                  }
+                  title={status.dirty ? 'Checkout com alterações locais; salve ou guarde antes de atualizar' : 'Atualizar checkout'}
+                  disabled={!!operation || status.dirty}
                   onClick={() => onPull(repository.id)}
-                  className="ml-0.5 inline-flex size-4 items-center justify-center rounded hover:bg-muted disabled:opacity-50"
+                  className="ml-0.5 inline-flex size-4 items-center justify-center rounded hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <HugeiconsIcon icon={Download01Icon} strokeWidth={2} className="size-3.5" />
                 </button>
@@ -121,16 +127,29 @@ export const RepositoryRow = memo(function RepositoryRow({
             />
             {repository.active ? 'Ativo' : 'Inativo'}
           </label>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            aria-label={`Configurações de ${repository.displayName}`}
-            title="Configurações"
-            onClick={() => onSettings(repository.id)}
-          >
-            <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
-          </Button>
+          <div className="flex items-center gap-0.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={`Abrir ${repository.displayName} no editor configurado`}
+              title="Abrir no editor configurado"
+              disabled={!!operation}
+              onClick={() => onOpenEditor(repository.id)}
+            >
+              <HugeiconsIcon icon={FolderOpenIcon} strokeWidth={2} />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={`Configurações de ${repository.displayName}`}
+              title="Configurações"
+              onClick={() => onSettings(repository.id)}
+            >
+              <HugeiconsIcon icon={Settings02Icon} strokeWidth={2} />
+            </Button>
+          </div>
         </div>
       </div>
       <Button

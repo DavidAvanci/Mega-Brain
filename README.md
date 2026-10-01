@@ -92,4 +92,4 @@ Este repositório ainda não contém um arquivo de licença. Consulte os mantene
 
 ## Triagem experimental de cards
 
-Consulte [a integração Laya local](docs/integrations/laya-card-triage.md) para configuração, limites e avaliação.
+Consulte [a integração Jev (TypeSafe)](docs/integrations/jev-card-triage.md) para configuração, limites e avaliação.

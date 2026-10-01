@@ -145,9 +145,25 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
     const provider = process.env.MEGA_BRAIN_LLM_PROVIDER === 'chatgpt' ? 'chatgpt' : 'claude'
     const cardId = process.env.MEGA_BRAIN_CARD_ID?.trim()
     const itemId = options.prompt.match(/(?:^|\n)(?:Item:|Cenário:|Correção orientada por teste que falhou:)\s*([^\s—]+)/)?.[1]
+    const stageScript = process.env.MEGA_BRAIN_STAGE_SCRIPT ?? ''
+    const stageLabel = stageScript.includes('test-stage')
+      ? 'Testes'
+      : stageScript.includes('dev-stage')
+        ? 'Desenvolvimento'
+        : 'Execução'
+    const usageModel =
+      provider === 'chatgpt' && ['fable', 'opus', 'sonnet', 'haiku', 'default'].includes(options.model.toLowerCase())
+        ? undefined
+        : options.model
     const sessionName = [cardId, itemId ?? process.env.MEGA_BRAIN_STAGE_SCRIPT].filter(Boolean).join(' · ')
     const cardPath = process.env.MEGA_BRAIN_CARD_PATH?.trim()
-    const usageId = cardPath ? startAgentUsage(cardPath, new Date(startedAt)) : undefined
+    const usageId = cardPath
+      ? startAgentUsage(cardPath, new Date(startedAt), {
+          label: itemId ? `${stageLabel} · ${itemId}` : stageLabel,
+          provider: provider === 'chatgpt' ? 'codex' : 'claude',
+          model: usageModel,
+        })
+      : undefined
     let usageFinished = false
     const finishUsage = (cost?: number) => {
       if (!cardPath || !usageId || usageFinished) return

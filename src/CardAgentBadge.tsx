@@ -57,8 +57,10 @@ export function AgentBadge({ agent, cardId }: { agent: AgentInfo; cardId: string
   const { name, icon } = kindOf(agent)
   const error = agent.status === 'erro' ? agent.error : undefined
   const text =
-    agent.status === 'rodando' && agent.phase
-      ? `${agent.phase}…`
+    agent.status === 'rodando' && (agent.phase || agent.activity)
+      ? agent.phase
+        ? `${agent.phase}…`
+        : agent.activity
       : agent.status === 'erro' && error
         ? `erro · ${error.split('\n', 1)[0]}`
         : label

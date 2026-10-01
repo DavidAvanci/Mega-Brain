@@ -24,12 +24,12 @@ export interface EditorDiscovery {
 }
 
 export interface GeneralSettings {
-  layaEnabled: boolean
-  layaBaseUrl: string
-  layaActiveBaseUrl: string
-  layaUrlSource: 'environment' | 'saved' | 'none'
-  layaConfigured: boolean
-  layaCredentialSource: 'environment' | 'saved' | 'none'
+  jevEnabled: boolean
+  jevBaseUrl: string
+  jevActiveBaseUrl: string
+  jevUrlSource: 'environment' | 'saved' | 'default'
+  jevConfigured: boolean
+  jevCredentialSource: 'environment' | 'saved' | 'none'
   editor: EditorPreference
   editorCommand: string
   workspaceDir: string
@@ -43,8 +43,8 @@ export interface GeneralSettings {
 }
 
 export interface GeneralSettingsInput extends GeneralSettings {
-  layaApiKey?: string
-  layaRemoveSavedKey?: boolean
+  jevApiKey?: string
+  jevRemoveSavedKey?: boolean
 }
 
 export interface MegaBrainSettings {

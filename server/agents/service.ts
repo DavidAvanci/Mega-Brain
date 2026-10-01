@@ -188,8 +188,6 @@ function sessionFromFile(
     status,
     cwd,
     title: cleanTitle(title, cwd),
-    model,
-    effort,
     startedAt: startedAt ?? fallbackStartedAt,
     updatedAt: new Date(file.mtimeMs).toISOString(),
     activity,
