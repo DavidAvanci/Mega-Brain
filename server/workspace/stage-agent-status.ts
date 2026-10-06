@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { AgentInfo } from '../../shared/domain/agents'
-import { parseJsonRecord, readTail, record, summarizeAgentInput, toolUse } from '../agent-log'
+import { assistantText, parseJsonRecord, readTail, record } from '../agent-log'
 import { readFlow } from './card-folder'
 import { readCard } from './card-record'
 import { AGENT_FILE, settingsForStage } from './stage-agent'
@@ -91,12 +91,8 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
         info.error = String(detail).trim().replace(/\s+/g, ' ').slice(0, 300)
       }
       if (event?.type === 'assistant') {
-        const tool = toolUse(event)
-        if (tool) info.activity = [tool.name, summarizeAgentInput(record(tool.input))].filter(Boolean).join(': ')
-      }
-      const item = record(event.item)
-      if ((event?.type === 'item.started' || event?.type === 'item.completed') && item) {
-        info.activity = String(item.command ?? item.text ?? item.type ?? '').slice(0, 300)
+        const narration = assistantText(event)
+        if (narration) info.activity = narration
       }
     }
   }

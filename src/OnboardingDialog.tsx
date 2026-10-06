@@ -52,6 +52,7 @@ export function OnboardingDialog({
       const saved = await saveMegaBrainSettings({
         general: { ...general, onboardingCompleted: true },
         stages: providerChanged ? stagesForProvider(initial.stages, general.llmProvider) : initial.stages,
+        prompts: initial.prompts,
       })
       await refresh()
       window.localStorage.setItem('mega-brain-onboarding-tour-v1', 'done')

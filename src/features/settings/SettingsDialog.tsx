@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { BoardSettings, Effort } from '../../../shared/domain/settings'
+import type { BoardSettings, Effort, PromptSettings } from '../../../shared/domain/settings'
 import {
   setColorMode,
   setPalette,
@@ -39,6 +39,14 @@ const CHATGPT_MODELS = [
   { value: 'gpt-5.6-terra', label: 'Terra' },
   { value: 'gpt-5.6-luna', label: 'Luna' },
   { value: 'gpt-5.5', label: 'GPT-5.5' },
+]
+
+const PROMPT_FIELDS: { key: keyof PromptSettings; title: string; help: string }[] = [
+  { key: 'taskPlanning', title: 'Planejamento', help: 'Instruções usadas ao criar o plano e os checklists da task.' },
+  { key: 'taskItem', title: 'Execução de tarefas', help: 'Instruções usadas para implementar cada item do checklist.' },
+  { key: 'testItem', title: 'Execução de testes', help: 'Instruções usadas para executar cada cenário de teste.' },
+  { key: 'testEnvironment', title: 'Ambiente de testes', help: 'Instruções do agente aberto para preparar o ambiente local.' },
+  { key: 'smartDiffReview', title: 'Revisão Smart Diff', help: 'Instruções usadas ao gerar uma revisão Smart Diff.' },
 ]
 
 type ThemeChoice = {
@@ -328,6 +336,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     setAutostartEnabled,
     updateStage,
     updateGeneral,
+    updatePrompts,
     save,
     close,
   } = useSettingsDialog(desktop, onClose)
@@ -353,6 +362,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               </TabsTrigger>
               <TabsTrigger value="tools" className="h-9 min-w-0 px-2 text-xs">
                 <HugeiconsIcon icon={ToolsIcon} strokeWidth={2} /> Ferramentas
+              </TabsTrigger>
+              <TabsTrigger value="prompts" className="h-9 min-w-0 px-2 text-xs">
+                <HugeiconsIcon icon={ToolsIcon} strokeWidth={2} /> Prompts
               </TabsTrigger>
             </TabsList>
 
@@ -582,6 +594,42 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                     ))}
                   </div>
                 </section>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="prompts" className="max-h-[65vh] overflow-y-auto p-4 sm:p-5">
+              <div className="grid gap-5">
+                <p className="text-xs text-muted-foreground">
+                  Prompts enviados em cada etapa do Mega Brain, salvos aqui e compartilhados entre Claude e Codex.
+                </p>
+                {PROMPT_FIELDS.map(({ key, title, help }) => (
+                  <details key={key} className="group rounded-lg border">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
+                      <span>
+                        <span className="block text-sm font-medium">{title}</span>
+                        <span className="block text-xs text-muted-foreground">{help}</span>
+                      </span>
+                      <span className="text-sm text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true">
+                       ⌄
+                      </span>
+                    </summary>
+                    <div className="grid gap-2 border-t p-3">
+                      <textarea
+                        aria-label={`Prompt: ${title}`}
+                        className="min-h-36 w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                        value={settings.prompts?.[key] ?? ''}
+                        maxLength={50000}
+                        onChange={(event) =>
+                          updatePrompts({ ...settings.prompts, [key]: event.currentTarget.value })
+                        }
+                        disabled={saving}
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        {settings.prompts?.[key]?.length ?? 0}/50000 caracteres
+                      </p>
+                    </div>
+                  </details>
+                ))}
               </div>
             </TabsContent>
           </Tabs>

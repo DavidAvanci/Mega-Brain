@@ -2,7 +2,7 @@ import { closeSync, openSync, readFileSync, readSync, readdirSync, realpathSync,
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { AgentProvider, AgentSession, AgentSessionsResponse, AgentStatus } from '../../shared/domain/agents'
 import { agentProcesses, externalAgentCwd, type RunningAgentProcess } from '../agent-process'
-import { parseJsonRecord, readTail, record, summarizeAgentInput, toolUse } from '../agent-log'
+import { assistantText, parseJsonRecord, readTail, record } from '../agent-log'
 
 const HEAD_BYTES = 192 * 1024
 const TAIL_BYTES = 192 * 1024
@@ -147,8 +147,8 @@ function sessionFromFile(
         if (typeof message?.model === 'string' && message.model.trim()) model = message.model
         if (typeof event.effort === 'string' && event.effort.trim()) effort = event.effort
         waiting = message?.stop_reason === 'end_turn'
-        const tool = toolUse(event)
-        if (tool) activity = [tool.name, summarizeAgentInput(record(tool.input))].filter(Boolean).join(': ')
+        const narration = assistantText(event)
+        if (narration) activity = narration
       }
       if (event.type === 'result' && (event.is_error || event.subtype !== 'success')) failed = true
     } else {

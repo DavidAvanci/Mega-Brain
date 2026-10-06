@@ -2,6 +2,7 @@ import { readDevEnv } from '../modules/dev-environments/dev-env'
 import type { MegaBrainConfig } from '../config'
 import type { ProcessRunner } from '../process'
 import { claudeBin, codexBin } from '../agent-executable'
+import { DEFAULT_PROMPTS } from '../../shared/domain/settings'
 import { readCard } from './card-record'
 import { openBrowser, openTerminal } from './launchers'
 import { readAgent } from './stage-agent-status'
@@ -54,9 +55,10 @@ export function openDevEnvironment(cardPath: string, repo: unknown, config: Acti
 }
 
 export function openDevEnvironmentAgent(cardPath: string, config: ActionConfig, runner: ProcessRunner): void {
+  const prompt = config.preferences.prompts?.testEnvironment ?? DEFAULT_PROMPTS.testEnvironment
   const command =
     config.preferences.llmProvider === 'chatgpt'
-      ? [codexBin(config.executables.codex), '--dangerously-bypass-approvals-and-sandbox', '/run-test-env']
-      : [claudeBin(config.executables.claude), '--model', 'haiku', '--dangerously-skip-permissions', '/run-test-env']
+      ? [codexBin(config.executables.codex), '--dangerously-bypass-approvals-and-sandbox', prompt]
+      : [claudeBin(config.executables.claude), '--model', 'haiku', '--dangerously-skip-permissions', prompt]
   openTerminal(cardPath, command, config.executables.terminal, runner)
 }

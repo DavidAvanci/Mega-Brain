@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from 
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join, relative } from 'node:path'
 import type { AgentInfo } from '../shared/domain/agents'
-import { parseJsonRecord, readTail, record, summarizeAgentInput, toolUse } from './agent-log'
+import { assistantText, parseJsonRecord, readTail, record } from './agent-log'
 
 const STREAM_TAIL_BYTES = 128 * 1024
 
@@ -101,8 +101,8 @@ export function readExternalAgent(cwd: string, projectsRoot = join(homedir(), '.
       if (event?.type === 'user') waiting = false
       if (event?.type === 'assistant') {
         waiting = record(event.message)?.stop_reason === 'end_turn'
-        const tool = toolUse(event)
-        if (tool) info.activity = [tool.name, summarizeAgentInput(record(tool.input))].filter(Boolean).join(': ')
+        const narration = assistantText(event)
+        if (narration) info.activity = narration
       }
     }
     if (waiting) info.status = 'aguardando'

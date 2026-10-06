@@ -8,6 +8,7 @@ import { itemContext, readPlan } from '../lib/plan.ts'
 import { preflight } from '../lib/preflight.ts'
 import { formatDuration, runChecklist, type ItemOutcome } from '../lib/scheduler.ts'
 import { runClaudeItem } from '../lib/executor.ts'
+import { megaBrainPrompt } from '../lib/prompts.ts'
 import {
   assertFeatureBranch,
   dropItemWorktree,
@@ -49,17 +50,16 @@ function positiveInt(value: string | undefined, fallback: number, label: string)
   return parsed
 }
 
-function limitsFor(item: Item): { maxTurns: number; timeoutMs: number; maxAttempts: number } {
-  const maxTurns = item.maxTurns ?? positiveInt(process.env.CHECKLIST_MAX_TURNS, 40, 'CHECKLIST_MAX_TURNS')
+function limitsFor(item: Item): { timeoutMs: number; maxAttempts: number } {
   const timeoutMinutes = item.timeoutMinutes ?? positiveInt(process.env.CHECKLIST_TIMEOUT_MINUTES, 20, 'CHECKLIST_TIMEOUT_MINUTES')
   const maxAttempts = item.maxAttempts ?? positiveInt(process.env.CHECKLIST_MAX_ATTEMPTS, 3, 'CHECKLIST_MAX_ATTEMPTS')
-  return { maxTurns, timeoutMs: timeoutMinutes * 60_000, maxAttempts }
+  return { timeoutMs: timeoutMinutes * 60_000, maxAttempts }
 }
 
 function buildPrompt(item: Item, planRaw: string): string {
   const context = itemContext(planRaw, item.id)
   return [
-    '/exec-task-item',
+    megaBrainPrompt('taskItem'),
     '',
     `Item: ${item.id} — ${item.text}`,
     item.files.length ? `Arquivos permitidos: ${item.files.join(', ')}` : 'Arquivos permitidos: (não especificado)',
@@ -71,7 +71,7 @@ function buildPrompt(item: Item, planRaw: string): string {
 
 function repairPrompt(item: Item, output: string): string {
   return [
-    '/exec-task-item',
+    megaBrainPrompt('taskItem'),
     '',
     `Item: ${item.id} — ${item.text}`,
     'Modo reparo: as alterações do item já estão no worktree, mas o hook de pre-commit reprovou.',
@@ -86,7 +86,7 @@ function repairPrompt(item: Item, output: string): string {
 
 function failedTestRepairPrompt(item: Item): string {
   return [
-    '/exec-task-item',
+    megaBrainPrompt('taskItem'),
     '',
     `Correção orientada por teste que falhou: ${item.id} — ${item.text}`,
     ...item.details.map((detail) => `  ${detail}`),
@@ -163,7 +163,6 @@ async function commitItem(
       model: AGENT.model,
       effort: AGENT.effort,
       tools: AGENT.tools,
-      maxTurns: limitsFor(item).maxTurns,
       timeoutMs: limitsFor(item).timeoutMs,
     })
     try {
@@ -257,7 +256,6 @@ async function repairFailedTests(task: ReturnType<typeof taskInfo>): Promise<Ite
       model: AGENT.model,
       effort: AGENT.effort,
       tools: AGENT.tools,
-      maxTurns: 40,
       timeoutMs: 20 * 60_000,
     })
     if (outcome.status === 'done') {
@@ -452,7 +450,6 @@ export async function runDevStage(): Promise<void> {
         status: 'running',
         startedAt,
         model: AGENT.model,
-        maxTurns: limits.maxTurns,
         timeoutMs: limits.timeoutMs,
         branch: itemBranch(task.id, item.id),
         worktree: cwd,
@@ -465,7 +462,6 @@ export async function runDevStage(): Promise<void> {
         model: AGENT.model,
         effort: AGENT.effort,
         tools: AGENT.tools,
-        maxTurns: limits.maxTurns,
         timeoutMs: limits.timeoutMs,
       })
       recordAttempt(wsPath, {
@@ -476,7 +472,6 @@ export async function runDevStage(): Promise<void> {
         startedAt,
         finishedAt: new Date().toISOString(),
         model: AGENT.model,
-        maxTurns: limits.maxTurns,
         timeoutMs: limits.timeoutMs,
         durationMs: result.durationMs,
         costUsd: result.costUsd,

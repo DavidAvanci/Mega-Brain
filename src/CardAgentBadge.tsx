@@ -13,6 +13,8 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Spinner } from '@/components/ui/spinner'
+import { Markdown } from '@/Markdown'
 import { openTerminal } from './features/cards/model/card-commands'
 import { Tip } from './Tip'
 import type { AgentInfo, AgentStatus } from '../shared/domain/agents'
@@ -51,8 +53,17 @@ export function activeAgents(card: Card): AgentInfo[] {
   return (card.agents ?? []).filter((agent) => agent.status !== 'concluido')
 }
 
-export function AgentBadge({ agent, cardId }: { agent: AgentInfo; cardId: string }) {
+export function AgentBadge({
+  agent,
+  cardId,
+  iconOnly = false,
+}: {
+  agent: AgentInfo
+  cardId: string
+  iconOnly?: boolean
+}) {
   const [showError, setShowError] = useState(false)
+  const isStartingAgent = !agent.provider && agent.phase === 'Iniciando agente'
   const { label, className } = BADGES[agent.status]
   const { name, icon } = kindOf(agent)
   const error = agent.status === 'erro' ? agent.error : undefined
@@ -64,30 +75,82 @@ export function AgentBadge({ agent, cardId }: { agent: AgentInfo; cardId: string
       : agent.status === 'erro' && error
         ? `erro · ${error.split('\n', 1)[0]}`
         : label
-  const tip =
-    agent.status === 'erro'
+  const showInlineText =
+    !iconOnly ||
+    (agent.stage === 'task-planning' && agent.status === 'rodando') ||
+    isStartingAgent ||
+    (agent.provider === 'claude' && Boolean(agent.activity))
+  const inlineText =
+    isStartingAgent
+      ? 'Iniciando agente...'
+      : iconOnly && agent.provider === 'claude' && agent.activity
+        ? agent.activity
+        : iconOnly
+          ? 'Planejando...'
+          : text
+  const tip = isStartingAgent
+    ? 'Iniciando agente...'
+    : iconOnly
+    ? `${name}${agent.sessionId ? ' · Abrir no terminal' : ''}`
+    : agent.status === 'erro'
       ? `Ver erro completo de ${name}`
       : [name, agent.sessionId ? 'Abrir no terminal' : ''].filter(Boolean).join(' · ')
+  const hasClaudeActivity = agent.provider === 'claude' && Boolean(agent.activity)
+  const tooltipLabel = hasClaudeActivity ? (
+    <div className="max-h-[min(60vh,24rem)] w-[min(32rem,calc(100vw_-_2rem))] overflow-y-auto pr-1">
+      <Markdown text={agent.activity ?? ''} />
+      <div className="mt-2 border-t border-border/60 pt-1.5 text-[10px] text-muted-foreground">
+        {name}{agent.sessionId ? ' · Abrir no terminal' : ''}
+      </div>
+    </div>
+  ) : tip
   return (
     <>
-      <Tip label={tip}>
+      <Tip
+        label={tooltipLabel}
+        arrowClassName={hasClaudeActivity ? 'bg-popover fill-popover' : undefined}
+        contentClassName={
+          hasClaudeActivity
+            ? 'w-[min(32rem,calc(100vw_-_1rem))] max-w-none items-start gap-0 bg-popover p-3 text-popover-foreground shadow-md'
+            : undefined
+        }
+      >
         <button
           type="button"
-          aria-label={agent.status === 'erro' ? `Ver erro completo do agente ${name}` : undefined}
-          className={cn('inline-flex min-w-0 max-w-full items-center gap-1 text-[11px]', className)}
+          aria-label={
+            iconOnly
+              ? isStartingAgent
+                ? 'Iniciando agente...'
+                : `Agente ${name} trabalhando`
+              : agent.status === 'erro'
+                ? `Ver erro completo do agente ${name}`
+                : undefined
+          }
+          className={cn(
+            'inline-flex min-w-0 max-w-full items-center gap-1 text-[11px]',
+            className,
+          )}
           onClick={(event) => {
             event.stopPropagation()
             if (agent.status === 'erro') setShowError(true)
             else if (agent.sessionId) openTerminal(cardId)
           }}
         >
-          <HugeiconsIcon
-            icon={icon}
-            strokeWidth={2}
-            aria-label={agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : undefined}
-            className={cn('size-3.5 shrink-0', agent.status === 'rodando' && 'animate-pulse')}
-          />
-          <span className="truncate">{text}</span>
+          {isStartingAgent ? (
+            <Spinner className="size-3.5 shrink-0" aria-label="Iniciando agente..." />
+          ) : (
+            <HugeiconsIcon
+              icon={icon}
+              strokeWidth={2}
+              aria-label={agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : undefined}
+              className="size-3.5 shrink-0"
+            />
+          )}
+          {showInlineText && (
+            <span className={cn('truncate', agent.status === 'rodando' && 'agent-working-text-glow')}>
+              {inlineText}
+            </span>
+          )}
         </button>
       </Tip>
       {agent.status === 'erro' && (

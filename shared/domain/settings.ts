@@ -50,4 +50,15 @@ export interface GeneralSettingsInput extends GeneralSettings {
 export interface MegaBrainSettings {
   general: GeneralSettings
   stages: BoardSettings
+  prompts: PromptSettings
 }
+
+export interface PromptSettings {
+  taskPlanning: string
+  taskItem: string
+  testItem: string
+  testEnvironment: string
+  smartDiffReview: string
+}
+
+export { DEFAULT_PROMPTS } from './prompt-defaults'

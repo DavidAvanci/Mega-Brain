@@ -79,7 +79,6 @@ export async function resolveCherryPickConflict(
     model: process.env.CHECKLIST_MODEL ?? 'sonnet',
     effort: process.env.CHECKLIST_EFFORT ?? 'medium',
     tools: 'Bash,Read,Edit,Write',
-    maxTurns: 20,
     timeoutMs: AGENT_TIMEOUT_MS,
   })
   if (result.status !== 'done') throw new Error(`${repo}: agente não resolveu o conflito de staging: ${result.note}`)
@@ -102,7 +101,6 @@ export async function resolveRebaseConflict(cwd: string, repo: string, base: str
     model: process.env.CHECKLIST_MODEL ?? 'sonnet',
     effort: process.env.CHECKLIST_EFFORT ?? 'medium',
     tools: 'Bash,Read,Edit,Write',
-    maxTurns: 20,
     timeoutMs: AGENT_TIMEOUT_MS,
   })
   if (result.status !== 'done') throw new Error(`${repo}: agente não resolveu o conflito de master: ${result.note}`)

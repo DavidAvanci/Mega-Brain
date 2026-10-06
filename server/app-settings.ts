@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import type { GeneralSettings, GeneralSettingsInput } from '../shared/domain/settings'
@@ -6,6 +6,7 @@ import type { MegaBrainConfig } from './config'
 import { resolveOptionalExecutable } from './platform'
 import { detectEditors } from './editor-detection'
 import { DEFAULT_JEV_BASE_URL, normalizeJevBaseUrl } from './integrations/jev/url'
+import { DEFAULT_PROMPTS, type PromptSettings } from '../shared/domain/settings'
 
 const EDITORS = new Set(['cursor', 'vscode', 'windsurf', 'zed', 'sublime', 'intellij', 'webstorm', 'pycharm', 'custom'])
 const PROVIDERS = new Set(['claude', 'chatgpt'])
@@ -40,6 +41,40 @@ export function readGeneralSettings(config: MegaBrainConfig): GeneralSettings {
     jiraConfigured,
     onboardingCompleted: config.preferences.onboardingCompleted,
   }
+}
+
+export function writePromptSettings(config: MegaBrainConfig, value: unknown): PromptSettings {
+  if (!value || typeof value !== 'object') throw new Error('Prompts inválidos')
+  const input = value as Partial<PromptSettings>
+  const prompts = { ...(config.preferences.prompts ?? DEFAULT_PROMPTS) }
+  for (const key of Object.keys(DEFAULT_PROMPTS) as (keyof PromptSettings)[]) {
+    const next = input[key]
+    if (next === undefined) continue
+    if (typeof next !== 'string' || !next.trim() || next.length > 50_000)
+      throw new Error(`O prompt ${key} deve ter entre 1 e 50000 caracteres`)
+    prompts[key] = next.trim()
+  }
+  const file = config.preferences.settingsFile
+  let saved: Record<string, unknown> = {}
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))
+    if (parsed && typeof parsed === 'object') saved = parsed as Record<string, unknown>
+  } catch {
+    // A settings file is created on the first save.
+  }
+  mkdirSync(dirname(file), { recursive: true })
+  const temporary = `${file}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, `${JSON.stringify({ ...saved, prompts }, null, 2)}\n`, {
+      mode: 0o600,
+      flag: 'wx',
+    })
+    renameSync(temporary, file)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+  config.preferences.prompts = prompts
+  return prompts
 }
 
 function requiredAbsolutePath(value: unknown, label: string): string {
@@ -110,7 +145,7 @@ export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): G
   try {
     writeFileSync(
       temporary,
-      `${JSON.stringify({ ...settings, jevApiKey: savedJevKey ?? undefined, jevConfigured: undefined, jevCredentialSource: undefined, jevRemoveSavedKey: undefined, jevActiveBaseUrl: undefined, jevUrlSource: undefined, jiraConfigured: undefined }, null, 2)}\n`,
+      `${JSON.stringify({ ...settings, prompts: config.preferences.prompts ?? DEFAULT_PROMPTS, jevApiKey: savedJevKey ?? undefined, jevConfigured: undefined, jevCredentialSource: undefined, jevRemoveSavedKey: undefined, jevActiveBaseUrl: undefined, jevUrlSource: undefined, jiraConfigured: undefined }, null, 2)}\n`,
       { mode: 0o600, flag: 'wx' },
     )
     renameSync(temporary, file)

@@ -66,7 +66,7 @@ test('opening diff runs Smart Diff against the GitHub default branch, reviews th
   expect(calls.smartDiff).toHaveLength(1)
   expect(calls.smartDiff[0]).toContain('FETCH_HEAD...HEAD')
   expect(calls.agent).toHaveLength(1)
-  expect(calls.agent[0].join(' ')).toContain('/smart-diff-review')
+  expect(calls.agent[0].join(' ')).toContain('Revise os relatórios Smart Diff fornecidos')
   expect(existsSync(join(card, 'diff.json'))).toBe(true)
   expect(JSON.parse(readFileSync(join(card, 'diff.json'), 'utf8'))).toMatchObject({
     schemaVersion: 1,

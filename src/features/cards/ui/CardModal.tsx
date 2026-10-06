@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowRight01Icon,
@@ -432,6 +432,16 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
   const [descriptionText, setDescriptionText] = useState(card.description)
   const [savingDescription, setSavingDescription] = useState(false)
   const [descriptionError, setDescriptionError] = useState<string | null>(null)
+  const [chatWidth, setChatWidth] = useState(360)
+  const resizingDivider = useRef(false)
+
+  const resizeChat = (event: PointerEvent<HTMLDivElement>) => {
+    if (!resizingDivider.current) return
+    const bounds = event.currentTarget.parentElement?.getBoundingClientRect()
+    if (!bounds) return
+    const width = bounds.right - event.clientX
+    setChatWidth(Math.max(260, Math.min(width, bounds.width - 400)))
+  }
 
   const saveDescription = async () => {
     setSavingDescription(true)
@@ -450,7 +460,10 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex h-[92dvh] max-h-[880px] w-[calc(100%-2rem)] max-w-[1180px] flex-col gap-0 overflow-hidden p-0 shadow-2xl sm:h-[88dvh] sm:max-w-[1180px]">
-        <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,3fr)_minmax(260px,2fr)] lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-1">
+        <div
+          className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,3fr)_minmax(260px,2fr)] lg:grid-cols-[minmax(0,1fr)_8px_var(--chat-width)] lg:grid-rows-1"
+          style={{ '--chat-width': `${chatWidth}px` } as CSSProperties}
+        >
           <div className="flex min-h-0 min-w-0 flex-col">
             <DialogHeader className="gap-2.5 border-b px-5 pt-4 pb-3 pr-12">
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
@@ -626,8 +639,34 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
               )}
             </Tabs>
           </div>
+          <div
+            role="separator"
+            aria-label="Redimensionar painel do chat"
+            aria-orientation="vertical"
+            aria-valuemin={260}
+            aria-valuemax={780}
+            aria-valuenow={chatWidth}
+            tabIndex={0}
+            className="group hidden cursor-col-resize touch-none items-center justify-center lg:flex"
+            onPointerDown={(event) => {
+              resizingDivider.current = true
+              event.currentTarget.setPointerCapture(event.pointerId)
+            }}
+            onPointerMove={resizeChat}
+            onPointerUp={(event) => {
+              resizingDivider.current = false
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+            }}
+            onPointerCancel={() => { resizingDivider.current = false }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft') setChatWidth((width) => Math.min(width + 24, 780))
+              if (event.key === 'ArrowRight') setChatWidth((width) => Math.max(width - 24, 260))
+            }}
+          >
+            <span className="h-full w-px bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary" />
+          </div>
           <aside
-            className="flex min-h-0 min-w-0 flex-col border-t bg-muted/10 lg:border-t-0 lg:border-l"
+            className="flex min-h-0 min-w-0 flex-col border-t bg-muted/10 lg:border-t-0"
             aria-label="Chat do card"
           >
             <div className="shrink-0 border-b px-5 py-3">

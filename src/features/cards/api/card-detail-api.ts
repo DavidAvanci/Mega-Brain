@@ -1,6 +1,6 @@
 import { ApiError, apiClient } from '@/shared/api/api-client'
 import { requestJson } from '@/shared/api/request-json'
-import type { EditorDiscovery, MegaBrainSettings } from '../../../../shared/domain/settings'
+import { DEFAULT_PROMPTS, type EditorDiscovery, type MegaBrainSettings } from '../../../../shared/domain/settings'
 import type { ChatAgentSettings, ChatEntry, ChatEvent } from '../../../../shared/contracts/chat'
 import type { CardAgentUsage, CardAgentUsageEntry } from '../../../../shared/domain/agents'
 
@@ -65,8 +65,9 @@ export interface ChatHistory {
 
 export { requestJson } from '@/shared/api/request-json'
 
-export function fetchMegaBrainSettings(): Promise<MegaBrainSettings> {
-  return requestJson('/api/workspace/settings', 'Falha ao carregar configurações')
+export async function fetchMegaBrainSettings(): Promise<MegaBrainSettings> {
+  const settings = await requestJson<MegaBrainSettings>('/api/workspace/settings', 'Falha ao carregar configurações')
+  return { ...settings, prompts: { ...DEFAULT_PROMPTS, ...settings.prompts } }
 }
 
 export function fetchDetectedEditors(): Promise<EditorDiscovery> {
@@ -82,6 +83,9 @@ export async function saveMegaBrainSettings(settings: MegaBrainSettings): Promis
     throw new Error(
       'O backend não confirmou a configuração do Jev. Reinicie o Mega Brain com o backend atualizado e salve novamente.',
     )
+  }
+  if (Object.keys(settings.prompts).some((key) => saved.prompts?.[key as keyof typeof settings.prompts] !== settings.prompts[key as keyof typeof settings.prompts])) {
+    throw new Error('O backend não confirmou os prompts. Reinicie o Mega Brain com o backend atualizado e salve novamente.')
   }
   return saved
 }

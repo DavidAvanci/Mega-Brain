@@ -148,7 +148,7 @@ export function DevEnvPanel({ card }: { card: Card }) {
                 <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
               </Button>
             </Tip>
-            <Tip label="Abre um terminal com o agente configurado rodando /run-test-env">
+            <Tip label="Abre um terminal com as instruções de ambiente de testes configuradas em Prompts">
               <Button
                 size="xs"
                 variant="ghost"
