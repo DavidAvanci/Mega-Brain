@@ -7,9 +7,10 @@ import type { CardData } from './card-record'
 import { stageScriptCommand } from './stage-command'
 import { readStageSettings } from './stage-settings'
 import { captureStageSnapshot } from './stage-snapshot'
-import { stageOwnedFiles, type Stage } from './stage-catalog'
+import { planningPrompt, stageOwnedFiles, type Stage } from './stage-catalog'
 import { repositoryMentionContext } from '../repositories/mentions'
 import { claudeCostFromStream, finishAgentUsage, setAgentUsageProcess, startAgentUsage } from './agent-usage'
+import { DEFAULT_PROMPTS } from '../../shared/domain/settings'
 
 export const AGENT_FILE = 'agent.json'
 
@@ -35,7 +36,18 @@ export function stageAgentCommand(
 ): [string, string[]] {
   if (stage.script) return stageScriptCommand(path, stage)
 
-  const prompt = repositoryMentionContext((stage.prompt as (currentCard: CardData) => string)(card), settingsFile)
+  let instructions = DEFAULT_PROMPTS.taskPlanning
+  if (settingsFile) {
+    try {
+      const saved = JSON.parse(readFileSync(settingsFile, 'utf8')) as { prompts?: { taskPlanning?: unknown } }
+      if (typeof saved.prompts?.taskPlanning === 'string') instructions = saved.prompts.taskPlanning
+    } catch {}
+  }
+  const stagePrompt =
+    stage.name === 'task-planning'
+      ? planningPrompt(card, instructions)
+      : (stage.prompt as (currentCard: CardData) => string)(card)
+  const prompt = repositoryMentionContext(stagePrompt, settingsFile)
   const sessionName = `${basename(path)} · ${stage.name}`
   if (provider === 'chatgpt') {
     return [

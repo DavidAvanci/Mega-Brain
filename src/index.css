@@ -3,6 +3,42 @@
 @import 'shadcn/tailwind.css';
 @import '@fontsource-variable/jetbrains-mono';
 
+@keyframes agent-working-text-glow {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+.agent-working-text-glow {
+  animation: agent-working-text-glow 2.1s linear infinite;
+}
+
+@supports (background-clip: text) {
+  .agent-working-text-glow {
+    background-image: linear-gradient(
+      90deg,
+      currentColor 0%,
+      currentColor 46%,
+      color-mix(in srgb, currentColor 35%, white) 50%,
+      currentColor 54%,
+      currentColor 100%
+    );
+    background-size: 200% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-working-text-glow {
+    animation: none;
+  }
+}
+
 @font-face { font-family: Poppins; src: url('/fonts/Poppins/Poppins-Regular.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: Poppins; src: url('/fonts/Poppins/Poppins-Italic.woff2') format('woff2'); font-weight: 400; font-style: italic; font-display: swap; }
 @font-face { font-family: Poppins; src: url('/fonts/Poppins/Poppins-Medium.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }

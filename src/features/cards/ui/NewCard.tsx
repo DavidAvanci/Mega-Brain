@@ -134,7 +134,7 @@ function CardForm({ onDone }: { onDone: () => void }) {
       <RepositoryMentionTextarea
         aria-label="Descrição do card"
         disabled={pending}
-        placeholder="Descrição (vai pro card.json da pasta)"
+        placeholder="Descrição"
         value={description}
         rows={4}
         className="resize-none bg-card"
@@ -167,10 +167,6 @@ function CardForm({ onDone }: { onDone: () => void }) {
       )}
       {jevEnabled && (
         <div className="grid gap-2 text-xs" aria-live="polite">
-          <p className="text-muted-foreground">
-            O Jev analisará o título e a descrição e criará o card automaticamente no fluxo com maior porcentagem. Sem
-            análise, você pode criar como Difícil.
-          </p>
           {result.status === 'loading' && <p role="status">Consultando o Jev…</p>}
           {result.status === 'unavailable' && (
             <p role="alert">O Jev não retornou uma análise: {TRIAGE_UNAVAILABLE_MESSAGES[result.reasonCode]}</p>
@@ -187,37 +183,11 @@ function CardForm({ onDone }: { onDone: () => void }) {
         </p>
       )}
       <div className="flex flex-wrap gap-2">
+        
+     
         {jevEnabled !== true && (
-          <Button
-            size="sm"
-            onClick={() => void create(flow)}
-            disabled={jevEnabled === null || !title.trim() || pending}
-          >
-            {jevEnabled === null ? 'Carregando…' : pending ? 'Criando…' : 'Adicionar'}
-          </Button>
-        )}
-        {jevEnabled && (
           <>
-            {result.status !== 'suggested' && (
-              <Button size="sm" onClick={analyze} disabled={!validInput || pending || result.status === 'loading'}>
-                {result.status === 'loading'
-                  ? 'Analisando…'
-                  : result.status === 'unavailable' || result.status === 'error'
-                    ? 'Tentar análise novamente'
-                    : 'Analisar com Jev'}
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void create('dificil')}
-              disabled={!title.trim() || pending}
-            >
-              Criar sem sugestão (Difícil)
-            </Button>
-          </>
-        )}
-        <Button
+           <Button
           size="sm"
           variant="ghost"
           className="ml-auto text-xs text-muted-foreground"
@@ -227,9 +197,47 @@ function CardForm({ onDone }: { onDone: () => void }) {
         >
           Criar card teste
         </Button>
-        <Button size="sm" variant="ghost" onClick={close} disabled={pending}>
-          Cancelar
+          <Button
+            size="sm"
+            onClick={() => void create(flow)}
+            disabled={jevEnabled === null || !title.trim() || pending}
+          >
+            {jevEnabled === null ? 'Carregando…' : pending ? 'Criando…' : 'Adicionar'}
+          </Button>
+          
+          </>
+        )}
+        {jevEnabled && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void create('dificil')}
+              disabled={!title.trim() || pending}
+            >
+              Criar (Difícil)
+            </Button>
+            <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto text-xs text-muted-foreground"
+          title="Criar uma cópia do MB-069 com dificuldade Difícil"
+          onClick={createTestCard}
+          disabled={pending || result.status === 'loading'}
+        >
+          Criar card teste
         </Button>
+            {result.status !== 'suggested' && (
+              <Button size="sm" onClick={analyze} disabled={!validInput || pending || result.status === 'loading'}>
+                {result.status === 'loading'
+                  ? 'Criando…'
+                  : result.status === 'unavailable' || result.status === 'error'
+                    ? 'Tentar análise novamente'
+                    : 'Criar com Jev'}
+              </Button>
+            )}
+          </>
+        )}
       </div>
     </div>
   )
@@ -250,7 +258,6 @@ export function NewCardDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Novo card</DialogTitle>
-          <DialogDescription>Crie o trabalho na entrada do pipeline. A etapa inicial será “A fazer”.</DialogDescription>
         </DialogHeader>
         <CardForm onDone={() => onOpenChange(false)} />
       </DialogContent>

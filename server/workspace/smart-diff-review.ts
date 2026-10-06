@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { claudeBin, codexBin } from '../agent-executable'
 import type { ProcessOwner, ProcessRunner } from '../process'
 import type { MegaBrainConfig } from '../config'
+import { DEFAULT_PROMPTS } from '../../shared/domain/settings'
 import { cardRepos } from './worktree-inspector'
 
 type Review = { schemaVersion: 2; sections: unknown[]; noise: unknown[] }
@@ -60,11 +62,11 @@ async function githubDefaultBranch(runner: ProcessRunner, repoPath: string): Pro
 function reviewPrompt(
   cardPath: string,
   jobs: { name: string; baseBranch: string; report: string; output: string; cache: string }[],
-  skill: string,
+  instructions: string,
+  reviewScript: string,
 ): string {
   return [
-    '/smart-diff-review',
-    `Leia ${join(skill, 'SKILL.md')} e aplique a skill aos relatórios Smart Diff abaixo.`,
+    instructions.replaceAll('<dir-da-skill>/review.mjs', reviewScript),
     'Os relatórios já foram gerados contra a branch padrão remota de cada repositório. Não execute o Smart Diff novamente.',
     'Para cada relatório, rode prepare, leia todos os patches, escreva as decisões em decisions.json e rode assemble até validar.',
     'Use o cache indicado. Não edite o JSON final à mão. Trabalhe somente nos arquivos dentro da pasta do card.',
@@ -93,10 +95,8 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
       process.env.SMART_DIFF_DIR || join(homedir(), 'smart-diff'),
       'packages/cli/bin/smart-diff.cjs',
     )
-    const skill = process.env.SMART_DIFF_REVIEW_SKILL_DIR || join(homedir(), '.claude/skills/smart-diff-review')
+    const reviewScript = join(dirname(fileURLToPath(import.meta.url)), 'smart-diff-review-cli.mjs')
     if (repos.length && !existsSync(smartDiff)) throw new Error(`Smart Diff não encontrado: ${smartDiff}`)
-    if (repos.length && !existsSync(join(skill, 'SKILL.md')))
-      throw new Error(`Skill /smart-diff-review não encontrada: ${skill}`)
     const jobs = []
     for (const repo of repos) {
       step(cardPath, `Rodando a ferramenta Smart Diff em ${repo.name}`)
@@ -127,7 +127,12 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
     }
     if (jobs.length) {
       step(cardPath, 'Rodando o agente de revisão')
-      const prompt = reviewPrompt(cardPath, jobs, skill)
+      const prompt = reviewPrompt(
+        cardPath,
+        jobs,
+        config.preferences.prompts?.smartDiffReview || DEFAULT_PROMPTS.smartDiffReview,
+        reviewScript,
+      )
       const codex = config.preferences.llmProvider === 'chatgpt'
       const command = codex ? codexBin(config.executables.codex) : claudeBin(config.executables.claude)
       const args = codex

@@ -12,7 +12,6 @@ export interface Item {
   requires: string[]
   /** Files this item is expected to create; unlike requires, these may be absent. */
   creates: string[]
-  maxTurns?: number
   timeoutMinutes?: number
   maxAttempts?: number
   deps: string[]
@@ -84,7 +83,6 @@ export function parseChecklist(md: string): Item[] {
       files: list('files'),
       requires: list('requires'),
       creates: list('creates'),
-      maxTurns: positive('turns'),
       timeoutMinutes: positive('timeoutMin'),
       maxAttempts: positive('attempts'),
       deps: list('deps'),

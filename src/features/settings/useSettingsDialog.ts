@@ -59,6 +59,9 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void) {
   const updateGeneral = (general: GeneralSettingsInput) => {
     setSettings((current) => (current ? withGeneralSettings(current, general) : current))
   }
+  const updatePrompts = (prompts: MegaBrainSettings['prompts']) => {
+    setSettings((current) => (current ? { ...current, prompts } : current))
+  }
   const close = () => {
     setSettings((current) => {
       if (!current) return current
@@ -97,6 +100,7 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void) {
     setAutostartEnabled,
     updateStage,
     updateGeneral,
+    updatePrompts,
     save,
     close,
   }

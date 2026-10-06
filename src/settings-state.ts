@@ -12,7 +12,7 @@ export function withGeneralSettings(current: MegaBrainSettings, general: General
       },
     ]),
   ) as BoardSettings
-  return { general, stages }
+  return { general, stages, prompts: current.prompts }
 }
 
 export function withStageSetting(

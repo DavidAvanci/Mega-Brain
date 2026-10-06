@@ -35,3 +35,16 @@ export function toolUse(event: Record<string, unknown>): Record<string, unknown>
   const content = record(event.message)?.content
   return Array.isArray(content) ? content.map(record).find((item) => item?.type === 'tool_use') : undefined
 }
+
+export function assistantText(event: Record<string, unknown>): string | undefined {
+  const content = record(event.message)?.content
+  if (!Array.isArray(content)) return undefined
+  const text = content
+    .map(record)
+    .filter((item) => item?.type === 'text' && typeof item.text === 'string')
+    .map((item) => String(item?.text).trim())
+    .filter(Boolean)
+    .join('\n\n')
+    .trim()
+  return text || undefined
+}

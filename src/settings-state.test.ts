@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import type { MegaBrainSettings } from '../shared/domain/settings'
+import { DEFAULT_PROMPTS, type MegaBrainSettings } from '../shared/domain/settings'
 import { withGeneralSettings, withStageSetting } from './settings-state'
 
 const settings: MegaBrainSettings = {
@@ -26,6 +26,7 @@ const settings: MegaBrainSettings = {
     'run-task-checklist': { model: 'fable', effort: 'medium' },
     'run-test-checklist': { model: 'sonnet', effort: 'high' },
   },
+  prompts: { ...DEFAULT_PROMPTS, smartDiffReview: 'instruções de revisão' },
 }
 
 test('resets stage models only when the LLM provider changes', () => {

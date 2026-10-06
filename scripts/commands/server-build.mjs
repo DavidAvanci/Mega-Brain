@@ -1,5 +1,5 @@
 import { build } from 'esbuild'
-import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { access, copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,6 +28,10 @@ await build({
   metafile: true,
   logLevel: 'info',
 })
+await copyFile(
+  resolve(repositoryRoot, 'server/workspace/smart-diff-review-cli.mjs'),
+  resolve(dirname(outputFile), 'smart-diff-review-cli.mjs'),
+)
 
 // Fail loudly rather than advertising a partial runtime to the supervisor.
 await access(outputFile)

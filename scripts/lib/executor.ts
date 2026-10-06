@@ -45,7 +45,6 @@ export interface ClaudeItemOptions {
   model: string
   effort?: string
   tools: string
-  maxTurns: number
   timeoutMs: number
   env?: Record<string, string>
 }
@@ -180,8 +179,6 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
       ...(options.effort ? ['--effort', options.effort] : []),
       '--json-schema',
       RESULT_SCHEMA,
-      '--max-turns',
-      String(options.maxTurns),
       '--strict-mcp-config',
       '--mcp-config',
       '{"mcpServers":{}}',

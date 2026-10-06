@@ -55,10 +55,10 @@ test('separa pré-condições de arquivos que o item vai criar e lê limites por
   expect(item).toMatchObject({
     requires: ['src/base.ts'],
     creates: ['src/new.ts'],
-    maxTurns: 55,
     timeoutMinutes: 12,
     maxAttempts: 2,
   })
+  expect(item).not.toHaveProperty('maxTurns')
 })
 
 test('stripMeta', () => {

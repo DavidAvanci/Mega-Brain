@@ -35,7 +35,6 @@ export interface PreservedAttempt {
   startedAt: string
   finishedAt?: string
   model?: string
-  maxTurns?: number
   timeoutMs?: number
   durationMs?: number
   costUsd?: number

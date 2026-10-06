@@ -8,6 +8,7 @@ import { resetUnfinished, type Item } from '../lib/checklist.ts'
 import { activity, finish } from '../lib/log.ts'
 import { formatDuration, runChecklist } from '../lib/scheduler.ts'
 import { runClaudeItem } from '../lib/executor.ts'
+import { megaBrainPrompt } from '../lib/prompts.ts'
 import { credentialsFromEnvironment } from '../lib/testCredentials.ts'
 
 const wsPath = process.argv[2] ?? process.cwd()
@@ -61,7 +62,7 @@ function readCredentials(repositoryAlias: string) {
 
 function buildPrompt(item: Item, url: string | undefined, hasCredentials: boolean): string {
   return [
-    '/exec-test-item',
+    megaBrainPrompt('testItem'),
     '',
     `Cenário: ${item.id} — ${item.text}`,
     ...item.details.map((detail) => `  ${detail}`),
@@ -95,7 +96,6 @@ export async function runTestStage(): Promise<void> {
         model: process.env.CHECKLIST_MODEL ?? 'sonnet',
         effort: process.env.CHECKLIST_EFFORT ?? 'low',
         tools: 'Bash,Read',
-        maxTurns: 60,
         timeoutMs: 12 * 60_000,
         env: credentials
           ? { TEST_LOGIN_EMAIL: credentials.email, TEST_LOGIN_PASSWORD: credentials.password }

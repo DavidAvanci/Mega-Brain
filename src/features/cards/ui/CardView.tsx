@@ -60,7 +60,7 @@ export function StageResetButton({ agent, cardId }: { agent: AgentInfo; cardId: 
           variant="ghost"
           size="icon-xs"
           aria-label={`Interromper e limpar a etapa de ${name}`}
-          className="size-5 shrink-0 text-muted-foreground hover:text-destructive"
+          className="ml-auto size-5 shrink-0 text-muted-foreground hover:text-destructive"
           onClick={(event) => {
             event.stopPropagation()
             setConfirming(true)
@@ -165,13 +165,13 @@ function AgentLine({ agent, cardId }: { agent: AgentInfo; cardId: string }) {
   return (
     <div>
       <div className="flex items-center gap-1.5">
-        <AgentBadge agent={agent} cardId={cardId} />
-        <StageResetButton agent={agent} cardId={cardId} />
+        <AgentBadge agent={agent} cardId={cardId} iconOnly />
         {progress && (
-          <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
+          <span className="text-[11px] text-muted-foreground tabular-nums">
             {Math.round((progress.done / progress.total) * 100)}%
           </span>
         )}
+        <StageResetButton agent={agent} cardId={cardId} />
       </div>
       {progress && (
         <Progress
@@ -216,7 +216,7 @@ export function CardBody({
   interactive?: boolean
   onOpen?: () => void
 }) {
-  const agents = activeAgents(card)
+  const agents = activeAgents(card).filter((agent) => agent.status === 'rodando')
   const attention = attentionReason(card)
   const [openingFolder, setOpeningFolder] = useState(false)
 
@@ -247,13 +247,6 @@ export function CardBody({
             </Tip>
           )}
           <FlowIndicator flow={card.flow} />
-          {card.smartDiffRunning && (
-            <Tip label="Smart Diff em execução">
-              <span role="status" aria-label="Smart Diff em execução" className="inline-flex size-4 items-center justify-center">
-                <Spinner className="size-3" />
-              </span>
-            </Tip>
-          )}
         </span>
       </div>
       {interactive ? (
@@ -270,11 +263,21 @@ export function CardBody({
       ) : (
         <div className="leading-snug font-medium">{card.title}</div>
       )}
-      {agents.length > 0 && (
+      {(agents.length > 0 || card.smartDiffRunning) && (
         <div className="mt-2 flex flex-col gap-1.5">
           {agents.map((agent, index) => (
             <AgentLine key={`${agent.stage ?? 'autonomo'}-${index}`} agent={agent} cardId={card.id} />
           ))}
+          {card.smartDiffRunning && (
+            <span
+              role="status"
+              aria-label="Smart Diff em execução"
+              className="inline-flex min-w-0 max-w-full items-center gap-1 text-[11px] text-primary dark:text-chart-2"
+            >
+              <Spinner className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">Smart Diff em execução</span>
+            </span>
+          )}
         </div>
       )}
       <div className="mt-2.5 flex items-center gap-1.5 border-t pt-2 text-[10px] text-muted-foreground">
@@ -283,7 +286,7 @@ export function CardBody({
             type="button"
             aria-label={openingFolder ? 'Abrindo pasta no editor' : 'Abrir pasta no editor configurado'}
             disabled={openingFolder}
-            className="inline-flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-70"
+            className="inline-flex size-6 shrink-0 items-center justify-center rounded-[min(var(--radius-md),10px)] hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-70"
             onClick={handleOpenFolder}
           >
             {openingFolder ? (

@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 import { readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import type { JiraEnv } from './jira/service'
-import type { EditorPreference, LlmProvider } from '../shared/domain/settings'
+import { DEFAULT_PROMPTS, type EditorPreference, type LlmProvider, type PromptSettings } from '../shared/domain/settings'
 
 /**
  * Runtime configuration shared by the Vite development adapter and the future
@@ -53,6 +53,7 @@ export interface MegaBrainConfig {
     editorCommand: string
     llmProvider: LlmProvider
     onboardingCompleted: boolean
+    prompts?: PromptSettings
   }
 }
 
@@ -113,6 +114,7 @@ export function loadMegaBrainConfig(options: LoadMegaBrainConfigOptions = {}): M
   const claudeHome = optional(env.MEGA_BRAIN_CLAUDE_HOME) ?? join(home, '.claude')
   const settingsFile = optional(env.MEGA_BRAIN_SETTINGS_FILE) ?? join(home, '.config', 'mega-brain', 'settings.json')
   const saved = persistedSettings(settingsFile)
+  const savedPrompts = saved.prompts && typeof saved.prompts === 'object' ? (saved.prompts as Record<string, unknown>) : {}
   const defaultWorkspaceDir = optional(env.WORKSPACE_DIR) ?? './mega-brain-files/workspace'
   const workspaceDir = savedAbsolutePath(saved.workspaceDir) ?? defaultWorkspaceDir
   const worktreesDir =
@@ -174,6 +176,16 @@ export function loadMegaBrainConfig(options: LoadMegaBrainConfigOptions = {}): M
       editorCommand: typeof saved.editorCommand === 'string' ? saved.editorCommand.trim() : '',
       llmProvider,
       onboardingCompleted: saved.onboardingCompleted === true,
+      prompts: Object.fromEntries(
+        Object.entries(DEFAULT_PROMPTS).map(([key, value]) => [
+          key,
+          typeof savedPrompts[key] === 'string'
+            ? savedPrompts[key]
+            : key === 'smartDiffReview' && typeof saved.smartDiffReviewPrompt === 'string'
+              ? saved.smartDiffReviewPrompt
+              : value,
+        ]),
+      ) as PromptSettings,
     },
   }
 }
