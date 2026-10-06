@@ -272,14 +272,8 @@ async function repairFailedTests(task: ReturnType<typeof taskInfo>): Promise<Ite
 }
 
 function patternExists(repo: string, pattern: string): boolean {
-  let base: string
-  try {
-    base = realRepoPath(repo)
-  } catch {
-    return false
-  }
   const clean = pattern.replace(/\/?\*+$/, '')
-  const path = join(base, clean)
+  const path = join(repoPath(repo), clean)
   return existsSync(path) || existsSync(dirname(path))
 }
 
