@@ -11,16 +11,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Spinner } from '@/components/ui/spinner'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { openFolder, openPrs, resetAutomaticStage } from '../model/card-commands'
+import { openFolder, openPrs, resetAutomaticStage, stopCardAgent } from '../model/card-commands'
 import { isTauriDesktop } from '@/desktopBootstrap'
 import { DevEnvPanel } from '@/features/dev-environments/DevEnvPanel'
 import { Tip } from '@/Tip'
@@ -32,64 +24,57 @@ import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 import { FlowIndicator } from './FlowIndicator'
 export { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 
-export function StageResetButton({ agent, cardId }: { agent: AgentInfo; cardId: string }) {
-  const [confirming, setConfirming] = useState(false)
+export function StageResetButton({
+  agent,
+  cardId,
+  iconOnly = false,
+  onPendingChange,
+  interruptLabel,
+}: {
+  agent: AgentInfo
+  cardId: string
+  iconOnly?: boolean
+  onPendingChange?: (pending: boolean) => void
+  interruptLabel?: string
+}) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  if (!agent.stage || agent.status !== 'rodando') return null
+  if (!agent.stage || !['rodando', 'aguardando'].includes(agent.status)) return null
   const name = agentName(agent)
 
-  const reset = async () => {
+  const stop = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
     setPending(true)
+    onPendingChange?.(true)
     setError(null)
     try {
       await resetAutomaticStage(cardId, agent.stage as string)
-      setConfirming(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setPending(false)
+      onPendingChange?.(false)
     }
   }
 
   return (
-    <>
-      <Tip label={`Interromper e limpar a etapa de ${name}`}>
+    <span className="inline-flex items-center gap-1">
+      <Tip label={interruptLabel ?? `Interromper agente ${name}`}>
         <Button
           type="button"
           variant="ghost"
-          size="icon-xs"
-          aria-label={`Interromper e limpar a etapa de ${name}`}
-          className="ml-auto size-5 shrink-0 text-muted-foreground hover:text-destructive"
-          onClick={(event) => {
-            event.stopPropagation()
-            setConfirming(true)
-          }}
+          size={iconOnly ? 'icon-xs' : 'xs'}
+          aria-label={iconOnly ? (interruptLabel ?? `Interromper agente ${name}`) : undefined}
+          className={iconOnly ? 'size-5 shrink-0 p-0 text-muted-foreground hover:text-destructive' : undefined}
+          disabled={pending}
+          onClick={stop}
         >
-          <HugeiconsIcon icon={CancelSquareIcon} strokeWidth={2} />
+          {pending ? <Spinner className="size-3.5" /> : <HugeiconsIcon icon={CancelSquareIcon} strokeWidth={2} />}
+          {!iconOnly && (pending ? 'Interrompendo…' : 'Interromper')}
         </Button>
       </Tip>
-      <Dialog open={confirming} onOpenChange={(open) => !open && !pending && setConfirming(false)}>
-        <DialogContent className="sm:max-w-md" onClick={(event) => event.stopPropagation()}>
-          <DialogHeader>
-            <DialogTitle>Interromper a etapa de {name}?</DialogTitle>
-            <DialogDescription>
-              A execução será encerrada e o progresso, os logs e os artefatos acompanhados por esta etapa serão
-              restaurados ao estado anterior. Código, commits e PRs já criados não serão apagados.
-            </DialogDescription>
-          </DialogHeader>
-          {error && <p className="text-xs text-destructive">{error}</p>}
-          <DialogFooter>
-            <Button variant="ghost" disabled={pending} onClick={() => setConfirming(false)}>
-              Voltar
-            </Button>
-            <Button variant="destructive" disabled={pending} onClick={reset}>
-              {pending ? 'Interrompendo…' : 'Interromper e limpar'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+      {error && <span className="text-[10px] text-destructive">{error}</span>}
+    </span>
   )
 }
 
@@ -160,18 +145,81 @@ export function PrChip({
   )
 }
 
-function AgentLine({ agent, cardId }: { agent: AgentInfo; cardId: string }) {
+function SessionStopIconButton({
+  agent,
+  onPendingChange,
+}: {
+  agent: AgentInfo
+  onPendingChange: (pending: boolean) => void
+}) {
+  const [pending, setPending] = useState(false)
+  if (!agent.sessionControlId) return null
+  const stop = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    setPending(true)
+    onPendingChange(true)
+    try {
+      await stopCardAgent(agent.sessionControlId as string)
+    } finally {
+      setPending(false)
+      onPendingChange(false)
+    }
+  }
+  return (
+    <Tip label="Interromper agente">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-xs"
+        aria-label="Interromper agente"
+        className="size-5 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+        disabled={pending}
+        onClick={stop}
+      >
+        {pending ? <Spinner className="size-3.5" /> : <HugeiconsIcon icon={CancelSquareIcon} strokeWidth={2} />}
+      </Button>
+    </Tip>
+  )
+}
+
+function AgentLine({
+  agent,
+  cardId,
+  mutedByParent = false,
+}: {
+  agent: AgentInfo
+  cardId: string
+  mutedByParent?: boolean
+}) {
+  const [stopping, setStopping] = useState(false)
+  if (agent.taskId) {
+    const taskAgent = { ...agent, phase: `Iniciando ${agent.taskId}` }
+    return (
+      <div className="flex items-center gap-1.5">
+        <AgentBadge agent={taskAgent} cardId={cardId} iconOnly muted={stopping || mutedByParent} growText />
+        <SessionStopIconButton agent={agent} onPendingChange={setStopping} />
+      </div>
+    )
+  }
+  if (agent.stage === 'task-planning') {
+    return (
+      <div className="flex items-center gap-1.5">
+        <AgentBadge agent={agent} cardId={cardId} iconOnly muted={stopping || mutedByParent} growText />
+        <StageResetButton agent={agent} cardId={cardId} iconOnly onPendingChange={setStopping} />
+      </div>
+    )
+  }
+
   const progress = agent.status === 'rodando' ? agent.progress : undefined
   return (
     <div>
       <div className="flex items-center gap-1.5">
-        <AgentBadge agent={agent} cardId={cardId} iconOnly />
+        <AgentBadge agent={agent} cardId={cardId} iconOnly muted={mutedByParent} />
         {progress && (
           <span className="text-[11px] text-muted-foreground tabular-nums">
             {Math.round((progress.done / progress.total) * 100)}%
           </span>
         )}
-        <StageResetButton agent={agent} cardId={cardId} />
       </div>
       {progress && (
         <Progress
@@ -183,6 +231,42 @@ function AgentLine({ agent, cardId }: { agent: AgentInfo; cardId: string }) {
       )}
     </div>
   )
+}
+
+function DevelopmentProgress({
+  agent,
+  cardId,
+  onPendingChange,
+}: {
+  agent: AgentInfo
+  cardId: string
+  onPendingChange: (pending: boolean) => void
+}) {
+  const progress = agent.progress
+  if (!progress) return null
+  const percentage = Math.round((progress.done / progress.total) * 100)
+  return (
+    <div className="flex items-center gap-1.5">
+      <Progress
+        value={progress.done}
+        max={progress.total}
+        className="min-w-0 flex-1"
+        aria-label="Progresso do desenvolvimento"
+      />
+      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{percentage}%</span>
+      <StageResetButton
+        agent={agent}
+        cardId={cardId}
+        iconOnly
+        interruptLabel="Interromper todos os agentes deste card"
+        onPendingChange={onPendingChange}
+      />
+    </div>
+  )
+}
+
+function initialTaskId(agent: AgentInfo | undefined): string | undefined {
+  return agent?.phase?.match(/^([A-Za-z]+\d+|#\d+)\b/)?.[1]
 }
 
 function FolderName({ name }: { name: string }) {
@@ -216,9 +300,18 @@ export function CardBody({
   interactive?: boolean
   onOpen?: () => void
 }) {
-  const agents = activeAgents(card).filter((agent) => agent.status === 'rodando')
+  const runningAgents = activeAgents(card).filter((agent) => agent.status === 'rodando')
+  const isDevelopment = card.status === 'desenvolvendo'
+  const developmentStageAgent = isDevelopment
+    ? card.agents?.find(
+        (agent) =>
+          agent.stage === 'run-task-checklist' && ['rodando', 'aguardando'].includes(agent.status),
+      )
+    : undefined
+  const agents = isDevelopment ? runningAgents.filter((agent) => agent.taskId) : runningAgents
   const attention = attentionReason(card)
   const [openingFolder, setOpeningFolder] = useState(false)
+  const [stoppingAllDevelopmentAgents, setStoppingAllDevelopmentAgents] = useState(false)
 
   const handleOpenFolder = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
@@ -263,11 +356,31 @@ export function CardBody({
       ) : (
         <div className="leading-snug font-medium">{card.title}</div>
       )}
-      {(agents.length > 0 || card.smartDiffRunning) && (
+      {(agents.length > 0 || card.smartDiffRunning || developmentStageAgent) && (
         <div className="mt-2 flex flex-col gap-1.5">
           {agents.map((agent, index) => (
-            <AgentLine key={`${agent.stage ?? 'autonomo'}-${index}`} agent={agent} cardId={card.id} />
+            <AgentLine
+              key={`${agent.taskId ?? agent.stage ?? 'autonomo'}-${index}`}
+              agent={agent}
+              cardId={card.id}
+              mutedByParent={stoppingAllDevelopmentAgents}
+            />
           ))}
+          {developmentStageAgent && agents.length === 0 && (
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-[11px] text-primary dark:text-chart-2">
+              <Spinner className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">
+                Iniciando {initialTaskId(developmentStageAgent) ?? 'tarefa'}...
+              </span>
+            </span>
+          )}
+          {developmentStageAgent && (
+            <DevelopmentProgress
+              agent={developmentStageAgent}
+              cardId={card.id}
+              onPendingChange={setStoppingAllDevelopmentAgents}
+            />
+          )}
           {card.smartDiffRunning && (
             <span
               role="status"

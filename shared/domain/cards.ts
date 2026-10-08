@@ -57,6 +57,7 @@ export interface Card {
   updatedAt?: string
   status: Status
   flow: FlowLevel
+  lastStage?: string
   jiraStatus?: string
   agents?: AgentInfo[]
   smartDiffRunning?: boolean

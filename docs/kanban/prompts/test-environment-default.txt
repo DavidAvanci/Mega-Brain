@@ -1,0 +1,83 @@
+# Run Test Env — sobe o ambiente local do que estamos trabalhando
+
+Objetivo: a partir do contexto da sessão, subir as aplicações necessárias para testar manualmente o trabalho em andamento e **retornar os links locais** no final.
+
+## Passo 1 — Detectar o que estamos trabalhando
+
+Determine os repos tocados, nesta ordem de preferência:
+
+1. **Contexto da conversa** — se a sessão já implementou algo, você sabe quais repos mexeu.
+2. **Workspace folder** — use apenas os links e worktrees que o Mega Brain já gerenciou para o card. Repos com branch ≠ master ou diff vs master são os tocados. Nunca crie worktrees, symlinks ou diretórios auxiliares para subir o ambiente.
+3. **Fallback** — `git status`/`git branch` nos repos canônicos em `~/takeat/`.
+
+Classifique cada repo tocado:
+
+- **Backend**: `api-garcom-digital`, `api-core`, `takeat-services` (os dois últimos são libs consumidas pelo agd — mudança em lib implica rodar o agd).
+- **Frontend**: qualquer outro (`operation-takeat`, `garcom-restaurant-dashboard`, `manager-area`, `internal-dashboard`, `garcom-digital-client`, `dashboard-takeat`, `new-delivery-takeat`, etc.).
+
+## Passo 2 — Escolher o cenário
+
+| Trabalho | O que rodar | Frontend aponta para |
+|---|---|---|
+| Só frontend | O(s) frontend(s) do worktree | **Produção** |
+| Front + back | Backend do worktree + frontend(s) do worktree | **Backend local** (`http://localhost:3333`) |
+| Só backend | Backend do worktree + frontend correspondente **a partir da master** (repo canônico `~/takeat/<repo>`, conferir que está na master e atualizado) | **Backend local** (`http://localhost:3333`) |
+
+No cenário só-backend, escolha o frontend que consome os endpoints alterados (PLAN.md / rotas tocadas dizem qual; na dúvida, pergunte). Mapa de referência:
+
+- Rotas de dashboard do lojista → `garcom-restaurant-dashboard`
+- Rotas de PDV/operação → `operation-takeat` (embutido no dashboard — ver nota abaixo)
+- Rotas `public`/`client` de delivery → `new-delivery-takeat`
+- Rotas admin internas → `internal-dashboard`
+- Comanda do cliente (QR) → `garcom-digital-client`
+
+## Passo 3 — Infra e backend
+
+1. **Docker**: `docker ps` — garanta `takeat_db` (5433) e `takeat_redis` (6379) rodando (`docker start takeat_db takeat_redis` se parados).
+2. **Backend** (`api-garcom-digital`): é repo npm — instale com `npm install` **sem** `npm ci` (as deps git `@takeat/core`/`@takeat/services` resolvem pro HEAD da branch, então o lockfile sempre drifta e o `ci` falha). Worktree novo não tem `.env` — copie do canônico `~/takeat/backend/api-garcom-digital/.env`. `npm run dev` roda `nodemon` na porta **3333**. O `predev` (setup-dev.js) usa as libs locais **se `../api-core` e `../takeat-services` existirem como pastas irmãs** — senão baixa das branches do GitHub. Consequências:
+   - Trabalho que tocou `api-core`/`takeat-services`: rode o agd no layout já preparado pelo scheduler, onde as libs alteradas estejam disponíveis como pastas irmãs. Se o layout não existir, reporte o bloqueio; não crie worktrees manualmente. Lib alterada precisa de `npm run build` nela antes.
+   - O Dockerfile/branch ref manda em produção, mas localmente vale a pasta irmã.
+3. Suba com `run_in_background`, log em arquivo no scratchpad, e confirme readiness (`curl -sf http://localhost:3333` ou aguarde o log de "server started") antes de reportar.
+
+## Passo 4 — Frontend(s)
+
+**Nunca edite o `.env` de repo canônico** para trocar URL — os `.env` da Takeat usam o padrão "chave duplicada, a última vence". Em vez disso, injete a variável inline no comando: tanto Vite quanto CRA dão prioridade a variáveis já presentes no ambiente do processo sobre o `.env`. Em worktree da task, editar o `.env` do worktree é aceitável, mas inline continua preferível.
+
+**Gerenciador de pacotes**: use **npm** por padrão. Só use yarn quando o repo pedir — `packageManager: yarn@…` no `package.json`, `.yarnrc.yml`/`.yarnrc`, ou `yarn.lock` sem `package-lock.json`. Vários repos têm os dois lockfiles: o `packageManager` decide. Hoje os backends (`api-garcom-digital`, `api-core`, `takeat-services`) são npm e os frontends da tabela abaixo são yarn. Com npm, flags do dev server vão depois de `--` (`npm run dev -- --port 3000`).
+
+Variável de API e porta por app:
+
+| App | Var de API | Valor produção | Dev server / porta |
+|---|---|---|---|
+| operation-takeat | `VITE_OPERATION_API_URL` | `https://backend-pdv.takeat.app` | `yarn dev` → **3000** |
+| garcom-restaurant-dashboard | `REACT_APP_API_URL` | `https://backend.takeat.app` | `yarn start` (CRA) → **3000**; use `PORT=3300` se rodar junto com operation-takeat (o `VITE_PARENT_URL` do operation espera `localhost:3300`) |
+| manager-area | `VITE_API_KEY` | `https://backend.takeat.app/` | `yarn dev` → **5173** |
+| internal-dashboard | `VITE_API_URL` | `https://backend.takeat.app` | `yarn dev` → **5180** |
+| garcom-digital-client | `VITE_API_URL` | `https://backend.takeat.app` | `yarn start` → **5173** |
+| dashboard-takeat | `VITE_API_URL` | (ver `.env` do repo) | `yarn start` (CRA) → **3000** |
+| new-delivery-takeat | vários `NEXT_PUBLIC_API_*` | `https://backend-delivery.takeat.app` | `yarn dev` (Next) → **3000**; aqui edite `.env.local` (são muitas vars) |
+
+Exemplos:
+
+```bash
+# Front-only: worktree apontando para produção
+cd <worktree>/garcom-restaurant-dashboard && REACT_APP_API_URL=https://backend.takeat.app yarn start
+
+# Back-only: front canônico na master apontando para o back local
+cd ~/takeat/garcom-restaurant-dashboard && git switch master && REACT_APP_API_URL=http://localhost:3333 yarn start
+```
+
+Regras:
+
+- Instale deps se `node_modules` faltar, com o gerenciador do repo (regra acima); respeite o lockfile dele.
+- Suba cada app com `run_in_background` e log no scratchpad; confirme que a porta respondeu antes de reportar. Se a porta padrão estiver ocupada por outra coisa, escolha outra (`--port`/`PORT`) e reporte a real.
+- Se as portas conflitarem entre apps que precisam coexistir, desloque a menos convencional e mantenha a esperada pelas integrações (ex.: dashboard em 3300 quando o operation-takeat está em 3000).
+
+## Passo 5 — Reportar
+
+Finalize sempre com um resumo:
+
+- Cenário detectado (quais repos, front/back, de onde cada app está rodando — worktree ou master canônica).
+- Para onde cada frontend está apontando (produção ou `localhost:3333`).
+- **Links clicáveis** de cada app (`http://localhost:<porta>`) e onde estão os logs.
+- Como derrubar tudo (os task ids dos processos em background).

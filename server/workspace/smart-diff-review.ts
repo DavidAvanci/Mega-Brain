@@ -19,6 +19,11 @@ type DiffState = {
   started: boolean
 }
 
+const LEGACY_SKILL_INTRO =
+  'Esta skill faz só o que não pode ser determinístico, e o script `review.mjs` (na pasta desta skill; o diretório base vem no prompt de invocação, senão `~/.claude/skills/smart-diff-review/`) valida e monta o resultado.'
+const REVIEW_INTRO =
+  'O agente faz as decisões que não podem ser determinísticas. O script de revisão incluído no Mega Brain valida e monta o resultado.'
+
 function readDocument(cardPath: string): DiffDocument | undefined {
   try {
     const value = JSON.parse(readFileSync(join(cardPath, 'diff.json'), 'utf8')) as DiffDocument
@@ -59,14 +64,17 @@ async function githubDefaultBranch(runner: ProcessRunner, repoPath: string): Pro
   return branch
 }
 
-function reviewPrompt(
+export function reviewPrompt(
   cardPath: string,
   jobs: { name: string; baseBranch: string; report: string; output: string; cache: string }[],
   instructions: string,
   reviewScript: string,
 ): string {
   return [
-    instructions.replaceAll('<dir-da-skill>/review.mjs', reviewScript),
+    instructions
+      .replaceAll(LEGACY_SKILL_INTRO, REVIEW_INTRO)
+      .replaceAll('<script-de-revisao>', reviewScript)
+      .replaceAll('<dir-da-skill>/review.mjs', reviewScript),
     'Os relatórios já foram gerados contra a branch padrão remota de cada repositório. Não execute o Smart Diff novamente.',
     'Para cada relatório, rode prepare, leia todos os patches, escreva as decisões em decisions.json e rode assemble até validar.',
     'Use o cache indicado. Não edite o JSON final à mão. Trabalhe somente nos arquivos dentro da pasta do card.',

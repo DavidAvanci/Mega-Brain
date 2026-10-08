@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, posix, resolve } from 'node:path'
 import { runsAsCommand } from '../lib/env.ts'
 import { markItem, matchesPattern, parseChecklist, pendingRequires, resetUnfinished, type Item } from '../lib/checklist.ts'
-import { CmdError, changedFiles, git } from '../lib/git.ts'
+import { CmdError, changedFiles, defaultBranch, git, hasRef } from '../lib/git.ts'
 import { activity, finish } from '../lib/log.ts'
 import { itemContext, readPlan } from '../lib/plan.ts'
 import { preflight } from '../lib/preflight.ts'
@@ -269,13 +269,30 @@ async function repairFailedTests(task: ReturnType<typeof taskInfo>): Promise<Ite
   return outcomes
 }
 
-function patternExists(repo: string, pattern: string): boolean {
-  const clean = pattern.replace(/\/?\*+$/, '')
-  const path = join(repoPath(repo), clean)
-  return existsSync(path) || existsSync(dirname(path))
+function existsInRef(real: string, ref: string, path: string): boolean {
+  if (path === '.') return true
+  try {
+    git(real, 'cat-file', '-e', `${ref}:${path}`)
+    return true
+  } catch {
+    return false
+  }
 }
 
-function reportPreflight(items: Item[]): boolean {
+function patternExists(repo: string, pattern: string, branch: string): boolean {
+  const clean = pattern.replace(/\/?\*+$/, '')
+  const link = repoPath(repo)
+  if (existsSync(link)) {
+    const path = join(link, clean)
+    return existsSync(path) || existsSync(dirname(path))
+  }
+  // Worktree ainda não preparada: conferir na ref de onde ela vai nascer
+  const real = realRepoPath(repo)
+  const ref = hasRef(real, `refs/heads/${branch}`) ? branch : `origin/${defaultBranch(real)}`
+  return existsInRef(real, ref, clean) || existsInRef(real, ref, posix.dirname(clean))
+}
+
+function reportPreflight(items: Item[], branch: string): boolean {
   const issues = preflight(items, {
     repoExists: (repo) => {
       try {
@@ -285,7 +302,7 @@ function reportPreflight(items: Item[]): boolean {
         return false
       }
     },
-    pathExists: patternExists,
+    pathExists: (repo, pattern) => patternExists(repo, pattern, branch),
   })
   for (const issue of issues) {
     activity('Preflight', `${issue.level === 'error' ? 'Erro' : 'Aviso'} — ${issue.where}: ${issue.message}`)
@@ -339,7 +356,7 @@ export async function runDevStage(): Promise<void> {
   const task = taskInfo(wsPath)
   const plan = readPlan(wsPath)
   const parsed = parseChecklist(readFileSync(file, 'utf8'))
-  if (!process.env.CHECKLIST_SKIP_PREFLIGHT && !reportPreflight(parsed)) {
+  if (!process.env.CHECKLIST_SKIP_PREFLIGHT && !reportPreflight(parsed, task.branch)) {
     process.exit(1)
   }
 

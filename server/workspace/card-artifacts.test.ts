@@ -10,7 +10,7 @@ test('planning progress follows the selected flow artifacts', () => {
 
   expect(CARD_FILES).toEqual(['PLAN.md', 'TASK-CHECKLIST.md', 'TEST-CHECKLIST.md'])
   expect(planningProgress(root, undefined, 'simples')).toEqual({ done: 1, total: 1, phase: 'Finalizando' })
-  expect(planningProgress(root, undefined, 'medio')).toEqual({ done: 1, total: 2, phase: 'Criando plano' })
+  expect(planningProgress(root, undefined, 'medio')).toEqual({ done: 1, total: 2, phase: 'Iniciando plano' })
 })
 
 test('checklist progress counts completed items and reports the next task', () => {

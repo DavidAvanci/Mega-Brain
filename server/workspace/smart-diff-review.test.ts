@@ -3,9 +3,21 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import type { ProcessChild, ProcessRunner } from '../process'
 import { createWorkspaceService } from './service'
+import { reviewPrompt } from './smart-diff-review'
+
+afterEach(() => vi.unstubAllEnvs())
+
+test('converts the old skill wording in saved Smart Diff prompts', () => {
+  const legacy =
+    'Esta skill faz só o que não pode ser determinístico, e o script `review.mjs` (na pasta desta skill; o diretório base vem no prompt de invocação, senão `~/.claude/skills/smart-diff-review/`) valida e monta o resultado.\nnode "<dir-da-skill>/review.mjs" prepare'
+  const prompt = reviewPrompt('/card', [], legacy, '/app/smart-diff-review-cli.mjs')
+  expect(prompt).toContain('O script de revisão incluído no Mega Brain valida e monta o resultado.')
+  expect(prompt).toContain('node "/app/smart-diff-review-cli.mjs" prepare')
+  expect(prompt).not.toMatch(/\.claude\/skills|dir-da-skill|Esta skill/)
+})
 
 test('opening diff runs Smart Diff against the GitHub default branch, reviews the report, and saves diff.json', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mega-brain-smart-diff-'))
@@ -13,8 +25,13 @@ test('opening diff runs Smart Diff against the GitHub default branch, reviews th
   const repo = join(root, 'repo')
   mkdirSync(card)
   mkdirSync(repo)
+  const smartDiffRoot = join(root, 'smart-diff')
+  const smartDiffBin = join(smartDiffRoot, 'packages', 'cli', 'bin')
+  mkdirSync(smartDiffBin, { recursive: true })
+  writeFileSync(join(smartDiffBin, 'smart-diff.cjs'), '')
+  vi.stubEnv('SMART_DIFF_DIR', smartDiffRoot)
   writeFileSync(join(repo, '.git'), 'gitdir: /fixture/.git/worktrees/card')
-  symlinkSync(repo, join(card, 'api'), 'dir')
+  symlinkSync(repo, join(card, 'api'), process.platform === 'win32' ? 'junction' : 'dir')
   const calls: { smartDiff: string[][]; agent: string[][] } = { smartDiff: [], agent: [] }
   const runner = {
     execFile(
@@ -66,7 +83,10 @@ test('opening diff runs Smart Diff against the GitHub default branch, reviews th
   expect(calls.smartDiff).toHaveLength(1)
   expect(calls.smartDiff[0]).toContain('FETCH_HEAD...HEAD')
   expect(calls.agent).toHaveLength(1)
-  expect(calls.agent[0].join(' ')).toContain('Revise os relatórios Smart Diff fornecidos')
+  const prompt = calls.agent[0].join(' ')
+  expect(prompt).toContain('O script de revisão incluído no Mega Brain valida e monta o resultado.')
+  expect(prompt).toContain('smart-diff-review-cli.mjs')
+  expect(prompt).not.toMatch(/\.claude\/skills|dir-da-skill|Esta skill/)
   expect(existsSync(join(card, 'diff.json'))).toBe(true)
   expect(JSON.parse(readFileSync(join(card, 'diff.json'), 'utf8'))).toMatchObject({
     schemaVersion: 1,

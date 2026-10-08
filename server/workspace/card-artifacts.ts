@@ -10,7 +10,7 @@ export interface StageProgress {
 }
 
 const ARTIFACT_PHASES = [
-  ['PLAN.md', 'Criando plano'],
+  ['PLAN.md', 'Iniciando plano'],
   ['TASK-CHECKLIST.md', 'Criando tasks'],
   ['TEST-CHECKLIST.md', 'Criando testes'],
 ] as const

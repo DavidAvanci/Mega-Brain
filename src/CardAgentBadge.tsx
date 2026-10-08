@@ -57,17 +57,21 @@ export function AgentBadge({
   agent,
   cardId,
   iconOnly = false,
+  muted = false,
+  growPlanningText = false,
 }: {
   agent: AgentInfo
   cardId: string
   iconOnly?: boolean
+  muted?: boolean
+  growPlanningText?: boolean
 }) {
   const [showError, setShowError] = useState(false)
   const isStartingAgent = !agent.provider && agent.phase === 'Iniciando agente'
   const { label, className } = BADGES[agent.status]
   const { name, icon } = kindOf(agent)
   const error = agent.status === 'erro' ? agent.error : undefined
-  const text =
+  const stageText =
     agent.status === 'rodando' && (agent.phase || agent.activity)
       ? agent.phase
         ? `${agent.phase}…`
@@ -75,19 +79,17 @@ export function AgentBadge({
       : agent.status === 'erro' && error
         ? `erro · ${error.split('\n', 1)[0]}`
         : label
+  const text = agent.status === 'rodando' && agent.provider === 'claude' && agent.activity ? agent.activity : stageText
   const showInlineText =
     !iconOnly ||
     (agent.stage === 'task-planning' && agent.status === 'rodando') ||
     isStartingAgent ||
+    Boolean(agent.phase) ||
     (agent.provider === 'claude' && Boolean(agent.activity))
   const inlineText =
     isStartingAgent
       ? 'Iniciando agente...'
-      : iconOnly && agent.provider === 'claude' && agent.activity
-        ? agent.activity
-        : iconOnly
-          ? 'Planejando...'
-          : text
+      : text
   const tip = isStartingAgent
     ? 'Iniciando agente...'
     : iconOnly
@@ -128,7 +130,10 @@ export function AgentBadge({
           }
           className={cn(
             'inline-flex min-w-0 max-w-full items-center gap-1 text-[11px]',
+            agent.stage === 'task-planning' && 'justify-start text-left',
+            agent.stage === 'task-planning' && growPlanningText && 'flex-1',
             className,
+            muted && 'text-muted-foreground',
           )}
           onClick={(event) => {
             event.stopPropagation()
@@ -147,7 +152,14 @@ export function AgentBadge({
             />
           )}
           {showInlineText && (
-            <span className={cn('truncate', agent.status === 'rodando' && 'agent-working-text-glow')}>
+            <span
+              className={cn(
+                'truncate text-left',
+                agent.stage === 'task-planning' && 'min-w-0 text-left',
+                agent.stage === 'task-planning' && growPlanningText && 'flex-1',
+                agent.status === 'rodando' && !muted && 'agent-working-text-glow',
+              )}
+            >
               {inlineText}
             </span>
           )}
