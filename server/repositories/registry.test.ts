@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -40,6 +40,22 @@ async function remoteCommit(root: string, remote: string, text: string) {
 }
 
 describe('RepositoryRegistry remote updates', () => {
+  it('descobre links de workspace e persiste o grupo sem duplicar checkouts', async () => {
+    const f = await fixture()
+    const workspace = join(f.root, 'workspace')
+    await mkdir(workspace)
+    await symlink(f.path, join(workspace, 'linked-repo'), 'dir')
+    await symlink(join(f.root, 'missing'), join(workspace, 'broken'), 'dir')
+    const discovery = await f.registry.discover(workspace)
+    expect(discovery.repositories).toHaveLength(1)
+    expect(discovery.repositories[0]).toMatchObject({ path: f.path, duplicateId: 'one' })
+    await f.registry.update('one', { tags: ['workspace:takeat-core'] })
+    expect((await f.registry.list())[0].tags).toEqual(['workspace:takeat-core'])
+    const second = join(f.root, 'second')
+    git(f.root, 'clone', f.remote, second)
+    const created = await f.registry.create({ path: second, tags: ['workspace:takeat-core'] })
+    expect(created.tags).toEqual(['workspace:takeat-core'])
+  })
   it('reads a version 1 catalog without rewriting it and distinguishes local from fetched state', async () => {
     const f = await fixture()
     const before = await readFile(f.file, 'utf8')

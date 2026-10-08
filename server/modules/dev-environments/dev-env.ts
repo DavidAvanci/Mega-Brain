@@ -18,6 +18,7 @@ import { readRepositoryEnvironmentVariables } from '../../repositories/environme
 import { installCommand, lockfilesMatch, runScriptCommand, type Command } from '../../../scripts/lib/packageManager.ts'
 import type { DevEnvApp, DevEnvInfo } from '../../../shared/domain/agents'
 import { nodeProcessRunner, type ProcessChild, type ProcessRunner } from '../../process'
+import { registeredAppCommand, registeredAppEnvironment, registeredDevApp, type RegisteredApp } from './dev-env-apps'
 import {
   AGD,
   BACKEND_LIBS,
@@ -105,6 +106,7 @@ export interface DevEnvPlan {
   clube?: { dir: string; canonical: string }
   libs: RepoRef[]
   fronts: { repo: string; dir: string; canonical: string; source: 'worktree' | 'master'; config: FrontendConfig; preferred: number }[]
+  apps: RegisteredApp[]
   warnings: string[]
 }
 
@@ -118,9 +120,17 @@ export function planDevEnv(
   const touched = touchedRepos(cardPath, runner, catalogFile)
   const byName = new Map(touched.map((repo) => [repo.name, repo]))
   const { agd, clube, libs, fronts, unknown } = classifyRepos(touched.map((repo) => repo.name))
-  const warnings = unknown.map((name) => `Repo não suportado pelo ambiente dev: ${name}`)
+  const warnings: string[] = []
+  const apps: RegisteredApp[] = []
+  for (const name of unknown) {
+    const app = registeredDevApp(name, byName.get(name)!.dir, catalogFile)
+    if (typeof app === 'string') warnings.push(app)
+    else apps.push(app)
+  }
+  apps.sort((left, right) => Number(left.kind === 'frontend') - Number(right.kind === 'frontend'))
   const localBackend = agd || libs.length > 0
-  if (!localBackend && !clube && !fronts.length) throw new Error('Nenhum repo tocado encontrado nos symlinks da pasta')
+  if (!touched.length) throw new Error('Nenhum repositório alterado encontrado nos links do card. Execute a implementação antes de iniciar o ambiente dev.')
+  if (!localBackend && !clube && !fronts.length && !apps.length) throw new Error(warnings.join('\n'))
 
   let backend: DevEnvPlan['backend']
   if (localBackend) {
@@ -135,7 +145,7 @@ export function planDevEnv(
   let frontRepos: { repo: string; dir: string; canonical: string; source: 'worktree' | 'master' }[]
   if (fronts.length) {
     frontRepos = fronts.map((repo) => ({ repo, dir: byName.get(repo)!.dir, canonical: activeRepositoryPath(repo, catalogFile), source: 'worktree' as const }))
-  } else {
+  } else if ((localBackend || clube) && !apps.some((app) => app.kind === 'frontend')) {
     if (!frontendChoice) {
       const available = Object.keys(FRONTENDS).filter((repo) => {
         try { activeRepositoryPath(repo, catalogFile); return true } catch { return false }
@@ -150,7 +160,7 @@ export function planDevEnv(
       warnings.push(`${frontendChoice} canônico não está na master (branch atual: ${branch})`)
     }
     frontRepos = [{ repo: frontendChoice, dir, canonical: dir, source: 'master' }]
-  }
+  } else frontRepos = []
 
   return {
     localBackend,
@@ -158,6 +168,7 @@ export function planDevEnv(
     backend,
     clube: clube ? { dir: byName.get(CLUBE)!.dir, canonical: activeRepositoryPath(CLUBE, catalogFile) } : undefined,
     libs: libs.map((name) => byName.get(name)!),
+    apps,
     fronts: frontRepos.map((front) => ({
       ...front,
       config: FRONTENDS[front.repo],
@@ -508,6 +519,40 @@ async function orchestrate(
       update()
     }
     const used = new Set<number>([BACKEND_PORT, CLUBE_PORT])
+    for (const configured of plan.apps) {
+      checkAborted(run)
+      const app = state.apps.find((item) => item.repo === configured.repo)!
+      current = app
+      const logFile = join(logDir, `${configured.repo}.log`)
+      if (prepareDependencies(configured.root, configured.canonical)) {
+        app.status = 'instalando'
+        update()
+        await step(run, configured.root, logFile, ...argv(installCommand(configured.root)), runner)
+      }
+      // Generic backend scripts can hard-code their port. Do not relocate them
+      // silently; frontend CLIs explicitly accept the allocated port below.
+      const port = configured.flavor ? await findFreePort(configured.preferred, used) : configured.preferred
+      if (!configured.flavor && (used.has(port) || !(await portFree(port)))) {
+        throw new Error(`${configured.repo}: porta ${port} já está ocupada. Configure outra porta no ambiente local em Repositórios.`)
+      }
+      used.add(port)
+      app.port = port
+      app.url = `http://localhost:${port}`
+      app.status = 'subindo'
+      // Environment values stay in memory and are never written to state/logs.
+      const environment = {
+        ...registeredAppEnvironment(configured),
+        PORT: String(port),
+        ...(configured.flavor === 'cra' ? { CI: 'true' } : {}),
+      }
+      run.child = detach(run, configured.dir, logFile, ...argv(registeredAppCommand(configured, port)), environment, runner)
+      app.pid = run.child.pid
+      update()
+      await waitPort(port, run, logFile)
+      run.child = undefined
+      app.status = 'rodando'
+      update()
+    }
     for (const front of plan.fronts) {
       checkAborted(run)
       const app = state.apps.find((a) => a.repo === front.repo)!
@@ -608,6 +653,12 @@ export function startDevEnv(
             } satisfies DevEnvApp,
           ]
         : []),
+      ...plan.apps.map((app) => ({
+        repo: app.repo,
+        kind: app.kind,
+        source: 'worktree',
+        status: 'aguardando',
+      } satisfies DevEnvApp)),
       ...plan.fronts.map((front) => {
         const productionVariables = readRepositoryEnvironmentVariables(
           front.canonical,

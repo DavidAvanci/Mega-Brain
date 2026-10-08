@@ -26,6 +26,7 @@ vi.mock('@/components/ui/dialog', () => {
   }
 })
 vi.mock('@/components/RepositoryMentionTextarea', () => ({ RepositoryMentionTextarea: () => <textarea /> }))
+vi.mock('@/features/knowledge/KnowledgeAttachments', () => ({ KnowledgeAttachments: () => null }))
 
 let host: HTMLDivElement
 let root: Root
@@ -70,7 +71,7 @@ test('offers manual creation after settings fail to load', async () => {
 test('offers Jev analysis when enabled', async () => {
   vi.mocked(fetchMegaBrainSettings).mockResolvedValue(settings({ jevEnabled: true }))
   await render()
-  expect(host.textContent).toContain('Analisar com Jev')
-  expect(host.textContent).toContain('Criar sem sugestão (Difícil)')
+  expect(host.textContent).toContain('Criar com Jev')
+  expect(host.textContent).toContain('Criar (Difícil)')
   expect(host.textContent).not.toContain('Nível do fluxo')
 })

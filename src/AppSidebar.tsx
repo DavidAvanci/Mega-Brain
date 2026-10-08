@@ -1,11 +1,11 @@
-import { AiBrain01Icon, Folder01Icon, GridViewIcon, Settings02Icon } from '@hugeicons/core-free-icons'
+import { BookOpen01Icon, AiBrain01Icon, Folder01Icon, GridViewIcon, Settings02Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { isAgentSessionActive, useAgentSessions } from './features/agents/model/agents-state'
 import { UsageMeter } from './UsageMeter'
 
-export type AppPage = 'kanban' | 'agents' | 'repositories'
+export type AppPage = 'kanban' | 'agents' | 'repositories' | 'knowledge'
 
 interface AppSidebarProps {
   activePage: AppPage
@@ -16,6 +16,7 @@ interface AppSidebarProps {
 const NAV_ITEMS = [
   { page: 'kanban', label: 'Kanban', icon: GridViewIcon },
   { page: 'agents', label: 'Agentes', icon: AiBrain01Icon },
+  { page: 'knowledge', label: 'Conhecimento', icon: BookOpen01Icon },
   { page: 'repositories', label: 'Repositórios', icon: Folder01Icon },
 ] as const
 

@@ -36,20 +36,20 @@ Os níveis de fluxo ajustam as etapas: **Simples** gera apenas a checklist de im
 | Desktop               | Tauri 2, Rust e WebView2                                                               |
 | Projetos e automações | Git, worktrees, Claude Code ou Codex CLI; GitHub CLI e Jira como integrações opcionais |
 
-Os cards e as preferências ficam em arquivos locais. O backend do aplicativo desktop roda no WSL e atende apenas em 127.0.0.1; veja [a documentação do backend](./server/README.md) para detalhes.
+Os cards e as preferências ficam em arquivos locais. O backend do aplicativo desktop roda nativamente no macOS e no WSL no Windows, atendendo apenas em 127.0.0.1; veja [a documentação do backend](./server/README.md) para detalhes.
 
 ## Compatibilidade atual
 
 | Área                    | Compatibilidade                                                                                                                                                                                                                                   |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sistema operacional     | Aplicativo desktop desenvolvido para **Windows 11 com WSL2**. O frontend também pode rodar no navegador para desenvolvimento, mas o fluxo desktop Windows → WSL é o caminho principal. Não há pacote desktop validado para macOS ou Linux nativo. |
+| Sistema operacional     | Aplicativo desktop para **Windows 11 com WSL2** e **macOS**. No macOS, o backend roda localmente com um runtime Node.js incluído no pacote. O frontend também pode rodar no navegador para desenvolvimento. Linux desktop não está habilitado. |
 | Editores                | Detecção de Cursor, VS Code, Windsurf, Zed, Sublime Text, IntelliJ IDEA, WebStorm e PyCharm. Também é possível informar o comando de outro editor. O editor precisa estar instalado e acessível no ambiente configurado.                          |
-| IA                      | **Claude** via Claude Code ou **ChatGPT** via Codex CLI, selecionados nas configurações. As ferramentas correspondentes precisam estar instaladas e autenticadas no WSL para usar chat e etapas automáticas.                                      |
+| IA                      | **Claude** via Claude Code ou **ChatGPT** via Codex CLI, selecionados nas configurações. As ferramentas correspondentes precisam estar instaladas e autenticadas no ambiente local escolhido para usar chat e etapas automáticas.                                      |
 | Repositórios e serviços | Repositórios Git locais; GitHub CLI (gh) para pull requests; Jira opcional para importar tarefas e sincronizar status.                                                                                                                            |
 
 ## Rodar localmente
 
-### Pré-requisitos
+### Windows
 
 - Windows 11 com WSL2 e uma distribuição Linux configurada;
 - Node.js 20 e npm no Windows; Node.js 18.19 ou superior, Git, bash e sh no WSL;
@@ -66,7 +66,21 @@ npm ci
 npm run tauri:dev
 ```
 
-O comando compila o backend, inicia o Vite e abre o aplicativo desktop. Execute-o no PowerShell, pois o script desktop rejeita Linux/WSLg. Na primeira abertura, escolha o editor, a pasta dos cards, a pasta das worktrees e o provedor de IA. Para cards e worktrees, use caminhos absolutos do WSL, por exemplo /home/usuario/mega-brain-files/workspace.
+O comando compila o backend, inicia o Vite e abre o aplicativo desktop. Execute-o no PowerShell. Na primeira abertura, escolha o editor, a pasta dos cards, a pasta das worktrees e o provedor de IA. Para cards e worktrees, use caminhos absolutos do WSL, por exemplo /home/usuario/mega-brain-files/workspace.
+
+### macOS
+
+- macOS com Xcode Command Line Tools, Rust 1.88 ou superior, Node.js e npm;
+- Git e as ferramentas que você quiser usar com os agentes (Claude Code, Codex CLI, GitHub CLI) instalados e autenticados no macOS.
+
+```sh
+git clone <URL_DO_REPOSITORIO>
+cd mega-brain
+npm ci
+npm run tauri:dev
+```
+
+O comando inicia o Vite e o backend local e abre a janela Tauri. Para gerar o aplicativo e o instalador DMG, execute `npm run tauri:build`. O runtime Node.js é incluído no pacote; cada build usa a arquitetura da máquina que o gerou.
 
 Para trabalhar apenas na interface web durante o desenvolvimento:
 
@@ -93,3 +107,9 @@ Este repositório ainda não contém um arquivo de licença. Consulte os mantene
 ## Triagem experimental de cards
 
 Consulte [a integração Jev (TypeSafe)](docs/integrations/jev-card-triage.md) para configuração, limites e avaliação.
+
+### Pausar e retomar um card
+
+O controle de pausa no card e no detalhe da task encerra os agentes da etapa gerenciados pelo Mega-Brain e salva a execução. Aguarde o card mostrar **Agentes pausados · progresso salvo** antes de fechar o app. Ao abrir novamente, use **Retomar agentes deste card** para continuar na mesma etapa, com os checklists, arquivos e worktrees preservados. Os agentes Claude e Codex retomam a sessão salva quando ela já foi criada. Itens concluídos não são executados novamente.
+
+A retomada mantém o provedor, modelo, esforço e perfil Codex usados na execução original. Retome o card antes de iniciar outra execução na mesma pasta. Para mudar a etapa ou o fluxo, retome ou interrompa a execução primeiro; a ação de interrupção continua restaurando os artefatos da etapa. Agentes abertos independentemente no terminal têm seu próprio ciclo de execução.

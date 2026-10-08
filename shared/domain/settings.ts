@@ -1,4 +1,4 @@
-export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
 
 export interface ModelStageSettings {
   model: string

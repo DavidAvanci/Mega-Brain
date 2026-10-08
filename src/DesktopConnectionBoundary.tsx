@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { refresh } from './features/cards/model/card-commands'
 import { retryDesktopConnection, useDesktopConnection } from './desktopConnection'
 import {
+  isMacOSDesktop,
   listDesktopWslDistributions,
   selectDesktopWslDistribution,
   setDesktopWslWorkspaceDir,
@@ -11,10 +12,11 @@ import { DesktopWindowControls, invokeDesktopWindowCommand } from './DesktopWind
 import { BrainIcon } from './BrainIcon'
 
 function StartupTitlebar() {
+  const macOS = isMacOSDesktop()
   return (
     <header
       data-tauri-drag-region
-      className="flex min-h-11 shrink-0 items-center gap-2.5 border-b bg-card pl-4"
+      className={`app-header flex min-h-11 shrink-0 items-center gap-2.5 border-b bg-card pl-4 ${macOS ? 'app-header--macos' : ''}`}
       onDoubleClick={(event) => {
         if (!(event.target as Element).closest('button')) void invokeDesktopWindowCommand('toggle_maximize_main_window')
       }}
@@ -24,7 +26,7 @@ function StartupTitlebar() {
         Mega Brain
       </span>
       <span data-tauri-drag-region className="flex-1" />
-      <DesktopWindowControls />
+      {!macOS && <DesktopWindowControls />}
     </header>
   )
 }
@@ -38,14 +40,20 @@ function message(phase: ReturnType<typeof useDesktopConnection>['phase']): strin
   if (phase === 'distribution-not-found')
     return 'A distribuição WSL configurada não foi encontrada. Instale-a ou selecione uma distribuição válida e tente novamente.'
   if (phase === 'runtime-unavailable')
-    return 'O runtime Node.js não está disponível na distribuição WSL. Instale o Node.js 18.19 ou superior e tente novamente.'
+    return isMacOSDesktop()
+      ? 'Não foi possível iniciar o runtime local do Mega Brain. Reinstale o aplicativo e tente novamente.'
+      : 'O runtime Node.js não está disponível na distribuição WSL. Instale o Node.js 18.19 ou superior e tente novamente.'
   if (phase === 'invalid-workspace')
     return 'O workspace configurado não é válido. Verifique se o diretório existe e tente novamente.'
   if (phase === 'backend-incompatible')
     return 'O backend instalado é incompatível com esta versão do Mega Brain. Atualize ou reinstale o aplicativo e tente novamente.'
   if (phase === 'backend-failed')
-    return 'O processo do backend encerrou durante a inicialização. Consulte a saída do PowerShell e tente novamente.'
-  return 'O backend local está indisponível. Verifique o WSL e tente novamente.'
+    return isMacOSDesktop()
+      ? 'O processo local do backend encerrou durante a inicialização. Consulte os diagnósticos e tente novamente.'
+      : 'O processo do backend encerrou durante a inicialização. Consulte a saída do PowerShell e tente novamente.'
+  return isMacOSDesktop()
+    ? 'O backend local está indisponível. Consulte os diagnósticos e tente novamente.'
+    : 'O backend local está indisponível. Verifique o WSL e tente novamente.'
 }
 
 /** Keeps mounted content alive after the first successful connection. */

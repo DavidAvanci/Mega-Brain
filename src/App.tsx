@@ -1,3 +1,4 @@
+import { useAgentSounds } from './useAgentSounds'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -23,12 +24,13 @@ import { NewCardDialog } from './features/cards/ui/NewCard'
 import { AppSidebar } from './AppSidebar'
 import type { AppPage } from './AppSidebar'
 import { useAttention } from './useAttention'
+import { useActivityIsland } from './useActivityIsland'
 import { usePanScroll } from './usePanScroll'
 import { cn } from '@/lib/utils'
 import { STATUS_GROUPS } from './statusMeta'
 import { STATUS_LABELS, type Card, type Status } from '../shared/domain/cards'
 import type { EditorDiscovery, MegaBrainSettings } from '../shared/domain/settings'
-import { isTauriDesktop } from './desktopBootstrap'
+import { isMacOSDesktop, isTauriDesktop } from './desktopBootstrap'
 import { DesktopWindowControls, invokeDesktopWindowCommand } from './DesktopWindowControls'
 import { BrainIcon } from './BrainIcon'
 
@@ -43,11 +45,17 @@ const OnboardingDialog = lazy(() =>
   import('./OnboardingDialog').then((module) => ({ default: module.OnboardingDialog })),
 )
 const AgentsPage = lazy(() => import('./features/agents/AgentsPage').then((module) => ({ default: module.AgentsPage })))
-const RepositoriesPage = lazy(() => import('./features/repositories/RepositoriesPage').then((module) => ({ default: module.RepositoriesPage })))
+const RepositoriesPage = lazy(() =>
+  import('./features/repositories/RepositoriesPage').then((module) => ({ default: module.RepositoriesPage })),
+)
+
+const KnowledgePage = lazy(() =>
+  import('./features/knowledge/KnowledgePage').then((module) => ({ default: module.KnowledgePage })),
+)
 
 export default function App() {
   const { cards, error, loaded } = useCards()
-  useAttention(cards, loaded)
+  const macOS = isMacOSDesktop()
   const [opened, setOpened] = useState<{ id: string; tab?: string } | null>(() => {
     if (isTauriDesktop()) return null
     const params = new URLSearchParams(window.location.search)
@@ -56,6 +64,7 @@ export default function App() {
   })
   const [dragId, setDragId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'general' | 'island'>('general')
   const [deployPrsOpen, setDeployPrsOpen] = useState(false)
   const [onboarding, setOnboarding] = useState<{ settings: MegaBrainSettings; editors: EditorDiscovery } | null>(null)
   const [newCardOpen, setNewCardOpen] = useState(false)
@@ -103,6 +112,19 @@ export default function App() {
     window.history.pushState({}, '', url)
   }, [])
 
+  const openIslandSettings = useCallback(() => {
+    setSettingsTab('island')
+    setSettingsOpen(true)
+  }, [])
+  const openGeneralSettings = useCallback(() => {
+    setSettingsTab('general')
+    setSettingsOpen(true)
+  }, [])
+  const openIslandAgents = useCallback(() => setPage('agents'), [])
+  const taskSounds = useActivityIsland(openCardDetail, openIslandSettings, openIslandAgents)
+  useAttention(cards, loaded, taskSounds)
+  useAgentSounds(taskSounds)
+
   const closeCardDetail = useCallback(() => {
     setOpened(null)
     if (isTauriDesktop()) return
@@ -148,10 +170,13 @@ export default function App() {
 
   return (
     <TooltipProvider delay={300}>
-      <div className="relative flex h-dvh min-h-0 flex-col bg-background text-sm">
+      <div className="app-shell relative flex h-dvh min-h-0 flex-col bg-background text-sm">
         <header
           data-tauri-drag-region
-          className="flex min-h-11 shrink-0 items-center gap-2.5 border-b bg-card pl-3 md:pl-4"
+          className={cn(
+            'app-header flex min-h-11 shrink-0 items-center gap-2.5 border-b bg-card pl-3 md:pl-4',
+            macOS && 'app-header--macos',
+          )}
           onDoubleClick={(event) => {
             if (isTauriDesktop() && !(event.target as Element).closest('button, input, select, a')) {
               runWindowControl('toggle_maximize_main_window')
@@ -168,16 +193,21 @@ export default function App() {
             cards={cards}
             onOpenCard={openCardDetail}
             onNewCard={openNewCard}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={openGeneralSettings}
             onOpenRepositories={() => setPage('repositories')}
+            onOpenKnowledge={() => setPage('knowledge')}
           />
-          {isTauriDesktop() && <DesktopWindowControls onError={setWindowControlError} />}
+          {isTauriDesktop() && !macOS && <DesktopWindowControls onError={setWindowControlError} />}
         </header>
 
         <div className="flex min-h-0 flex-1">
-          <AppSidebar activePage={page} onNavigate={setPage} onOpenSettings={() => setSettingsOpen(true)} />
+          <AppSidebar activePage={page} onNavigate={setPage} onOpenSettings={openGeneralSettings} />
 
-          {page === 'kanban' ? (
+          {page === 'knowledge' ? (
+            <Suspense fallback={<p className="p-8 text-muted-foreground">Carregando conhecimento…</p>}>
+              <KnowledgePage />
+            </Suspense>
+          ) : page === 'kanban' ? (
             <section className="relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Página Kanban">
               {(error || windowControlError) && (
                 <div
@@ -259,7 +289,7 @@ export default function App() {
         <Suspense fallback={null}>
           {openCard && <CardModal card={openCard} initialTab={opened?.tab} onClose={closeCardDetail} />}
           {deployPrsOpen && <DeployPrsDialog cards={cards} onClose={() => setDeployPrsOpen(false)} />}
-          {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+          {settingsOpen && <SettingsDialog initialTab={settingsTab} onClose={() => setSettingsOpen(false)} />}
           {onboarding && (
             <OnboardingDialog
               initial={onboarding.settings}

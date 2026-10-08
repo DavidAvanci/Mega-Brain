@@ -1,3 +1,5 @@
+import { CardAgentControl } from './CardAgentControl'
+import { CardKnowledgeAttachments } from '@/features/knowledge/CardKnowledgeAttachments'
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
@@ -410,7 +412,7 @@ function ClearLatestStageButton({ card }: { card: Card }) {
   const [pending, setPending] = useState(false)
   if (!stage || !label) return null
   const running = card.agents?.some(
-    (agent) => agent.stage === stage && ['rodando', 'aguardando'].includes(agent.status),
+    (agent) => agent.stage === stage && ['rodando', 'aguardando', 'pausado'].includes(agent.status),
   )
   const clear = async () => {
     setPending(true)
@@ -473,6 +475,7 @@ function AgentStatusRow({ agent, cardId }: { agent: AgentInfo; cardId: string })
     <div className="flex flex-col gap-1.5">
       <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
         <AgentBadge agent={agent} cardId={cardId} muted={stopping} />
+        <CardAgentControl agent={agent} cardId={cardId} />
         {agent.stage ? (
           <StageResetButton agent={agent} cardId={cardId} iconOnly onPendingChange={setStopping} />
         ) : (
@@ -487,6 +490,11 @@ function AgentStatusRow({ agent, cardId }: { agent: AgentInfo; cardId: string })
           </span>
         )}
       </div>
+      {agent.status === 'pausado' && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Progresso salvo. Você pode fechar o app e retomar este card depois.
+        </p>
+      )}
       {progress && (
         <Progress value={progress.done} max={progress.total} aria-label={`Progresso do agente ${agentName(agent)}`} />
       )}
@@ -597,7 +605,10 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
                     />
                     <span>Gastos dos agentes:</span>
                     <strong className="font-medium tabular-nums text-foreground">
-                      {formatAgentTime(usage.durationMs)} • ${usage.costUsd.toFixed(2).replace('.', ',')}
+                      {formatAgentTime(usage.durationMs)} •{' '}
+                      {usage.runs > 0 && usage.unpricedRuns === usage.runs
+                        ? 'indisponível'
+                        : `$${usage.costUsd.toFixed(usage.costUsd > 0 && usage.costUsd < 0.01 ? 4 : 2)}${usage.unpricedRuns ? ' (parcial)' : ''}`}
                     </strong>
                     {usage.unpricedRuns > 0 && (
                       <span title={`${usage.unpricedRuns} execução(ões) sem custo informado pela CLI`}>
@@ -698,6 +709,7 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
                     onChange={(event) => setDescriptionDraft(event.target.value)}
                   />
                 ) : descriptionText ? <Markdown text={descriptionText} /> : <Placeholder>Sem descrição.</Placeholder>}
+                <CardKnowledgeAttachments card={card} />
               </TabsContent>
               {FILE_TABS.map((tab) => {
                 const content = files?.[tab.file]
@@ -759,8 +771,8 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
             aria-label="Chat do card"
           >
             <div className="shrink-0 border-b px-5 py-3">
-              <h2 className="text-sm font-semibold">Chat</h2>
-              <p className="text-[11px] text-muted-foreground">Converse com o agente desta task.</p>
+              <h2 className="text-sm font-semibold">Chat e execuções</h2>
+              <p className="text-[11px] text-muted-foreground">Acompanhe a task e envie orientações ao agente.</p>
             </div>
             <div className="min-h-0 flex-1">
               <Suspense

@@ -32,3 +32,8 @@ commands.allow = ["open_diagnostics_folder"]
 identifier = "allow-window-controls"
 description = "Allows the main WebView to minimize, maximize or close only its own window."
 commands.allow = ["minimize_main_window", "toggle_maximize_main_window", "close_main_window"]
+
+[[permission]]
+identifier = "allow-list-island-monitors"
+description = "Allows the WebView to list displays for the native activity island."
+commands.allow = ["list_island_monitors"]

@@ -13,6 +13,7 @@ import { createStageController } from './stage-controller'
 import { inspectCard, inspectCardDiff } from './card-inspection'
 import { createSmartDiffReview } from './smart-diff-review'
 import type { AgentSession } from '../../shared/domain/agents'
+import type { CodexModelCatalog } from '../../shared/domain/codex-models'
 import { completeWorkspaceConfig, type WorkspaceConfigInput } from './workspace-config'
 import { openAgentTerminal, openDevEnvironment, openDevEnvironmentAgent, openPullRequests } from './card-actions'
 import { updateCard } from './card-update'
@@ -49,6 +50,7 @@ export function createWorkspaceService(
   runner: ProcessRunner = nodeProcessRunner,
   owner?: ProcessOwner,
   agentSessions: () => readonly AgentSession[] = () => [],
+  codexModels?: () => Promise<CodexModelCatalog>,
 ): WorkspaceService {
   const config = completeWorkspaceConfig(inputConfig)
   const stages = createStageController(config, runner, owner)
@@ -64,7 +66,8 @@ export function createWorkspaceService(
       mkdirSync(root, { recursive: true })
       if (method === 'GET') {
         if (path === '/settings/editors') return availableWorkspaceEditors(config)
-        if (path === '/settings') return readWorkspaceSettings(config, root)
+        if (path === '/settings') return readWorkspaceSettings(config, root,
+          config.preferences.llmProvider === 'chatgpt' ? await codexModels?.() : undefined)
         if (path === '/')
           return listBoardCards(
             root,
@@ -92,7 +95,8 @@ export function createWorkspaceService(
       if (method !== 'POST') throw new Error('Método não suportado')
       const data = (body ?? {}) as Record<string, unknown>
       if (path === '/settings') {
-        const result = writeWorkspaceSettings(config, data)
+        const provider = (data.general as { llmProvider?: unknown } | undefined)?.llmProvider ?? config.preferences.llmProvider
+        const result = writeWorkspaceSettings(config, data, provider === 'chatgpt' ? await codexModels?.() : undefined)
         root = result.root
         assertTestWorkspace(root)
         mkdirSync(root, { recursive: true })
@@ -127,6 +131,14 @@ export function createWorkspaceService(
       }
       if (path === '/dev-env/agent') {
         openDevEnvironmentAgent(cardPath, config, runner)
+        return { ok: true }
+      }
+      if (path === '/stage/pause') {
+        await stages.pause(cardPath, data.stage)
+        return { ok: true }
+      }
+      if (path === '/stage/resume') {
+        stages.resume(cardPath, data.stage)
         return { ok: true }
       }
       if (path === '/stage/reset') {

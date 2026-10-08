@@ -1,3 +1,4 @@
+import { validCheckpoint, stageSessionId } from './agent-checkpoint'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { AgentInfo } from '../../shared/domain/agents'
@@ -51,18 +52,42 @@ export function canRetryStageWithOpus(path: string, stage: Stage): boolean {
 export function readAgent(path: string, alive: (pid: number) => boolean = pidAlive): AgentInfo | null {
   const metaFile = join(path, AGENT_FILE)
   if (!existsSync(metaFile)) return null
-  let meta: { pid?: number; startedAt?: string; stage?: string } = {}
+  let meta: {
+    pid?: number
+    startedAt?: string
+    stage?: string
+    provider?: AgentInfo['provider']
+    codexProfileId?: string
+    codexProfileName?: string
+    codexProfileColor?: string
+    pausedAt?: string
+    sessionId?: string
+    resume?: import('./agent-checkpoint').StageCheckpoint
+  } = {}
   try {
     meta = JSON.parse(readFileSync(metaFile, 'utf8'))
   } catch {}
   const stage = STAGES.find((candidate) => candidate.name === meta.stage) ?? STAGES[0]
   const info: AgentInfo = { stage: stage.name, status: 'rodando', startedAt: meta.startedAt }
+  if (meta.provider === 'claude' || meta.provider === 'codex') info.provider = meta.provider
+  if (meta.provider === 'codex') {
+    info.codexProfileId = meta.codexProfileId
+    info.codexProfileName = meta.codexProfileName
+    info.codexProfileColor = meta.codexProfileColor
+  }
   let finished = false
   const stream = join(path, `${stage.name}.jsonl`)
+  info.sessionId = meta.sessionId ?? stageSessionId(stream)
   if (existsSync(stream)) {
     for (const line of readTail(stream, STREAM_TAIL_BYTES).split('\n')) {
       const event = parseJsonRecord(line)
       if (!event) continue
+      if (event?.type === 'mega_brain.resume') {
+        finished = false
+        info.status = 'rodando'
+        info.activity = undefined
+        info.error = undefined
+      }
       if (typeof event?.session_id === 'string') info.sessionId = event.session_id
       if (event?.type === 'thread.started' && typeof event.thread_id === 'string') info.sessionId = event.thread_id
       if (event?.type === 'result') {
@@ -96,7 +121,13 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
       }
     }
   }
-  if (!finished) info.status = typeof meta.pid === 'number' && alive(meta.pid) ? 'rodando' : 'morto'
+  info.resumable = validCheckpoint(meta.resume)
+  if (meta.pausedAt || (!finished && info.resumable && !(typeof meta.pid === 'number' && alive(meta.pid)))) {
+    info.status = 'pausado'
+    info.pausedAt = meta.pausedAt
+    info.activity = undefined
+    info.error = undefined
+  } else if (!finished) info.status = typeof meta.pid === 'number' && alive(meta.pid) ? 'rodando' : 'morto'
   if (info.status === 'rodando') {
     const flow = readFlow(readCard(path, basename(path)).flow)
     const { done, total, phase } = stage.progress(path, meta.startedAt, flow)

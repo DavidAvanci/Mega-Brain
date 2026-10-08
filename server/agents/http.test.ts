@@ -42,3 +42,19 @@ test('rejects malformed stop requests without touching a process', async () => {
   })
   expect(stopped).toEqual([])
 })
+
+test('passes the profile when stopping sessions with the same Codex UUID', async () => {
+  const stopped: { id: string; profile?: string }[] = []
+  const handler = agentsHttp({
+    list: () => ({ sessions: [], scannedAt: '2026-09-21T12:00:00Z' }),
+    stop: (id, profile) => stopped.push({ id, profile }),
+  })
+  await expect(
+    handler(request('POST', '/api/agents/stop', { id: 'same-id', codexProfileId: 'work' })),
+  ).resolves.toMatchObject({ status: 200 })
+  expect(stopped).toEqual([{ id: 'same-id', profile: 'work' }])
+  await expect(
+    handler(request('POST', '/api/agents/stop', { id: 'same-id', codexProfileId: 42 })),
+  ).resolves.toMatchObject({ status: 500 })
+  expect(stopped).toHaveLength(1)
+})

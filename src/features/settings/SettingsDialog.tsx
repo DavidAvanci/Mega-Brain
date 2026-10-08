@@ -1,6 +1,8 @@
+import { ActivityIslandSettings } from './ActivityIslandSettings'
+import { CodexProfilesSettings } from './CodexProfilesSettings'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { PaintBrush01Icon, ToolsIcon } from '@hugeicons/core-free-icons'
-import type { CSSProperties } from 'react'
+import { PaintBrush01Icon, ToolsIcon, Refresh01Icon } from '@hugeicons/core-free-icons'
+import { useState, type CSSProperties } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -23,22 +25,16 @@ import {
   type ThemeSettings,
 } from '@/theme'
 import { GeneralSettingsForm } from '@/GeneralSettingsForm'
-import { isTauriDesktop } from '@/desktopBootstrap'
+import { isMacOSDesktop, isTauriDesktop } from '@/desktopBootstrap'
 import { useSettingsDialog } from './useSettingsDialog'
+import { Tip } from '@/Tip'
+import { codexModelFor, EFFORT_DETAILS, FALLBACK_CODEX_CATALOG, supportedEfforts } from '../../../shared/domain/codex-models'
 
 const CLAUDE_MODELS = [
   { value: 'fable', label: 'Fable' },
   { value: 'opus', label: 'Opus' },
   { value: 'sonnet', label: 'Sonnet' },
   { value: 'haiku', label: 'Haiku' },
-]
-const CHATGPT_MODELS = [
-  { value: 'default', label: 'Automático' },
-  { value: 'gpt-6-astra', label: 'Astra' },
-  { value: 'gpt-5.6-sol', label: 'Sol' },
-  { value: 'gpt-5.6-terra', label: 'Terra' },
-  { value: 'gpt-5.6-luna', label: 'Luna' },
-  { value: 'gpt-5.5', label: 'GPT-5.5' },
 ]
 
 const PROMPT_FIELDS: { key: keyof PromptSettings; title: string; help: string }[] = [
@@ -204,13 +200,6 @@ const THEME_CATEGORIES: {
   },
 ]
 
-const EFFORTS: { value: Effort; label: string; activeClass: string }[] = [
-  { value: 'low', label: 'Low', activeClass: 'bg-primary/30' },
-  { value: 'medium', label: 'Medium', activeClass: 'bg-primary/45' },
-  { value: 'high', label: 'High', activeClass: 'bg-primary/65' },
-  { value: 'xhigh', label: 'X-high', activeClass: 'bg-primary/80' },
-  { value: 'max', label: 'Max', activeClass: 'bg-primary' },
-]
 const STAGES: { key: keyof BoardSettings; title: string; description: string }[] = [
   { key: 'task-planning', title: 'Planejamento', description: 'Criação do plano e checklists.' },
   { key: 'run-task-checklist', title: 'Desenvolvimento', description: 'Execução dos itens de desenvolvimento.' },
@@ -243,7 +232,7 @@ function ModelRadioGroup({
   label,
 }: {
   value: string
-  options: { value: string; label: string }[]
+  options: { value: string; label: string; description?: string }[]
   disabled?: boolean
   onChange: (value: string) => void
   label: string
@@ -262,9 +251,10 @@ function ModelRadioGroup({
             type="button"
             role="radio"
             aria-checked={selected}
+            title={option.description ?? option.label}
             disabled={disabled}
             onClick={() => onChange(option.value)}
-            className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 ${selected ? 'border-primary/40 bg-primary/10 text-foreground' : 'border-border/70 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+            className={`inline-flex min-h-10 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 ${selected ? 'border-primary/40 bg-primary/10 text-foreground' : 'border-border/70 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground'}`}
           >
             <span
               className={`grid size-3 place-items-center rounded-full border ${selected ? 'border-primary' : 'border-muted-foreground/50'}`}
@@ -285,35 +275,38 @@ function EffortScale({
   disabled,
   onChange,
   label,
+  options,
 }: {
   value: Effort
   disabled?: boolean
   onChange: (value: Effort) => void
   label: string
+  options: Effort[]
 }) {
-  const selectedIndex = EFFORTS.findIndex((effort) => effort.value === value)
+  const selectedIndex = options.indexOf(value)
   return (
-    <div className="grid grid-cols-5 gap-1" role="radiogroup" aria-label={label}>
-      {EFFORTS.map((effort, index) => {
-        const selected = effort.value === value
+    <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={label}>
+      {options.map((effort, index) => {
+        const selected = effort === value
         return (
           <button
-            key={effort.value}
+            key={effort}
             type="button"
             role="radio"
             aria-checked={selected}
+            title={EFFORT_DETAILS[effort].description}
             disabled={disabled}
-            onClick={() => onChange(effort.value)}
-            className={`group grid w-[40px] gap-1 rounded-md px-0.5 py-1 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 ${selected ? 'bg-primary/8' : 'hover:bg-muted/70'}`}
+            onClick={() => onChange(effort)}
+            className={`group grid min-h-10 min-w-10 gap-1 rounded-md px-1 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 ${selected ? 'bg-primary/8' : 'hover:bg-muted/70'}`}
           >
             <span
-              className={`h-1.5 rounded-full transition-colors ${index <= selectedIndex ? effort.activeClass : 'bg-muted'}`}
+              className={`h-1.5 rounded-full transition-colors ${index <= selectedIndex ? 'bg-primary' : 'bg-muted'}`}
               aria-hidden="true"
             />
             <span
               className={`text-[9px] leading-none ${selected ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
             >
-              {effort.label}
+              {EFFORT_DETAILS[effort].label}
             </span>
           </button>
         )
@@ -322,7 +315,14 @@ function EffortScale({
   )
 }
 
-export function SettingsDialog({ onClose }: { onClose: () => void }) {
+export function SettingsDialog({
+  onClose,
+  initialTab = 'general',
+}: {
+  onClose: () => void
+  initialTab?: 'general' | 'tools' | 'island'
+}) {
+  const [tab, setTab] = useState<string>(initialTab)
   const theme = useThemeSettings()
   const colorMode = useTheme()
   const desktop = isTauriDesktop()
@@ -333,6 +333,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     autostartLoaded,
     error,
     saving,
+    codexCatalog = FALLBACK_CODEX_CATALOG,
+    codexModelsLoading = false,
+    refreshModels,
     setAutostartEnabled,
     updateStage,
     updateGeneral,
@@ -352,7 +355,12 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         {!settings ? (
           <p className="border-t px-5 py-10 text-sm text-muted-foreground">Carregando configurações…</p>
         ) : (
-          <Tabs defaultValue="general" orientation="vertical" className="min-h-0 flex-1 gap-0 border-t">
+          <Tabs
+            value={tab}
+            onValueChange={(value) => setTab(String(value))}
+            orientation="vertical"
+            className="min-h-0 flex-1 gap-0 border-t"
+          >
             <TabsList
               variant="line"
               className="w-36 shrink-0 justify-start gap-1 rounded-none border-r bg-muted/25 p-2"
@@ -366,6 +374,11 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
               <TabsTrigger value="prompts" className="h-9 min-w-0 px-2 text-xs">
                 <HugeiconsIcon icon={ToolsIcon} strokeWidth={2} /> Prompts
               </TabsTrigger>
+              {isMacOSDesktop() && (
+                <TabsTrigger value="island" className="h-9 min-w-0 px-2 text-xs">
+                  <HugeiconsIcon icon={ToolsIcon} strokeWidth={2} /> Ilha Dinâmica
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="general" className="max-h-[65vh] overflow-y-auto p-4 sm:p-5">
@@ -491,7 +504,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                     <div>
                       <h3 className="text-sm font-medium">Inicialização</h3>
                       <p className="text-xs text-muted-foreground">
-                        Controle quando o aplicativo deve ser aberto no Windows.
+                        Controle quando o aplicativo deve ser aberto ao entrar no{' '}
+                        {isMacOSDesktop() ? 'macOS' : 'Windows'}.
                       </p>
                     </div>
                     <button
@@ -505,7 +519,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                       <span>
                         <span className="block text-xs font-medium">Abrir ao iniciar o computador</span>
                         <span className="block text-[11px] text-muted-foreground">
-                          Inicia o Mega Brain automaticamente após entrar no Windows.
+                          Inicia o Mega Brain automaticamente após entrar na sua conta do sistema.
                         </span>
                       </span>
                       <span
@@ -550,13 +564,30 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                   disabled={saving}
                   initialEditors={editorDiscovery}
                 />
+                <CodexProfilesSettings />
                 <section className="grid gap-2">
-                  <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
                     <h3 className="text-sm font-medium">Agentes por etapa</h3>
                     <p className="text-xs text-muted-foreground">
                       Modelo e intensidade de raciocínio usados em cada parte do fluxo.
                     </p>
+                    </div>
+                    {settings.general.llmProvider === 'chatgpt' && (
+                      <Tip label="Atualizar modelos do Codex">
+                        <Button variant="ghost" size="icon" className="size-10 shrink-0" aria-label="Atualizar modelos do Codex" onClick={refreshModels} disabled={codexModelsLoading || saving}>
+                          <HugeiconsIcon icon={Refresh01Icon} size={16} />
+                        </Button>
+                      </Tip>
+                    )}
                   </div>
+                  {settings.general.llmProvider === 'chatgpt' && (
+                    <p className="text-xs text-muted-foreground" role="status">
+                      {codexModelsLoading ? 'Consultando modelos do Codex…' : codexCatalog.source === 'codex'
+                        ? `Modelos e efforts informados pelo Codex${codexCatalog.profileName ? ` · ${codexCatalog.profileName}` : ''}.`
+                        : 'Catálogo de referência: não foi possível consultar o Codex. A disponibilidade depende da conta e da versão instalada.'}
+                    </p>
+                  )}
                   <div className="divide-y overflow-hidden rounded-lg border">
                     {STAGES.map(({ key, title, description }) => (
                       <fieldset key={key} className="grid gap-2.5 p-3">
@@ -565,7 +596,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                           <div className="text-xs font-semibold">{title}</div>
                           <p className="text-[10px] text-muted-foreground">{description}</p>
                         </div>
-                        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                        <div className="grid gap-3">
                           <div className="grid gap-1">
                             <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                               Modelo
@@ -574,9 +605,19 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                               label={`Modelo para ${title}`}
                               value={settings.stages[key].model}
                               onChange={(model) => updateStage(key, 'model', model)}
-                              disabled={saving}
-                              options={settings.general.llmProvider === 'chatgpt' ? CHATGPT_MODELS : CLAUDE_MODELS}
+                              disabled={saving || (settings.general.llmProvider === 'chatgpt' && codexModelsLoading)}
+                              options={settings.general.llmProvider === 'chatgpt' ? [
+                                { value: 'default', label: 'Automático', description: 'Usa o modelo padrão configurado no Codex para este perfil.' },
+                                ...codexCatalog.models.map((model) => ({ value: model.id, label: model.label, description: model.description })),
+                              ] : CLAUDE_MODELS}
                             />
+                            {settings.general.llmProvider === 'chatgpt' && (
+                              <p className="text-xs leading-relaxed text-muted-foreground">
+                                {settings.stages[key].model === 'default' ? 'Usa o modelo padrão configurado no Codex para este perfil.'
+                                  : codexModelFor(settings.stages[key].model, codexCatalog)?.description
+                                    ?? 'Modelo salvo fora do catálogo atual. Verifique se ele está disponível neste perfil.'}
+                              </p>
+                            )}
                           </div>
                           <div className="grid gap-1">
                             <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -585,9 +626,15 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                             <EffortScale
                               label={`Effort para ${title}`}
                               value={settings.stages[key].effort}
+                              options={supportedEfforts(settings.general.llmProvider, settings.stages[key].model, codexCatalog)}
                               onChange={(effort) => updateStage(key, 'effort', effort)}
-                              disabled={saving}
+                              disabled={saving || (settings.general.llmProvider === 'chatgpt' && codexModelsLoading)}
                             />
+                            <p className="text-xs leading-relaxed text-muted-foreground">
+                              {supportedEfforts(settings.general.llmProvider, settings.stages[key].model, codexCatalog).includes(settings.stages[key].effort)
+                                ? EFFORT_DETAILS[settings.stages[key].effort].description
+                                : 'O effort salvo não é suportado pelo modelo. Selecione uma das opções disponíveis.'}
+                            </p>
                           </div>
                         </div>
                       </fieldset>
@@ -632,15 +679,22 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             </TabsContent>
+            {isMacOSDesktop() && (
+              <TabsContent value="island" className="max-h-[65vh] overflow-y-auto p-4 sm:p-5">
+                <ActivityIslandSettings />
+              </TabsContent>
+            )}
           </Tabs>
         )}
         <DialogFooter className="mx-0 mb-0 rounded-none px-5 py-3">
           <Button variant="outline" onClick={close} disabled={saving}>
-            Cancelar
+            {tab === 'island' ? 'Fechar' : 'Cancelar'}
           </Button>
-          <Button onClick={save} disabled={!settings || saving}>
-            {saving ? 'Salvando…' : 'Salvar configurações'}
-          </Button>
+          {tab !== 'island' && (
+            <Button onClick={save} disabled={!settings || saving || (settings.general.llmProvider === 'chatgpt' && codexModelsLoading)}>
+              {saving ? 'Salvando…' : 'Salvar configurações'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

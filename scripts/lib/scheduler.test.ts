@@ -36,6 +36,18 @@ test('runs items respecting deps and marks results', async () => {
   expect(final).toContain('  > quebrou')
 })
 
+test('coordena dependências entre repositórios do mesmo workspace', async () => {
+  const file = tempChecklist('## takeat-platform\n- [ ] BE1 Criar contrato {files: src/api.ts}\n## external-api-docs\n- [ ] DOC1 Documentar contrato {files: content/api.mdx; deps: BE1}\n')
+  const executed: string[] = []
+  const summary = await runChecklist({ file, max: 4, execute: async item => {
+    if (item.id === 'DOC1') expect(executed).toEqual(['takeat-platform:BE1'])
+    executed.push(`${item.repo}:${item.id}`)
+    return { status: 'done' as const, note: 'Validado' }
+  } })
+  expect(executed).toEqual(['takeat-platform:BE1', 'external-api-docs:DOC1'])
+  expect(summary.done).toBe(2)
+})
+
 test('marks dependents of failures as blocked', async () => {
   const file = tempChecklist('## repo\n- [ ] T1 Base {files: a.ts}\n- [ ] T2 Dependente {files: b.ts; deps: T1}\n')
   const summary = await runChecklist({

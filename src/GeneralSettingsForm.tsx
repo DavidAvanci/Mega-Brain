@@ -185,7 +185,7 @@ export function GeneralSettingsForm({
                 variant="outline"
                 size="icon"
                 className="-ml-px shrink-0 rounded-l-none"
-                aria-label="Escolher workspace no Windows"
+                aria-label="Escolher workspace"
                 disabled={disabled || pickingDirectory !== null}
                 onClick={() => void pickDirectory('workspace')}
               >
@@ -213,7 +213,7 @@ export function GeneralSettingsForm({
                 variant="outline"
                 size="icon"
                 className="-ml-px shrink-0 rounded-l-none"
-                aria-label="Escolher raiz das worktrees no Windows"
+                aria-label="Escolher raiz das worktrees"
                 disabled={disabled || pickingDirectory !== null}
                 onClick={() => void pickDirectory('worktrees')}
               >

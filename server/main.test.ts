@@ -123,24 +123,28 @@ describe('standalone Node entrypoint', () => {
       expect(forbidden.headers.get('vary')).toBeNull()
     }
 
-    const preflight = await fetch(base, {
-      method: 'OPTIONS',
-      headers: {
-        Origin: 'https://tauri.localhost',
-        'Access-Control-Request-Method': 'POST',
-        'Access-Control-Request-Headers': 'authorization, content-type',
-      },
-    })
-    expect(preflight.status).toBe(204)
-    expect(preflight.headers.get('access-control-allow-origin')).toBe('https://tauri.localhost')
-    expect(preflight.headers.get('access-control-allow-methods')).toBe('GET, POST, DELETE')
-    expect(preflight.headers.get('access-control-allow-headers')).toBe('Authorization, Content-Type')
-    expect(preflight.headers.get('vary')).toBe('Origin')
-    expect(preflight.headers.get('access-control-allow-origin')).not.toBe('*')
+    for (const origin of ['http://tauri.localhost', 'https://tauri.localhost', 'tauri://localhost']) {
+      for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+        const preflight = await fetch(base, {
+          method: 'OPTIONS',
+          headers: {
+            Origin: origin,
+            'Access-Control-Request-Method': method,
+            'Access-Control-Request-Headers': 'authorization, content-type',
+          },
+        })
+        expect(preflight.status).toBe(204)
+        expect(preflight.headers.get('access-control-allow-origin')).toBe(origin)
+        expect(preflight.headers.get('access-control-allow-methods')).toBe('GET, POST, PUT, PATCH, DELETE')
+        expect(preflight.headers.get('access-control-allow-headers')).toBe('Authorization, Content-Type')
+        expect(preflight.headers.get('vary')).toBe('Origin')
+        expect(preflight.headers.get('access-control-allow-credentials')).toBeNull()
+      }
+    }
 
     const invalidPreflightHeaders: Record<string, string>[] = [
       { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' },
-      { Origin: 'http://tauri.localhost', 'Access-Control-Request-Method': 'PATCH' },
+      { Origin: 'http://tauri.localhost', 'Access-Control-Request-Method': 'TRACE' },
       {
         Origin: 'http://tauri.localhost',
         'Access-Control-Request-Method': 'POST',

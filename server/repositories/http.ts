@@ -1,5 +1,6 @@
 import type { ApiHandler, JsonResponse } from '../contracts'
 import { RepositoryDirtyError, type RepositoryRegistry } from './registry'
+import { repositoryMentions } from './mentions'
 
 export function repositoriesHttp(
   registry: RepositoryRegistry,
@@ -10,7 +11,7 @@ export function repositoriesHttp(
       const id = request.query.get('id') ?? ''
       if (request.path === '/api/repositories/mentions' && request.method === 'GET') {
         const repositories = await registry.list()
-        return json(200, repositories.filter((repo) => repo.active).map(({ id, alias, displayName }) => ({ id, alias, displayName })))
+        return json(200, repositoryMentions(repositories))
       }
       if (request.path === '/api/repositories' && request.method === 'GET') return json(200, await registry.list())
       if (request.path === '/api/repositories/preview' && request.method === 'POST') return json(200, await registry.preview(record(request.body).path))

@@ -1,3 +1,5 @@
+import { KnowledgeAttachments } from '@/features/knowledge/KnowledgeAttachments'
+import type { KnowledgeRef } from '../../../shared/domain/knowledge'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { SentIcon, StopIcon } from '@hugeicons/core-free-icons'
@@ -14,15 +16,16 @@ function Entry({ entry }: { entry: ChatEntry }) {
   if (entry.tool) {
     return (
       <p className="shrink-0 truncate pl-3 font-mono text-[11px] text-muted-foreground" title={entry.tool}>
-        {entry.tool}
+        {entry.source ? `${entry.source} · ` : ''}{entry.tool}
       </p>
     )
   }
   if (entry.role === 'user') {
-    return <p className="ml-auto max-w-[80%] rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-wrap">{entry.text}</p>
+    return <div className="ml-auto max-w-[80%] rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-wrap"><p>{entry.text}</p>{entry.queued && <p className="mt-1 text-[11px] text-muted-foreground">Pendente · será entregue na próxima chamada do agente</p>}</div>
   }
   return (
     <div className="min-w-0">
+      {entry.source && <p className="mb-1 text-[11px] text-muted-foreground">{entry.source}</p>}
       <Markdown text={entry.text ?? ''} />
     </div>
   )
@@ -33,10 +36,14 @@ export function ChatTab({ cardId }: { cardId: string }) {
   const [session, setSession] = useState<string | null>(null)
   const [settings, setSettings] = useState<ChatAgentSettings | null>(null)
   const [input, setInput] = useState('')
+  const [knowledgeRefs, setKnowledgeRefs] = useState<KnowledgeRef[]>([])
   const [streaming, setStreaming] = useState(false)
+  const [executionRunning, setExecutionRunning] = useState(false)
+  const [pendingMessages, setPendingMessages] = useState(0)
   const [focusRequest, setFocusRequest] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
+  const followLatest = useRef(true)
   const composer = useRef<HTMLDivElement>(null)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const actionButton = useRef<HTMLButtonElement>(null)
@@ -74,22 +81,28 @@ export function ChatTab({ cardId }: { cardId: string }) {
 
   useEffect(() => {
     let cancelled = false
-    fetchChat(cardId)
+    const refresh = () => fetchChat(cardId)
       .then((data) => {
         if (cancelled) return
-        setEntries(data.entries)
+        setEntries(previous => JSON.stringify(previous) === JSON.stringify(data.entries) ? previous : data.entries)
         setSession(data.sessionId)
         setSettings(data.settings ?? null)
+        setExecutionRunning(Boolean(data.executionRunning))
+        setPendingMessages(data.pendingMessages ?? 0)
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)))
+    if (streaming) return
+    void refresh()
+    const timer = setInterval(() => void refresh(), 1500)
     return () => {
       cancelled = true
+      clearInterval(timer)
     }
-  }, [cardId])
+  }, [cardId, streaming])
 
   useEffect(() => {
     const el = scroller.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el && followLatest.current) el.scrollTop = el.scrollHeight
   }, [entries])
 
   const append = (entry: ChatEntry) => setEntries((prev) => [...(prev ?? []), entry])
@@ -103,19 +116,25 @@ export function ChatTab({ cardId }: { cardId: string }) {
     setStreaming(true)
     append({ role: 'user', text })
     try {
-      await sendChat(cardId, text, (event) => {
-        if (event.type === 'settings') return setSettings(event.settings)
-        if (event.type === 'tool') return append({ role: 'assistant', tool: event.tool })
-        if (event.type === 'done') return event.error ? setError(event.error) : undefined
-        setEntries((prev) => {
-          const list = prev ?? []
-          const last = list[list.length - 1]
-          if (last?.role === 'assistant' && last.text !== undefined) {
-            return [...list.slice(0, -1), { ...last, text: last.text + event.text }]
-          }
-          return [...list, { role: 'assistant', text: event.text }]
-        })
-      })
+      await sendChat(
+        cardId,
+        text,
+        (event) => {
+          if (event.type === 'settings') return setSettings(event.settings)
+          if (event.type === 'queued') { setPendingMessages(count => count + 1); return }
+          if (event.type === 'tool') return append({ role: 'assistant', tool: event.tool })
+          if (event.type === 'done') return event.error ? setError(event.error) : undefined
+          setEntries((prev) => {
+            const list = prev ?? []
+            const last = list[list.length - 1]
+            if (last?.role === 'assistant' && last.text !== undefined) {
+              return [...list.slice(0, -1), { ...last, text: last.text + event.text }]
+            }
+            return [...list, { role: 'assistant', text: event.text }]
+          })
+        },
+        knowledgeRefs,
+      )
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -126,12 +145,13 @@ export function ChatTab({ cardId }: { cardId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {(executionRunning || pendingMessages > 0) && <p className="border-b px-5 py-2 text-[11px] text-muted-foreground" role="status">{executionRunning ? 'Execução em andamento · novas mensagens serão entregues na próxima chamada do agente.' : 'Execução encerrada · envie uma mensagem para continuar a conversa.'}{pendingMessages > 0 ? ` ${pendingMessages} mensagem(ns) pendente(s).` : ''}</p>}
       {settings && (
         <p className="border-b px-5 py-2 text-[11px] text-muted-foreground" aria-label="Configuração do agente">
           {settings.model} · effort {settings.effort}
         </p>
       )}
-      <div ref={scroller} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+      <div ref={scroller} onScroll={() => { const el = scroller.current; if (el) followLatest.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
         {entries === null ? (
           <>
             <Skeleton className="ml-auto h-8 w-1/3" />
@@ -147,6 +167,14 @@ export function ChatTab({ cardId }: { cardId: string }) {
         )}
         {streaming && <Spinner className="text-muted-foreground" />}
       </div>
+      <div className="px-5 py-1">
+        <KnowledgeAttachments
+          value={knowledgeRefs}
+          onChange={setKnowledgeRefs}
+          onMention={(mention) => setInput((previous) => `${previous}${previous ? ' ' : ''}${mention} `)}
+          disabled={streaming}
+        />
+      </div>
       {error && <p className="px-5 pb-2 text-xs text-destructive">{error}</p>}
       <div ref={composer} className="flex items-end gap-2 border-t px-5 py-3">
         <RepositoryMentionTextarea
@@ -161,7 +189,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
             e.preventDefault()
             send()
           }}
-          placeholder={session ? 'Peça um ajuste ao agente…' : 'Comece uma sessão nessa pasta…'}
+          placeholder={executionRunning ? 'Adicione uma orientação à execução…' : session || entries?.length ? 'Peça um ajuste ao agente…' : 'Comece uma sessão nessa pasta…'}
           className={cn('max-h-40 min-h-10 resize-none', streaming && 'opacity-60')}
           disabled={streaming}
         />

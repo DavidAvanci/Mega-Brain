@@ -1,10 +1,12 @@
 import { execFile, execFileSync, spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { expect, test } from 'vitest'
+import { createServer } from 'node:net'
+import { dirname, join } from 'node:path'
+import { afterEach, expect, test, vi } from 'vitest'
 import type { DevEnvInfo } from './shared/domain/agents'
 import type { ProcessRunner } from './server/process'
+import { registeredAppCommand } from './server/modules/dev-environments/dev-env-apps'
 import {
   classifyRepos,
   killRunningApps,
@@ -16,6 +18,12 @@ import {
   startDevEnv,
   stopDevEnv,
 } from './server/modules/dev-environments/dev-env'
+
+const cardFixtures: string[] = []
+afterEach(() => {
+  vi.unstubAllEnvs()
+  for (const root of cardFixtures.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 test('classifyRepos', () => {
   expect(classifyRepos(['api-garcom-digital', 'api-core', 'operation-takeat', 'api-clube', 'gym-app'])).toEqual({
@@ -82,7 +90,7 @@ test('desvincula node_modules compartilhado quando os lockfiles divergem', () =>
 function fakeRepo(root: string, name: string, branch: string): string {
   const dir = join(root, name)
   mkdirSync(dir, { recursive: true })
-  execFileSync('git', ['-C', dir, 'init', '-q', '-b', branch])
+  execFileSync('git', ['-C', dir, 'init', '-q', '-b', 'test-fixture'])
   execFileSync('git', ['-C', dir, 'commit', '-q', '--allow-empty', '-m', 'init'], {
     env: {
       ...process.env,
@@ -92,11 +100,13 @@ function fakeRepo(root: string, name: string, branch: string): string {
       GIT_COMMITTER_EMAIL: 't@t',
     },
   })
+  execFileSync('git', ['-C', dir, 'branch', '-m', branch])
   return dir
 }
 
 function cardWith(repos: { name: string; branch: string }[], linksDir = ''): string {
   const root = mkdtempSync(join(tmpdir(), 'devenv-'))
+  cardFixtures.push(root)
   const worktrees = join(root, 'worktrees')
   const card = join(root, 'card')
   const links = join(card, linksDir)
@@ -108,6 +118,15 @@ function cardWith(repos: { name: string; branch: string }[], linksDir = ''): str
       process.platform === 'win32' ? 'junction' : 'dir',
     )
   }
+  // Tests must use their own active catalog, never the developer's settings.
+  const names = new Set([...repos.map((repo) => repo.name), 'api-garcom-digital', 'manager-area', 'garcom-restaurant-dashboard', 'internal-dashboard'])
+  const repositories = [...names].map((alias) => ({
+    id: alias, alias, active: true,
+    path: repos.some((repo) => repo.name === alias) ? join(worktrees, alias) : fakeRepo(join(root, 'canonical'), alias, 'master'),
+    environments: { local: { enabled: true }, staging: { enabled: false }, prod: { enabled: false } },
+  }))
+  writeFileSync(join(root, 'repositories.json'), JSON.stringify({ version: 1, repositories }))
+  vi.stubEnv('MEGA_BRAIN_SETTINGS_FILE', join(root, 'settings.json'))
   return card
 }
 
@@ -205,8 +224,95 @@ test('planDevEnv: symlinks em repos/ são encontrados', () => {
 
 test('planDevEnv: nada tocado é erro', () => {
   const card = cardWith([])
-  expect(() => planDevEnv(card)).toThrow('Nenhum repo tocado')
+  expect(() => planDevEnv(card)).toThrow('Nenhum repositório alterado')
 })
+
+test('planDevEnv: docs Next cadastradas rodam mesmo fora da lista legada', () => {
+  const card = cardWith([
+    { name: 'external-api-docs', branch: 'fix/docs' },
+    { name: 'dev-docs', branch: 'fix/docs' },
+  ], 'repos')
+  for (const [repo, port] of [['external-api-docs', 5201], ['dev-docs', 5200]] as const) {
+    writeFileSync(join(card, 'repos', repo, 'package.json'), JSON.stringify({ packageManager: 'pnpm@10', scripts: { dev: `next dev --port=${port}` } }))
+  }
+  const plan = planDevEnv(card)
+  if ('needsFrontend' in plan) throw new Error('docs não exigem frontend legado')
+  expect(plan.warnings).toEqual([])
+  expect(plan.fronts).toEqual([])
+  expect(plan.apps.map((app) => ({ repo: app.repo, port: app.preferred, command: registeredAppCommand(app, app.preferred + 1) }))).toEqual([
+    { repo: 'dev-docs', port: 5200, command: { cmd: 'pnpm', args: ['run', 'dev', '--port', '5201'] } },
+    { repo: 'external-api-docs', port: 5201, command: { cmd: 'pnpm', args: ['run', 'dev', '--port', '5202'] } },
+  ])
+})
+
+test('planDevEnv: platform inicia só a API externa, com pnpm do monorepo', () => {
+  const card = cardWith([{ name: 'takeat-platform', branch: 'fix/api' }], 'repos')
+  const root = realpathSync(join(card, 'repos', 'takeat-platform'))
+  mkdirSync(join(root, 'apps/external-api'), { recursive: true })
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ packageManager: 'pnpm@10', scripts: { dev: 'turbo run dev' } }))
+  writeFileSync(join(root, 'apps/external-api/package.json'), JSON.stringify({ scripts: { dev: 'nest start --watch' } }))
+  const plan = planDevEnv(card)
+  expect(plan).toMatchObject({
+    localBackend: false, fronts: [], warnings: [],
+    apps: [{ repo: 'takeat-platform', dir: join(root, 'apps/external-api'), kind: 'backend', preferred: 3000, command: { cmd: 'pnpm', args: ['run', 'dev'] } }],
+  })
+})
+
+test('planDevEnv: respeita script e porta configurados de um repo customizado', () => {
+  const card = cardWith([{ name: 'custom-api', branch: 'fix/api' }])
+  writeFileSync(join(card, 'custom-api', 'package.json'), JSON.stringify({ scripts: { 'dev:local': 'node server.mjs' } }))
+  const file = join(dirname(card), 'repositories.json')
+  const catalog = JSON.parse(readFileSync(file, 'utf8'))
+  catalog.repositories.find((repo: { alias: string }) => repo.alias === 'custom-api').environments.local = { enabled: true, startScript: 'dev:local', port: 4100 }
+  writeFileSync(file, JSON.stringify(catalog))
+  expect(planDevEnv(card)).toMatchObject({ apps: [{ repo: 'custom-api', preferred: 4100, command: { cmd: 'npm', args: ['run', 'dev:local'] } }], warnings: [] })
+})
+
+test('planDevEnv: repo encontrado sem configuração tem diagnóstico acionável', () => {
+  const card = cardWith([{ name: 'custom-api', branch: 'fix/api' }])
+  writeFileSync(join(card, 'custom-api', 'package.json'), JSON.stringify({ scripts: { dev: 'node server.mjs' } }))
+  expect(() => planDevEnv(card)).toThrow('custom-api: configure a porta do ambiente local em Repositórios')
+})
+
+test('app cadastrado inicia na worktree, confirma a porta e para sem persistir variáveis locais', async () => {
+  const card = cardWith([{ name: 'custom-api', branch: 'fix/api' }], 'repos')
+  const root = realpathSync(join(card, 'repos', 'custom-api'))
+  const reservation = createServer()
+  await new Promise<void>((resolve, reject) => {
+    reservation.once('error', reject)
+    reservation.listen(0, '127.0.0.1', resolve)
+  })
+  const address = reservation.address()
+  if (!address || typeof address === 'string') throw new Error('porta não disponível')
+  const port = address.port
+  await new Promise<void>((resolve) => reservation.close(() => resolve()))
+  const catalogFile = join(dirname(card), 'repositories.json')
+  const catalog = JSON.parse(readFileSync(catalogFile, 'utf8'))
+  catalog.repositories.find((repo: { alias: string }) => repo.alias === 'custom-api').environments.local.port = port
+  writeFileSync(catalogFile, JSON.stringify(catalog))
+  mkdirSync(join(root, 'node_modules'))
+  writeFileSync(join(root, 'package-lock.json'), '{}')
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { dev: 'node worker.mjs' } }))
+  writeFileSync(join(root, '.env.local'), 'LOCAL_SETTING=fixture-value\n')
+  writeFileSync(join(root, 'worker.mjs'), `
+    import { createServer } from 'node:net';
+    import { writeFileSync } from 'node:fs';
+    writeFileSync('observed.json', JSON.stringify({ directory: process.cwd(), setting: process.env.LOCAL_SETTING }));
+    createServer(socket => socket.end()).listen(Number(process.env.PORT), '127.0.0.1');
+  `)
+  try {
+    expect(startDevEnv(card)).toEqual({})
+    for (let attempt = 0; attempt < 60 && readDevEnv(card)?.status === 'subindo'; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    expect(readDevEnv(card)).toMatchObject({ status: 'rodando', apps: [{ repo: 'custom-api', port, url: `http://localhost:${port}`, status: 'rodando' }] })
+    expect(JSON.parse(readFileSync(join(root, 'observed.json'), 'utf8'))).toEqual({ directory: root, setting: 'fixture-value' })
+    expect(readFileSync(join(card, '.dev-env/state.json'), 'utf8')).not.toContain('fixture-value')
+  } finally {
+    stopDevEnv(card)
+  }
+  expect(readDevEnv(card)?.status).toBe('parado')
+}, 10_000)
 
 test('killRunningApps derruba os outros apps e preserva quem falhou', () => {
   const killed: number[] = []
@@ -278,7 +384,7 @@ test('finalização de tentativa antiga não remove uma nova tentativa do mesmo 
       )
     },
     spawn(_command, _args, options) {
-      const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], options)
+      const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], options ?? {})
       children.add(child)
       child.once('exit', () => children.delete(child))
       return child
