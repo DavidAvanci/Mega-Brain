@@ -1,5 +1,6 @@
 import { basename, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
+import { realpathSync } from 'node:fs'
 import childProcess from 'node:child_process'
 import { syncBuiltinESMExports } from 'node:module'
 
@@ -8,12 +9,13 @@ import { syncBuiltinESMExports } from 'node:module'
  * production entrypoint imports it.  Vitest loads it before test modules.
  */
 const temporaryRoot = resolve(tmpdir())
+const temporaryRoots = new Set([temporaryRoot, realpathSync(temporaryRoot)])
 const WORKSPACE_GUARD = Symbol.for('mega-brain.test-safety.workspace')
 
 export function isSafeTestPath(path: string | undefined): boolean {
   if (!path) return false
   const resolved = resolve(path)
-  return resolved === temporaryRoot || resolved.startsWith(`${temporaryRoot}${sep}`)
+  return [...temporaryRoots].some((root) => resolved === root || resolved.startsWith(`${root}${sep}`))
 }
 
 export function assertSafeTestWorkspace(path: string): void {
