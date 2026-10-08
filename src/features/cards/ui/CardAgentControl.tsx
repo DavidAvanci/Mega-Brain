@@ -19,7 +19,8 @@ export function CardAgentControl({ agent, cardId }: { agent: AgentInfo; cardId: 
         type="button"
         variant="ghost"
         size="icon"
-        className="size-10 shrink-0 transition-[color,background-color,opacity] motion-reduce:transition-none text-muted-foreground hover:text-foreground"
+        className="size-10 shrink-0 transition-[color,background-color,opacity] motion-reduce:transition-none text-muted-foreground hover:text-muted-foreground"
+        style={{ color: 'var(--muted-foreground)' }}
         aria-label={label}
         aria-busy={pending}
         disabled={pending}
