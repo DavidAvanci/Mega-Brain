@@ -3,6 +3,7 @@ import { CardKnowledgeAttachments } from '@/features/knowledge/CardKnowledgeAtta
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
+  ArrowLeft01Icon,
   ArrowRight01Icon,
   Cancel01Icon,
   CancelSquareIcon,
@@ -543,9 +544,22 @@ function ActionBar({ card, onDeleted }: { card: Card; onDeleted: () => void }) {
   )
 }
 
-export function CardModal({ card, initialTab, onClose }: { card: Card; initialTab?: string; onClose: () => void }) {
+export function CardModal({
+  card,
+  initialTab,
+  onClose,
+  expanded,
+  onExpandedChange,
+  container,
+}: {
+  card: Card
+  initialTab?: string
+  onClose: () => void
+  expanded: boolean
+  onExpandedChange: (expanded: boolean) => void
+  container: HTMLElement
+}) {
   const { files, repos, usage, usageBreakdown, error } = useCardDetail(card.id)
-  const [fullscreen, setFullscreen] = useState(false)
   const agents = activeAgents(card)
   const [activeTab, setActiveTab] = useState(
     initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description'),
@@ -580,14 +594,17 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
     }
   }
 
+  // Keep the portal mounted in the workspace so changing layouts preserves chat and editing state.
   return (
     <Dialog
       open
+      modal={!expanded}
+      disablePointerDismissal={expanded}
       onOpenChange={(open, eventDetails) => {
         if (open) return
-        if (fullscreen && eventDetails.reason === 'escape-key') {
+        if (expanded && eventDetails.reason === 'escape-key') {
           eventDetails.cancel()
-          setFullscreen(false)
+          onExpandedChange(false)
           return
         }
         onClose()
@@ -595,27 +612,40 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
     >
       <DialogContent
         showCloseButton={false}
+        container={container}
+        portalClassName={expanded ? 'h-full min-h-0' : undefined}
+        overlayClassName={expanded ? 'hidden' : undefined}
+        role={expanded ? 'main' : 'dialog'}
         className={cn(
           'flex h-[92dvh] max-h-[960px] w-[calc(100%-2rem)] max-w-[1280px] flex-col gap-0 overflow-hidden p-0 shadow-2xl sm:max-w-[1280px]',
-          fullscreen && 'h-dvh max-h-none w-screen max-w-none rounded-none sm:max-w-none',
+          expanded && 'relative top-auto left-auto z-auto h-full max-h-none w-full max-w-none translate-x-0 translate-y-0 rounded-none bg-background shadow-none ring-0 sm:max-w-none data-open:animate-none',
         )}
       >
-        <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-          <Tip label={fullscreen ? 'Sair da tela cheia (Esc)' : 'Abrir em tela cheia'}>
+        <div className={cn(
+          'flex shrink-0 items-center gap-1',
+          expanded ? 'border-b px-3 py-2' : 'absolute top-2 right-2 z-10',
+        )}>
+          <DialogClose
+            render={<Button variant="ghost" className={cn('mr-auto h-10', !expanded && 'hidden')} />}
+          >
+            <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={2} />
+            Voltar
+          </DialogClose>
+          <Tip label={expanded ? 'Voltar ao modal (Esc)' : 'Abrir como página'}>
             <Button
               type="button"
               variant="ghost"
               size="icon"
               className="size-10"
-              aria-label={fullscreen ? 'Sair da tela cheia' : 'Abrir em tela cheia'}
-              aria-pressed={fullscreen}
-              onClick={() => setFullscreen((value) => !value)}
+              aria-label={expanded ? 'Voltar ao modal' : 'Abrir como página'}
+              aria-pressed={expanded}
+              onClick={() => onExpandedChange(!expanded)}
             >
-              <HugeiconsIcon icon={fullscreen ? MinimizeScreenIcon : MaximizeScreenIcon} strokeWidth={2} />
+              <HugeiconsIcon icon={expanded ? MinimizeScreenIcon : MaximizeScreenIcon} strokeWidth={2} />
             </Button>
           </Tip>
           <DialogClose
-            render={<Button variant="ghost" size="icon" className="size-10" aria-label="Fechar card" title="Fechar card" />}
+            render={<Button variant="ghost" size="icon" className={cn('size-10', expanded && 'hidden')} aria-label="Fechar card" title="Fechar card" />}
           >
             <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
           </DialogClose>
@@ -625,7 +655,7 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
           style={{ '--chat-width': `${chatWidth}px` } as CSSProperties}
         >
           <div className="flex min-h-0 min-w-0 flex-col">
-            <DialogHeader className="gap-2.5 border-b px-5 pt-4 pb-3 pr-24 lg:pr-12">
+            <DialogHeader className={cn('gap-2.5 border-b px-5 pt-4 pb-3', !expanded && 'pr-24 lg:pr-12')}>
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
                 <CopyId id={card.id} />
                 <StatusSelect card={card} />
@@ -812,7 +842,7 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
             className="flex min-h-0 min-w-0 flex-col border-t bg-muted/10 lg:border-t-0"
             aria-label="Chat do card"
           >
-            <div className="shrink-0 border-b px-5 py-3 lg:pr-24">
+            <div className={cn('shrink-0 border-b px-5 py-3', !expanded && 'lg:pr-24')}>
               <h2 className="text-sm font-semibold">Chat e execuções</h2>
               <p className="text-[11px] text-muted-foreground">Acompanhe a task e envie orientações ao agente.</p>
             </div>
