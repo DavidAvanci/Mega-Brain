@@ -1,4 +1,4 @@
-export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'morto'
+export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'morto' | 'pausado'
 
 export interface AgentInfo {
   provider?: AgentProvider
@@ -8,6 +8,8 @@ export interface AgentInfo {
   stage?: string
   status: AgentStatus
   startedAt?: string
+  pausedAt?: string
+  resumable?: boolean
   activity?: string
   phase?: string
   error?: string

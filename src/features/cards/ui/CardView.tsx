@@ -1,3 +1,4 @@
+import { CardAgentControl } from './CardAgentControl'
 import { memo, useEffect, useRef, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -39,7 +40,7 @@ export function StageResetButton({
 }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  if (!agent.stage || !['rodando', 'aguardando'].includes(agent.status)) return null
+  if (!agent.stage || !['rodando', 'aguardando', 'pausado'].includes(agent.status)) return null
   const name = agentName(agent)
 
   const stop = async (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -309,6 +310,8 @@ export function CardBody({
       )
     : undefined
   const agents = isDevelopment ? runningAgents.filter((agent) => agent.taskId) : runningAgents
+  const resumableAgent = card.agents?.find((agent) => agent.stage && agent.resumable)
+  const pausedAgent = resumableAgent?.status === 'pausado' ? resumableAgent : undefined
   const attention = attentionReason(card)
   const [openingFolder, setOpeningFolder] = useState(false)
   const [stoppingAllDevelopmentAgents, setStoppingAllDevelopmentAgents] = useState(false)
@@ -340,6 +343,7 @@ export function CardBody({
             </Tip>
           )}
           <FlowIndicator flow={card.flow} />
+          {resumableAgent && <CardAgentControl agent={resumableAgent} cardId={card.id} />}
         </span>
       </div>
       {interactive ? (
@@ -355,6 +359,11 @@ export function CardBody({
         </button>
       ) : (
         <div className="leading-snug font-medium">{card.title}</div>
+      )}
+      {pausedAgent && (
+        <div role="status" className="mt-2 text-[11px] text-muted-foreground">
+          Agentes pausados · progresso salvo
+        </div>
       )}
       {(agents.length > 0 || card.smartDiffRunning || developmentStageAgent) && (
         <div className="mt-2 flex flex-col gap-1.5">

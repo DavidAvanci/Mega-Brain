@@ -1,3 +1,4 @@
+import { readAgent } from './stage-agent-status'
 import { readFlow } from './card-folder'
 import { readCard, type CardData, writeCard } from './card-record'
 import { stageFor, type Stage } from './stage-catalog'
@@ -18,6 +19,8 @@ export function updateCard(
     status: data.status === undefined ? previous.status : String(data.status),
     flow: readFlow(data.flow === undefined ? previous.flow : data.flow),
   }
+  if (readAgent(cardPath)?.status === 'pausado' && (next.status !== previous.status || next.flow !== previous.flow))
+    throw new Error('Retome ou interrompa a execução pausada antes de mudar a etapa ou o fluxo do card')
   writeCard(cardPath, next)
   const stage = stageFor(next.status)
   if (stage && next.status !== previous.status) startStage(cardPath, stage, next)

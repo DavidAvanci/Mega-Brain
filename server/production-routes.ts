@@ -113,6 +113,8 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['POST', '/api/workspace/dev-env/stop'],
     ['POST', '/api/workspace/dev-env/open'],
     ['POST', '/api/workspace/dev-env/agent'],
+    ['POST', '/api/workspace/stage/pause'],
+    ['POST', '/api/workspace/stage/resume'],
     ['POST', '/api/workspace/stage/reset'],
     ['POST', '/api/workspace/update'],
     ['POST', '/api/workspace/delete'],

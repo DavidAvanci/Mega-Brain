@@ -25,6 +25,7 @@ const BADGES: Record<AgentStatus, { label: string; className: string }> = {
   aguardando: { label: 'aguardando…', className: 'text-amber-600 dark:text-amber-400' },
   concluido: { label: 'concluído', className: 'text-emerald-600 dark:text-emerald-400' },
   erro: { label: 'erro', className: 'text-destructive' },
+  pausado: { label: 'pausado', className: 'text-muted-foreground' },
   morto: { label: 'interrompido', className: 'text-muted-foreground' },
 }
 
@@ -58,13 +59,13 @@ export function AgentBadge({
   cardId,
   iconOnly = false,
   muted = false,
-  growPlanningText = false,
+  growText = false,
 }: {
   agent: AgentInfo
   cardId: string
   iconOnly?: boolean
   muted?: boolean
-  growPlanningText?: boolean
+  growText?: boolean
 }) {
   const [showError, setShowError] = useState(false)
   const isStartingAgent = !agent.provider && agent.phase === 'Iniciando agente'
@@ -85,7 +86,8 @@ export function AgentBadge({
     (agent.stage === 'task-planning' && agent.status === 'rodando') ||
     isStartingAgent ||
     Boolean(agent.phase) ||
-    (agent.provider === 'claude' && Boolean(agent.activity))
+    (agent.provider === 'claude' && Boolean(agent.activity)) ||
+    agent.status === 'pausado'
   const inlineText =
     isStartingAgent
       ? 'Iniciando agente...'
@@ -123,7 +125,7 @@ export function AgentBadge({
             iconOnly
               ? isStartingAgent
                 ? 'Iniciando agente...'
-                : `Agente ${name} trabalhando`
+                : agent.status === 'pausado' ? `Agente ${name} pausado` : `Agente ${name} trabalhando`
               : agent.status === 'erro'
                 ? `Ver erro completo do agente ${name}`
                 : undefined
@@ -131,7 +133,7 @@ export function AgentBadge({
           className={cn(
             'inline-flex min-w-0 max-w-full items-center gap-1 text-[11px]',
             agent.stage === 'task-planning' && 'justify-start text-left',
-            agent.stage === 'task-planning' && growPlanningText && 'flex-1',
+            agent.stage === 'task-planning' && growText && 'flex-1',
             className,
             muted && 'text-muted-foreground',
           )}
@@ -156,7 +158,7 @@ export function AgentBadge({
               className={cn(
                 'truncate text-left',
                 agent.stage === 'task-planning' && 'min-w-0 text-left',
-                agent.stage === 'task-planning' && growPlanningText && 'flex-1',
+                agent.stage === 'task-planning' && growText && 'flex-1',
                 agent.status === 'rodando' && !muted && 'agent-working-text-glow',
               )}
             >

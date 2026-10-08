@@ -146,7 +146,7 @@ function terminalOpen(path: string): boolean {
 
 function busyReason(path: string, running: Map<string, ProcessChild>): string | undefined {
   if (running.has(path)) return 'Já há uma mensagem em andamento'
-  if (readAgent(path)?.status === 'rodando') return 'O agente da etapa está rodando; espere ele terminar'
+  if (['rodando', 'pausado'].includes(readAgent(path)?.status ?? '')) return 'O agente da etapa está rodando; espere ele terminar'
   if (terminalOpen(path)) return 'Há um Claude aberto no terminal dessa pasta; feche antes de usar o chat'
   return undefined
 }

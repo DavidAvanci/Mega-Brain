@@ -129,6 +129,14 @@ export function createWorkspaceService(
         openDevEnvironmentAgent(cardPath, config, runner)
         return { ok: true }
       }
+      if (path === '/stage/pause') {
+        await stages.pause(cardPath, data.stage)
+        return { ok: true }
+      }
+      if (path === '/stage/resume') {
+        stages.resume(cardPath, data.stage)
+        return { ok: true }
+      }
       if (path === '/stage/reset') {
         await stages.stop(cardPath, data.stage)
         return { ok: true }

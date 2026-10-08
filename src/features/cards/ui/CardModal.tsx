@@ -1,3 +1,4 @@
+import { CardAgentControl } from './CardAgentControl'
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
@@ -410,7 +411,7 @@ function ClearLatestStageButton({ card }: { card: Card }) {
   const [pending, setPending] = useState(false)
   if (!stage || !label) return null
   const running = card.agents?.some(
-    (agent) => agent.stage === stage && ['rodando', 'aguardando'].includes(agent.status),
+    (agent) => agent.stage === stage && ['rodando', 'aguardando', 'pausado'].includes(agent.status),
   )
   const clear = async () => {
     setPending(true)
@@ -473,6 +474,7 @@ function AgentStatusRow({ agent, cardId }: { agent: AgentInfo; cardId: string })
     <div className="flex flex-col gap-1.5">
       <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
         <AgentBadge agent={agent} cardId={cardId} muted={stopping} />
+        <CardAgentControl agent={agent} cardId={cardId} />
         {agent.stage ? (
           <StageResetButton agent={agent} cardId={cardId} iconOnly onPendingChange={setStopping} />
         ) : (
@@ -487,6 +489,11 @@ function AgentStatusRow({ agent, cardId }: { agent: AgentInfo; cardId: string })
           </span>
         )}
       </div>
+      {agent.status === 'pausado' && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Progresso salvo. Você pode fechar o app e retomar este card depois.
+        </p>
+      )}
       {progress && (
         <Progress value={progress.done} max={progress.total} aria-label={`Progresso do agente ${agentName(agent)}`} />
       )}

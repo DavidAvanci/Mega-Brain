@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
@@ -24,7 +24,7 @@ test('builds a Codex command with the configured executable and model settings',
   expect(args).toContain('--model')
   expect(args).toContain('gpt-5')
   expect(args).toContain('model_reasoning_effort="high"')
-  expect(args.at(-1)).toContain('/task-planning Refatorar serviço')
+  expect(args.at(-1)).toContain('Tarefa: Refatorar serviço')
 })
 
 test('names Claude stage sessions after the card and stage', () => {
@@ -37,7 +37,7 @@ test('names Claude stage sessions after the card and stage', () => {
 })
 
 test('planning prompt resolves repository mentions from the active catalog', () => {
-  const root = mkdtempSync(join(tmpdir(), 'mega-brain-stage-mention-'))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'mega-brain-stage-mention-')))
   const checkout = join(root, 'api')
   mkdirSync(join(checkout, '.git'), { recursive: true })
   writeFileSync(

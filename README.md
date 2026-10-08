@@ -93,3 +93,9 @@ Este repositório ainda não contém um arquivo de licença. Consulte os mantene
 ## Triagem experimental de cards
 
 Consulte [a integração Jev (TypeSafe)](docs/integrations/jev-card-triage.md) para configuração, limites e avaliação.
+
+### Pausar e retomar um card
+
+O controle de pausa no card e no detalhe da task encerra os agentes da etapa gerenciados pelo Mega-Brain e salva a execução. Aguarde o card mostrar **Agentes pausados · progresso salvo** antes de fechar o app. Ao abrir novamente, use **Retomar agentes deste card** para continuar na mesma etapa, com os checklists, arquivos e worktrees preservados. Os agentes Claude e Codex retomam a sessão salva quando ela já foi criada. Itens concluídos não são executados novamente.
+
+A retomada mantém o provedor, modelo, esforço e perfil Codex usados na execução original. Retome o card antes de iniciar outra execução na mesma pasta. Para mudar a etapa ou o fluxo, retome ou interrompa a execução primeiro; a ação de interrupção continua restaurando os artefatos da etapa. Agentes abertos independentemente no terminal têm seu próprio ciclo de execução.

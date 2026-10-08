@@ -32,6 +32,7 @@ const STATUS_META: Record<AgentStatus, { label: string; dot: string }> = {
   aguardando: { label: 'Aguardando', dot: 'bg-amber-500' },
   concluido: { label: 'Concluída', dot: 'bg-muted-foreground/50' },
   erro: { label: 'Erro', dot: 'bg-destructive' },
+  pausado: { label: 'Pausado', dot: 'bg-muted-foreground' },
   morto: { label: 'Interrompida', dot: 'bg-muted-foreground' },
 }
 const PROVIDER_META = {

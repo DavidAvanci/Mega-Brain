@@ -1,4 +1,7 @@
-import { closeSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { homedir } from 'node:os'
+import { continuationArgs, writeStageAgentRecord, type StageAgentRecord } from './agent-checkpoint'
+import { appendFileSync, closeSync, openSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { claudeBin, codexBin } from '../agent-executable'
 import { nodeProcessRunner, type ProcessChild, type ProcessOwner, type ProcessRunner } from '../process'
@@ -96,10 +99,11 @@ export function runStageAgent(
   codex?: string,
   logger?: StageLogger,
   settingsFile?: string,
+  resume?: { record: StageAgentRecord; sessionId?: string },
 ): void {
   const settings = settingsForStage(path, stage)
   const effectiveModel = model ?? settings.model
-  if (model === undefined) captureStageSnapshot(path, stage.name, stageOwnedFiles(stage))
+  if (!resume && model === undefined) captureStageSnapshot(path, stage.name, stageOwnedFiles(stage))
   const usageId = stage.script
     ? undefined
     : startAgentUsage(path, new Date(), {
@@ -107,27 +111,71 @@ export function runStageAgent(
         provider: provider === 'chatgpt' ? 'codex' : 'claude',
         model: effectiveModel,
       })
-  const out = openSync(join(path, `${stage.name}.jsonl`), 'w')
+  if (resume) appendFileSync(join(path, `${stage.name}.jsonl`), `${JSON.stringify({ type: 'mega_brain.resume' })}\n`)
+  const out = openSync(join(path, `${stage.name}.jsonl`), resume ? 'a' : 'w')
   const err = openSync(join(path, `${stage.name}.log`), 'a')
-  const [bin, args] = stageAgentCommand(path, stage, card, effectiveModel, settings.effort, provider, claude, codex, settingsFile)
-  const child = runner.spawn(bin, args, {
-    cwd: path,
-    detached: true,
-    stdio: ['ignore', out, err],
-    env: {
-      ...process.env,
-      CHECKLIST_MODEL: settings.model,
-      CHECKLIST_EFFORT: settings.effort,
-      MEGA_BRAIN_WORKTREES_DIR: worktreesDir ?? process.env.MEGA_BRAIN_WORKTREES_DIR,
-      MEGA_BRAIN_SETTINGS_FILE: settingsFile ?? process.env.MEGA_BRAIN_SETTINGS_FILE,
-      MEGA_BRAIN_LLM_PROVIDER: provider,
-      MEGA_BRAIN_STAGE_SCRIPT: stage.script ? stage.name : undefined,
-      MEGA_BRAIN_CARD_ID: basename(path),
-      MEGA_BRAIN_CARD_PATH: path,
-      MEGA_BRAIN_CLAUDE_BIN: claudeBin(claude),
-      MEGA_BRAIN_CODEX_BIN: codex ?? process.env.MEGA_BRAIN_CODEX_BIN,
-    },
-  })
+  const [bin, initialArgs] = stageAgentCommand(
+    path,
+    stage,
+    card,
+    effectiveModel,
+    settings.effort,
+    provider,
+    claude,
+    codex,
+    settingsFile,
+  )
+  const environment: NodeJS.ProcessEnv = {
+    ...(provider === 'chatgpt' ? { CODEX_HOME: process.env.CODEX_HOME ?? join(homedir(), '.codex') } : {}),
+    CHECKLIST_MODEL: settings.model,
+    CHECKLIST_EFFORT: settings.effort,
+    MEGA_BRAIN_WORKTREES_DIR: worktreesDir ?? process.env.MEGA_BRAIN_WORKTREES_DIR,
+    MEGA_BRAIN_SETTINGS_FILE: settingsFile ?? process.env.MEGA_BRAIN_SETTINGS_FILE,
+    MEGA_BRAIN_LLM_PROVIDER: provider,
+    MEGA_BRAIN_STAGE_SCRIPT: stage.script ? stage.name : undefined,
+    MEGA_BRAIN_CARD_ID: basename(path),
+    MEGA_BRAIN_CARD_PATH: path,
+    MEGA_BRAIN_CLAUDE_BIN: claudeBin(claude),
+    MEGA_BRAIN_CODEX_BIN: codex ?? process.env.MEGA_BRAIN_CODEX_BIN,
+    MEGA_BRAIN_STAGE_RUN_ID: randomUUID(),
+    ...resume?.record.resume?.environment,
+    MEGA_BRAIN_RESUMING_STAGE: resume ? '1' : undefined,
+  }
+  const args = resume?.record.resume
+    ? stage.script
+      ? initialArgs
+      : continuationArgs(provider === 'chatgpt' ? 'codex' : 'claude', resume.record.resume.args, resume.sessionId)
+    : initialArgs
+  const savedEnvironment = Object.fromEntries(
+    Object.entries(environment).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[1] === 'string' && !entry[0].includes('TOKEN') && entry[0] !== 'MEGA_BRAIN_RESUMING_STAGE',
+    ),
+  )
+  const metadata: StageAgentRecord = {
+    ...resume?.record,
+    pid: null,
+    pausedAt: undefined,
+    startedAt: resume?.record.startedAt ?? new Date().toISOString(),
+    stage: stage.name,
+    model: effectiveModel,
+    provider: provider === 'chatgpt' ? 'codex' : 'claude',
+    resume: resume?.record.resume ?? { args: initialArgs, environment: savedEnvironment },
+  }
+  writeStageAgentRecord(path, metadata)
+  let child: ProcessChild
+  try {
+    child = runner.spawn(bin, args, {
+      cwd: path,
+      detached: true,
+      stdio: ['ignore', out, err],
+      env: { ...process.env, ...environment },
+    })
+  } finally {
+    closeSync(out)
+    closeSync(err)
+  }
+  writeStageAgentRecord(path, { ...metadata, pid: child.pid ?? null })
   if (usageId) setAgentUsageProcess(path, usageId, child.pid, join(path, `${stage.name}.jsonl`))
   owner?.own(child, { tree: true, label: `stage:${stage.name}` })
   onSpawn?.(child)
@@ -146,10 +194,4 @@ export function runStageAgent(
     })
   }
   child.unref()
-  closeSync(out)
-  closeSync(err)
-  writeFileSync(
-    join(path, AGENT_FILE),
-    `${JSON.stringify({ pid: child.pid ?? null, startedAt: new Date().toISOString(), stage: stage.name, model: effectiveModel }, null, 2)}\n`,
-  )
 }

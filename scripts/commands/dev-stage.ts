@@ -17,6 +17,8 @@ import {
   integrateItemBranch,
   isInjected,
   itemBranch,
+  itemWorktreePath,
+  type PreservedAttempt,
   orphanItemBranches,
   prepareRequiredBases,
   projectEnvironmentIssue,
@@ -327,6 +329,11 @@ function recoverOrphans(task: ReturnType<typeof taskInfo>, repos: string[]): voi
       const items = parseChecklist(readFileSync(file, 'utf8'))
       const item = items.find((entry) => itemBranch(task.id, entry.id) === branch)
       const label = item?.id ?? branch
+      const preserved = itemWorktreePath(task.id, repo, branch.slice(`wip/${task.id}/`.length))
+      if (existsSync(preserved) && changedFiles(preserved).some((path) => !isInjected(path))) {
+        activity('Recuperar', `${label}: alterações parciais preservadas na worktree; continuando o item`)
+        continue
+      }
       activity('Recuperar', `${label}: reaplicando trabalho preservado em ${branch}`)
       const integration = integrateItemBranch(main, branch)
       if (!integration.ok) {
@@ -442,9 +449,15 @@ export async function runDevStage(): Promise<void> {
       itemCwd.set(item.id, cwd)
       const limits = limitsFor(item)
       let previousAttempts = 0
+      let pausedAttempt: PreservedAttempt | undefined
       try {
         const saved: unknown = JSON.parse(readFileSync(join(wsPath, 'execution-attempts.json'), 'utf8'))
-        if (Array.isArray(saved)) previousAttempts = saved.filter((entry) => (entry as { itemId?: unknown }).itemId === item.id).length
+        if (Array.isArray(saved)) {
+          const attempts = saved.filter((entry: PreservedAttempt) => entry.itemId === item.id)
+          if (process.env.MEGA_BRAIN_RESUMING_STAGE === '1')
+            pausedAttempt = attempts.findLast((entry: PreservedAttempt) => entry.status === 'running')
+          previousAttempts = attempts.filter((entry) => entry !== pausedAttempt).length
+        }
       } catch {}
       if (previousAttempts >= limits.maxAttempts) {
         return {
@@ -452,8 +465,8 @@ export async function runDevStage(): Promise<void> {
           note: `Teto de ${limits.maxAttempts} tentativas atingido; trabalho salvo em \`${itemBranch(task.id, item.id)}\`. Corrija a causa ou divida o item antes de retomar.`,
         }
       }
-      const attemptId = `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      const startedAt = new Date().toISOString()
+      const attemptId = pausedAttempt?.id ?? `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const startedAt = pausedAttempt?.startedAt ?? new Date().toISOString()
       recordAttempt(wsPath, {
         id: attemptId,
         itemId: item.id,

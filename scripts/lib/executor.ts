@@ -1,3 +1,5 @@
+import { itemCheckpoint } from './agent-checkpoint.ts'
+import { continuationArgs } from '../../server/workspace/agent-checkpoint.ts'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
@@ -67,7 +69,9 @@ function parseResult(stdout: string): ItemResult | null {
   try {
     data = record(JSON.parse(stdout))
   } catch {
-    return null
+    for (const line of stdout.split('\n')) {
+      try { const event = record(JSON.parse(line)); if (event?.type === 'result') data = event } catch {}
+    }
   }
   if (!data) return null
   const costUsd = typeof data.total_cost_usd === 'number' ? data.total_cost_usd : undefined
@@ -186,7 +190,8 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
       options.tools,
       '--dangerously-skip-permissions',
       '--output-format',
-      'json',
+      'stream-json',
+      '--verbose',
     ]
     const codexPrompt = `${options.prompt}\n\nAo terminar, responda somente com JSON válido no formato {"status":"done|failed|blocked","note":"resumo curto"}.`
     const codexModel = ['fable', 'opus', 'sonnet', 'haiku', 'default'].includes(options.model.toLowerCase())
@@ -204,7 +209,14 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
             codexPrompt,
           ]
         : claudeArgs
-    const child = spawn(command, args, {
+    const checkpoint = itemCheckpoint(cardPath, options.cwd, options.prompt)
+    const previous = process.env.MEGA_BRAIN_RESUMING_STAGE === '1' ? checkpoint.read() : undefined
+    const providerName = provider === 'chatgpt' ? 'codex' : 'claude'
+    const saved = previous?.provider === providerName ? previous : undefined
+    const originalArgs = saved?.args ?? args
+    checkpoint.save({ provider: providerName, args: originalArgs, sessionId: saved?.sessionId })
+    const launchArgs = saved ? continuationArgs(providerName, originalArgs, saved.sessionId) : args
+    const child = spawn(command, launchArgs, {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -212,13 +224,26 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
     let stdout = ''
     let stderr = ''
     let timedOut = false
-    child.stdout.on('data', (chunk) => (stdout += chunk))
+    let buffer = ''
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+      buffer += chunk
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        let event: Record<string, unknown> | undefined
+        try { event = record(JSON.parse(line)) } catch { continue }
+        const sessionId = event?.type === 'thread.started' ? event.thread_id : event?.session_id
+        if (typeof sessionId === 'string') checkpoint.save({ provider: providerName, args: originalArgs, sessionId })
+      }
+    })
     child.stderr.on('data', (chunk) => (stderr += chunk))
     const timer = setTimeout(() => {
       timedOut = true
       child.kill('SIGKILL')
     }, options.timeoutMs)
     child.on('error', (error) => {
+      checkpoint.clear()
       clearTimeout(timer)
       finishUsage()
       settle({
@@ -226,7 +251,8 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
         note: `Falha ao iniciar ${provider === 'chatgpt' ? 'ChatGPT' : 'Claude'}: ${error.message}`,
       })
     })
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
+      if (!signal || timedOut) checkpoint.clear()
       clearTimeout(timer)
       if (timedOut) {
         finishUsage()
@@ -237,7 +263,7 @@ export function runClaudeItem(options: ClaudeItemOptions): Promise<ItemResult> {
       let reportedCost = result?.costUsd
       if (provider === 'claude' && reportedCost === undefined) {
         try {
-          const rawCost = record(JSON.parse(stdout))?.total_cost_usd
+          const rawCost = stdout.split('\n').flatMap(line => { try { return [record(JSON.parse(line))] } catch { return [] } }).reverse().find(event => event?.type === 'result')?.total_cost_usd
           if (typeof rawCost === 'number' && Number.isFinite(rawCost) && rawCost >= 0) reportedCost = rawCost
         } catch {
           // A malformed provider response can still be reported as a failed execution.
