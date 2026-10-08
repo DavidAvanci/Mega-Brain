@@ -4,17 +4,21 @@ import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type P
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowRight01Icon,
+  Cancel01Icon,
   CancelSquareIcon,
   ComputerTerminal01Icon,
   Copy01Icon,
   Delete02Icon,
   Folder01Icon,
   LinkSquare02Icon,
+  MaximizeScreenIcon,
+  MinimizeScreenIcon,
   Tick02Icon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -541,6 +545,7 @@ function ActionBar({ card, onDeleted }: { card: Card; onDeleted: () => void }) {
 
 export function CardModal({ card, initialTab, onClose }: { card: Card; initialTab?: string; onClose: () => void }) {
   const { files, repos, usage, usageBreakdown, error } = useCardDetail(card.id)
+  const [fullscreen, setFullscreen] = useState(false)
   const agents = activeAgents(card)
   const [activeTab, setActiveTab] = useState(
     initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description'),
@@ -576,14 +581,51 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex h-[92dvh] max-h-[880px] w-[calc(100%-2rem)] max-w-[1180px] flex-col gap-0 overflow-hidden p-0 shadow-2xl sm:h-[88dvh] sm:max-w-[1180px]">
+    <Dialog
+      open
+      onOpenChange={(open, eventDetails) => {
+        if (open) return
+        if (fullscreen && eventDetails.reason === 'escape-key') {
+          eventDetails.cancel()
+          setFullscreen(false)
+          return
+        }
+        onClose()
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className={cn(
+          'flex h-[92dvh] max-h-[960px] w-[calc(100%-2rem)] max-w-[1280px] flex-col gap-0 overflow-hidden p-0 shadow-2xl sm:max-w-[1280px]',
+          fullscreen && 'h-dvh max-h-none w-screen max-w-none rounded-none sm:max-w-none',
+        )}
+      >
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+          <Tip label={fullscreen ? 'Sair da tela cheia (Esc)' : 'Abrir em tela cheia'}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-10"
+              aria-label={fullscreen ? 'Sair da tela cheia' : 'Abrir em tela cheia'}
+              aria-pressed={fullscreen}
+              onClick={() => setFullscreen((value) => !value)}
+            >
+              <HugeiconsIcon icon={fullscreen ? MinimizeScreenIcon : MaximizeScreenIcon} strokeWidth={2} />
+            </Button>
+          </Tip>
+          <DialogClose
+            render={<Button variant="ghost" size="icon" className="size-10" aria-label="Fechar card" title="Fechar card" />}
+          >
+            <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+          </DialogClose>
+        </div>
         <div
           className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,3fr)_minmax(260px,2fr)] lg:grid-cols-[minmax(0,1fr)_8px_var(--chat-width)] lg:grid-rows-1"
           style={{ '--chat-width': `${chatWidth}px` } as CSSProperties}
         >
           <div className="flex min-h-0 min-w-0 flex-col">
-            <DialogHeader className="gap-2.5 border-b px-5 pt-4 pb-3 pr-12">
+            <DialogHeader className="gap-2.5 border-b px-5 pt-4 pb-3 pr-24 lg:pr-12">
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
                 <CopyId id={card.id} />
                 <StatusSelect card={card} />
@@ -770,7 +812,7 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
             className="flex min-h-0 min-w-0 flex-col border-t bg-muted/10 lg:border-t-0"
             aria-label="Chat do card"
           >
-            <div className="shrink-0 border-b px-5 py-3">
+            <div className="shrink-0 border-b px-5 py-3 lg:pr-24">
               <h2 className="text-sm font-semibold">Chat e execuções</h2>
               <p className="text-[11px] text-muted-foreground">Acompanhe a task e envie orientações ao agente.</p>
             </div>
