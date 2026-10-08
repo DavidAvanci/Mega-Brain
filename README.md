@@ -82,6 +82,8 @@ npm run tauri:dev
 
 O comando inicia o Vite e o backend local e abre a janela Tauri. Para gerar o aplicativo e o instalador DMG, execute `npm run tauri:build`. O runtime Node.js é incluído no pacote; cada build usa a arquitetura da máquina que o gerou.
 
+O build macOS gera o DMG sem automatizar o Finder, evitando que permissões de automação ou a sessão gráfica interrompam o empacotamento. A imagem mantém o aplicativo e o link para Applications, com o layout padrão do Finder. Para usar o posicionamento visual do Tauri, execute `TAURI_BUNDLER_DMG_IGNORE_CI=true npm run tauri:build` em uma sessão gráfica com permissão para controlar o Finder.
+
 Para trabalhar apenas na interface web durante o desenvolvimento:
 
 ```sh

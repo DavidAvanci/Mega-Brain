@@ -24,7 +24,7 @@
     "server:test": "vitest run server",
     "server:benchmark-readiness": "node scripts/commands/measure-backend-readiness.mjs",
     "tauri:dev": "node scripts/commands/tauri-dev.mjs",
-    "tauri:build": "tauri build",
+    "tauri:build": "node scripts/commands/tauri-build.mjs",
     "tauri:runtime": "node scripts/commands/prepare-native-runtime.mjs",
     "card-triage:evaluate": "tsx scripts/commands/evaluate-card-triage.ts"
   },
