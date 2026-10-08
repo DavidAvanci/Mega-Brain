@@ -175,3 +175,15 @@ test('workspace pause/resume endpoints preserve a card across service recreation
   expect(readAgent(f.path)?.status).toBe('rodando')
   f.calls[1].child.emit('close', 0)
 })
+
+
+test('does not duplicate a persisted execution that is still exiting', () => {
+  const f = fixture('claude')
+  f.create().start(f.path, f.stage, f.card)
+  const record = readStageAgentRecord(f.path)!
+  writeFileSync(join(f.path, 'agent.json'), JSON.stringify({ ...record, pausedAt: new Date().toISOString() }))
+  expect(() => f.create().resume(f.path, f.stage.name)).toThrow('ainda está encerrando')
+  expect(f.calls).toHaveLength(1)
+  expect(f.signals).toEqual([])
+  f.calls[0].child.emit('close', 0)
+})

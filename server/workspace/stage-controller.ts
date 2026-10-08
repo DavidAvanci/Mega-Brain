@@ -117,6 +117,11 @@ export function createStageController(
       !validCheckpoint(record.resume)
     )
       throw new Error('Não há uma execução pausada para retomar')
+    if (typeof record.pid === 'number') {
+      let alive = false
+      try { process.kill(record.pid, 0); alive = true } catch { /* The previous process has exited. */ }
+      if (alive) throw new Error('A execução anterior ainda está encerrando; aguarde antes de retomar')
+    }
     if (card.status !== stage.status)
       throw new Error('O card mudou de etapa; restaure a etapa original antes de retomar')
     start(cardPath, stage, card, typeof record.model === 'string' ? record.model : undefined, {
