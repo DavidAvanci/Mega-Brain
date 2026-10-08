@@ -133,6 +133,10 @@ export function createWorkspaceService(
         await stages.stop(cardPath, data.stage)
         return { ok: true }
       }
+      if (path === '/stage/clear') {
+        stages.clear(cardPath, data.stage)
+        return { ok: true }
+      }
       if (path === '/dev-env')
         return {
           ok: true,

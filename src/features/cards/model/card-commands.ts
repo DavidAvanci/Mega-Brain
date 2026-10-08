@@ -177,6 +177,10 @@ export const openPrs = (name: string, env: 'staging' | 'master', project?: strin
 export const openTerminal = (name: string) => action('/api/workspace/terminal', 'Falha ao abrir o terminal', { name })
 export const resetAutomaticStage = (name: string, stage: string) =>
   action('/api/workspace/stage/reset', 'Falha ao interromper e limpar a etapa', { name, stage }, true)
+export const stopCardAgent = (id: string) =>
+  action('/api/agents/stop', 'Falha ao interromper o agente', { id }, true)
+export const clearLatestStage = (name: string, stage: string) =>
+  action('/api/workspace/stage/clear', 'Falha ao limpar a etapa', { name, stage }, true)
 export const startDevEnv = async (name: string, frontend?: string): Promise<string[] | null> => {
   try {
     const result = (await workspaceAction('/api/workspace/dev-env', 'Falha ao iniciar o ambiente dev', {

@@ -3,6 +3,8 @@ export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'mor
 export interface AgentInfo {
   provider?: AgentProvider
   sessionId?: string
+  sessionControlId?: string
+  taskId?: string
   stage?: string
   status: AgentStatus
   startedAt?: string

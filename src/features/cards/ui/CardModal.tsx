@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type P
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   ArrowRight01Icon,
+  CancelSquareIcon,
   ComputerTerminal01Icon,
   Copy01Icon,
   Delete02Icon,
@@ -24,7 +25,17 @@ import { Spinner } from '@/components/ui/spinner'
 import { AppSelect } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { deleteCard, moveCard, openFolder, openPrs, openTerminal, setCardFlow, updateCardDescription } from '../model/card-commands'
+import {
+  clearLatestStage,
+  deleteCard,
+  moveCard,
+  openFolder,
+  openPrs,
+  openTerminal,
+  setCardFlow,
+  stopCardAgent,
+  updateCardDescription,
+} from '../model/card-commands'
 import { type WorktreeRepoInfo } from '../api/card-detail-api'
 import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 import { PrChip, StageResetButton } from './CardView'
@@ -35,7 +46,7 @@ import { relativeTime } from '@/relativeTime'
 import { Tip } from '@/Tip'
 import { Textarea } from '@/components/ui/textarea'
 import { useCardDetail } from '../model/useCardDetail'
-import type { CardAgentUsageEntry } from '../../../../shared/domain/agents'
+import type { AgentInfo, CardAgentUsageEntry } from '../../../../shared/domain/agents'
 import {
   FLOW_DESCRIPTIONS,
   FLOW_LABELS,
@@ -385,6 +396,104 @@ function DeleteCardButton({ card, onDeleted }: { card: Card; onDeleted: () => vo
   )
 }
 
+const STAGE_LABELS: Record<string, string> = {
+  'task-planning': 'Planejando',
+  'run-task-checklist': 'Desenvolvendo',
+  'run-test-checklist': 'Auto Testing',
+  'stage-task': 'Staging',
+  'master-pr-task': 'Aguardando deploy',
+}
+
+function ClearLatestStageButton({ card }: { card: Card }) {
+  const stage = card.lastStage
+  const label = stage ? STAGE_LABELS[stage] : undefined
+  const [pending, setPending] = useState(false)
+  if (!stage || !label) return null
+  const running = card.agents?.some(
+    (agent) => agent.stage === stage && ['rodando', 'aguardando'].includes(agent.status),
+  )
+  const clear = async () => {
+    setPending(true)
+    await clearLatestStage(card.id, stage)
+    setPending(false)
+  }
+  return (
+    <Button
+      variant="outline"
+      size="xs"
+      title={running ? 'Interrompa o agente antes de limpar a etapa' : undefined}
+      disabled={pending || running}
+      onClick={clear}
+    >
+      <HugeiconsIcon icon={CancelSquareIcon} strokeWidth={2} />
+      {pending ? 'Limpando…' : `Limpar ${label}`}
+    </Button>
+  )
+}
+
+function AgentSessionStopButton({
+  agent,
+  iconOnly = false,
+  onPendingChange,
+}: {
+  agent: AgentInfo
+  iconOnly?: boolean
+  onPendingChange?: (pending: boolean) => void
+}) {
+  const [pending, setPending] = useState(false)
+  if (!agent.sessionControlId || !['rodando', 'aguardando'].includes(agent.status)) return null
+  const stop = async () => {
+    setPending(true)
+    onPendingChange?.(true)
+    await stopCardAgent(agent.sessionControlId as string)
+    setPending(false)
+    onPendingChange?.(false)
+  }
+  return (
+    <Tip label="Interromper agente">
+      <Button
+        variant="ghost"
+        size={iconOnly ? 'icon-xs' : 'xs'}
+        className={iconOnly ? 'size-5 shrink-0 p-0 text-muted-foreground hover:text-destructive' : undefined}
+        aria-label={iconOnly ? 'Interromper agente' : undefined}
+        disabled={pending}
+        onClick={stop}
+      >
+        {pending ? <Spinner className="size-3.5" /> : <HugeiconsIcon icon={CancelSquareIcon} strokeWidth={2} />}
+        {!iconOnly && (pending ? 'Interrompendo…' : 'Interromper')}
+      </Button>
+    </Tip>
+  )
+}
+
+function AgentStatusRow({ agent, cardId }: { agent: AgentInfo; cardId: string }) {
+  const [stopping, setStopping] = useState(false)
+  const progress = agent.status === 'rodando' && agent.stage !== 'task-planning' ? agent.progress : undefined
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+        <AgentBadge agent={agent} cardId={cardId} muted={stopping} />
+        {agent.stage ? (
+          <StageResetButton agent={agent} cardId={cardId} iconOnly onPendingChange={setStopping} />
+        ) : (
+          <AgentSessionStopButton agent={agent} iconOnly onPendingChange={setStopping} />
+        )}
+        {agent.activity && agent.stage !== 'task-planning' && (
+          <span className="min-w-0 truncate">{agent.activity}</span>
+        )}
+        {progress && (
+          <span className="ml-auto shrink-0 tabular-nums">
+            {progress.done}/{progress.total}
+          </span>
+        )}
+      </div>
+      {progress && (
+        <Progress value={progress.done} max={progress.total} aria-label={`Progresso do agente ${agentName(agent)}`} />
+      )}
+    </div>
+  )
+}
+
 function ActionBar({ card, onDeleted }: { card: Card; onDeleted: () => void }) {
   const [openingFolder, setOpeningFolder] = useState(false)
 
@@ -416,6 +525,7 @@ function ActionBar({ card, onDeleted }: { card: Card; onDeleted: () => void }) {
               <PrChip key={env} env={env} links={card.prs[env]} states={card.prStates} cardId={card.id} />
             ),
         )}
+      <ClearLatestStageButton card={card} />
       <DeleteCardButton card={card} onDeleted={onDeleted} />
     </div>
   )
@@ -521,30 +631,9 @@ export function CardModal({ card, initialTab, onClose }: { card: Card; initialTa
                   )}
                 </details>
               )}
-              {agents.map((agent, index) => {
-                const progress = agent.status === 'rodando' ? agent.progress : undefined
-                return (
-                  <div key={`${agent.stage ?? 'autonomo'}-${index}`} className="flex flex-col gap-1.5">
-                    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                      <AgentBadge agent={agent} cardId={card.id} />
-                      <StageResetButton agent={agent} cardId={card.id} />
-                      {agent.activity && <span className="min-w-0 truncate">{agent.activity}</span>}
-                      {progress && (
-                        <span className="ml-auto shrink-0 tabular-nums">
-                          {progress.done}/{progress.total}
-                        </span>
-                      )}
-                    </div>
-                    {progress && (
-                      <Progress
-                        value={progress.done}
-                        max={progress.total}
-                        aria-label={`Progresso do agente ${agentName(agent)}`}
-                      />
-                    )}
-                  </div>
-                )
-              })}
+              {agents.map((agent, index) => (
+                <AgentStatusRow key={`${agent.stage ?? 'autonomo'}-${index}`} agent={agent} cardId={card.id} />
+              ))}
               <ActionBar card={card} onDeleted={onClose} />
               {error && <p className="text-xs text-destructive">{error}</p>}
             </DialogHeader>

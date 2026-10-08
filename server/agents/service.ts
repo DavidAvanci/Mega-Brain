@@ -227,8 +227,7 @@ function cardIdFromWorkspaceCwd(cwd: string, workspaceDir: string | undefined, c
   }
   const withinRoot = relative(realWorkspaceDir, resolve(cwd))
   if (!withinRoot || withinRoot === '..' || withinRoot.startsWith(`..${sep}`) || isAbsolute(withinRoot)) return undefined
-  const cardId = withinRoot.split(sep)[0]
-  return cardIds.has(cardId) ? cardId : undefined
+  return canonicalCardId(withinRoot.split(sep)[0], cardIds)
 }
 
 function normalizedSessionCwd(cwd: string): string | undefined {
@@ -265,6 +264,14 @@ function existingCardIds(workspaceDir: string | undefined): Set<string> {
   } catch {
     return new Set()
   }
+}
+
+function canonicalCardId(candidate: string | undefined, cardIds: Set<string>): string | undefined {
+  if (!candidate) return undefined
+  if (cardIds.has(candidate)) return candidate
+  const key = candidate.toLowerCase()
+  const matches = [...cardIds].filter((cardId) => cardId.toLowerCase() === key)
+  return matches.length === 1 ? matches[0] : undefined
 }
 
 function cardIdsByCwd(
@@ -398,10 +405,12 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
           const normalizedCwd = normalizedSessionCwd(session.cwd)
           const worktreeCardId =
             normalizedCwd && worktreesRoot ? cardIdFromWorktreeCwd(normalizedCwd, worktreesRoot) : undefined
+          const namedCardId = /^(.*?)\s+·\s+/.exec(name ?? '')?.[1]
           const cardId =
             cardByCwd.get(session.cwd) ??
             (normalizedCwd ? cardIdFromWorkspaceCwd(normalizedCwd, options.workspaceDir, cardIds) : undefined) ??
-            (worktreeCardId && cardIds.has(worktreeCardId) ? worktreeCardId : undefined)
+            canonicalCardId(namedCardId, cardIds) ??
+            canonicalCardId(worktreeCardId, cardIds)
           const displayName = name ?? (session.provider === 'codex' ? cardId : undefined)
           return [{ ...session, ...(displayName ? { name: displayName } : {}), ...(cardId ? { cardId } : {}) }]
         }),

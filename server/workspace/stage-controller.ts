@@ -5,14 +5,15 @@ import { type ProcessChild, type ProcessOwner, type ProcessRunner } from '../pro
 import type { CardData } from './card-record'
 import { AGENT_FILE, runStageAgent } from './stage-agent'
 import { readAgent } from './stage-agent-status'
-import { STAGES, type Stage } from './stage-catalog'
-import { restoreStageSnapshot } from './stage-snapshot'
+import { stageOwnedFiles, STAGES, type Stage } from './stage-catalog'
+import { discardStageSnapshot, restoreStageSnapshot } from './stage-snapshot'
 
 type StageControllerConfig = Pick<MegaBrainConfig, 'executables' | 'worktreesDir' | 'preferences'>
 
 export interface StageController {
   start(path: string, stage: Stage, card: CardData, model?: string): void
   stop(cardPath: string, requestedStage: unknown): Promise<void>
+  clear(cardPath: string, requestedStage: unknown): void
 }
 
 /** Owns in-process stage handles so cancellation affects only this app session. */
@@ -75,5 +76,19 @@ export function createStageController(
     }
   }
 
-  return { start, stop }
+  const clear = (cardPath: string, requestedStage: unknown) => {
+    const stageName = String(requestedStage ?? '')
+    const stage = STAGES.find((candidate) => candidate.name === stageName)
+    if (!stage) throw new Error('Etapa automática inválida')
+    const agent = readAgent(cardPath)
+    if (agent?.stage !== stage.name) throw new Error('Essa não é a última etapa registrada para o card')
+    if (agent.status === 'rodando') throw new Error('Interrompa o agente antes de limpar a etapa')
+    for (const file of [...stageOwnedFiles(stage), `${stage.name}.jsonl`, `${stage.name}.log`]) {
+      rmSync(join(cardPath, file), { force: true, recursive: true })
+    }
+    discardStageSnapshot(cardPath, stage.name)
+    rmSync(join(cardPath, AGENT_FILE), { force: true })
+  }
+
+  return { start, stop, clear }
 }

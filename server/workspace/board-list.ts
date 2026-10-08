@@ -14,6 +14,17 @@ import { deleteCard, expiredInProduction } from './worktree-lifecycle'
 
 export type BoardStageStarter = (path: string, stage: Stage, card: CardData, model?: string) => void
 
+function taskIdForSession(session: AgentSession): string | undefined {
+  const namedTask = /·\s*([A-Za-z]+\d+|#\d+)\b/.exec(session.name ?? '')?.[1]
+  if (namedTask) return namedTask
+  const titledTask = /(?:Item|Cenário|Correção orientada por teste que falhou):\s*([A-Za-z]+\d+|#\d+)\b/i.exec(
+    session.title,
+  )?.[1]
+  if (titledTask) return titledTask
+  const worktreeTask = /[\\/]items[\\/]([^\\/]+)(?:[\\/]|$)/i.exec(session.cwd)?.[1]
+  return worktreeTask?.replace(/^_(\d+)$/, '#$1')
+}
+
 /** Produces the board projection and performs its established stage housekeeping. */
 export function listBoardCards(
   root: string,
@@ -72,13 +83,21 @@ export function listBoardCards(
           ? activeSessions.find((session) => session.id === agent.sessionId || session.cwd === realpathSync(path))
           : undefined
       const agents: AgentInfo[] = agent
-        ? [{ ...agent, ...(stageSession ? { status: stageSession.status, provider: stageSession.provider } : {}) }]
+        ? [{
+            ...agent,
+            ...(stageSession
+              ? { status: stageSession.status, provider: stageSession.provider, sessionControlId: stageSession.id }
+              : {}),
+          }]
         : []
       for (const session of activeSessions) {
         if (session === stageSession) continue
+        const taskId = taskIdForSession(session)
         agents.push({
           status: session.status,
           provider: session.provider,
+          sessionControlId: session.id,
+          ...(taskId ? { taskId, phase: `Iniciando ${taskId}` } : {}),
           startedAt: session.startedAt,
           activity: session.activity,
         })
@@ -94,6 +113,7 @@ export function listBoardCards(
         createdAt: new Date(stat.birthtimeMs || stat.mtimeMs).toISOString(),
         updatedAt,
         agents,
+        lastStage: agent?.stage,
         smartDiffRunning: isSmartDiffRunning(path),
         devEnv: readDevEnv(path),
         prStates: prUrls.length ? prStates(prUrls) : undefined,
