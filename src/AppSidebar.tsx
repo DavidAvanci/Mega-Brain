@@ -25,7 +25,10 @@ export function AppSidebar({ activePage, onNavigate, onOpenSettings }: AppSideba
   for (const session of sessions) if (isAgentSessionActive(session)) activeAgentCount += 1
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r bg-card/60 p-3" aria-label="Navegação principal">
+    <aside
+      className="flex min-h-0 w-56 shrink-0 flex-col overflow-y-auto border-r bg-card/60 p-3"
+      aria-label="Navegação principal"
+    >
       <nav>
         <p className="mb-2 px-2 text-xs font-medium tracking-wider text-muted-foreground uppercase">Navegação</p>
         <div className="space-y-1">
@@ -57,9 +60,12 @@ export function AppSidebar({ activePage, onNavigate, onOpenSettings }: AppSideba
         </div>
       </nav>
 
-      <div className="mt-auto space-y-3 border-t pt-3">
-        <section className="rounded-lg border bg-background/70 p-3" aria-label="Consumo do Claude">
-          <UsageMeter layout="stacked" />
+      <div className="mt-auto shrink-0 space-y-3 border-t pt-3">
+        <section className="rounded-lg border bg-background/70 p-3" aria-label="Consumo dos agentes">
+          <p className="mb-2 text-xs font-medium">Codex</p>
+          <UsageMeter layout="stacked" provider="codex" />
+          <p className="mt-3 mb-2 text-xs font-medium">Claude</p>
+          <UsageMeter layout="stacked" provider="claude" />
         </section>
 
         <Button variant="ghost" className="w-full justify-start gap-2.5" onClick={onOpenSettings}>

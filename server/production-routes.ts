@@ -1,3 +1,4 @@
+import { createCodexUsageService } from './codex-usage/service'
 import { cardTriageHttp } from './card-triage/http'
 import { createCardTriageService } from './card-triage/service'
 import { stderrJsonlLogger } from './logger'
@@ -81,6 +82,12 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     })
   const jira = createJiraService(config.jira)
   const usage = createClaudeUsageService(config.directories.claudeCredentials)
+  const codexUsage = createCodexUsageService(
+    config.executables.codex,
+    process.env.MEGA_BRAIN_CODEX_HOME ?? join(config.directories.home, '.codex'),
+    runner,
+    owner,
+  )
   const coffee = coffeeHttp(createCoffeeService(runner, config.executables.powershell, owner))
   const repositoryRegistry = new RepositoryRegistry(repositoryCatalogFile(config.preferences.settingsFile), runner)
   const repositories = repositoriesHttp(repositoryRegistry, async (id) => {
@@ -121,6 +128,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   add('GET', '/api/jira/statuses', jiraStatusesHttp(jira))
   add('POST', '/api/jira/transition', jiraTransitionHttp(jira))
   add('GET', '/api/claude/usage', claudeUsageHttp(usage))
+  add('GET', '/api/codex/usage', claudeUsageHttp(codexUsage))
   add('GET', '/api/agents', agents)
   add('POST', '/api/agents/stop', agents)
   add('GET', '/api/coffee', coffee)
