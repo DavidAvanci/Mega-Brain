@@ -14,7 +14,9 @@ export const agentsHttp = (service: AgentSessionService): ApiHandler =>
     if (request.method !== 'POST' || request.path !== '/api/agents/stop' || typeof body.id !== 'string' || !body.id) {
       throw new Error('Requisição de agente inválida')
     }
-    service.stop(body.id)
+    if (body.codexProfileId !== undefined && typeof body.codexProfileId !== 'string')
+      throw new Error('Perfil Codex inválido')
+    service.stop(body.id, typeof body.codexProfileId === 'string' ? body.codexProfileId : undefined)
     return {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

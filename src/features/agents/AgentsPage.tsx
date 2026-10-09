@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { Tip } from '@/Tip'
 import type { AgentSession, AgentStatus } from '../../../shared/domain/agents'
 import type { Card } from '../../../shared/domain/cards'
 import { isAgentSessionActive, refreshAgentSessions, stopAgentSession, useAgentSessions } from './model/agents-state'
@@ -32,6 +33,7 @@ const STATUS_META: Record<AgentStatus, { label: string; dot: string }> = {
   aguardando: { label: 'Aguardando', dot: 'bg-amber-500' },
   concluido: { label: 'Concluída', dot: 'bg-muted-foreground/50' },
   erro: { label: 'Erro', dot: 'bg-destructive' },
+  pausado: { label: 'Pausado', dot: 'bg-muted-foreground' },
   morto: { label: 'Interrompida', dot: 'bg-muted-foreground' },
 }
 const PROVIDER_META = {
@@ -75,7 +77,7 @@ function StopAgentButton({ session }: { session: AgentSession }) {
     setStopping(true)
     setError(null)
     try {
-      await stopAgentSession(session.id)
+      await stopAgentSession(session.id, session.codexProfileId)
       setConfirming(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -86,15 +88,17 @@ function StopAgentButton({ session }: { session: AgentSession }) {
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="xs"
-        className="mt-1 text-muted-foreground hover:text-destructive"
-        onClick={() => setConfirming(true)}
-      >
-        <HugeiconsIcon icon={StopIcon} strokeWidth={2} />
-        Parar
-      </Button>
+      <Tip label="Parar agente">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground hover:text-destructive"
+          aria-label={`Parar agente ${session.name ?? session.title}`}
+          onClick={() => setConfirming(true)}
+        >
+          <HugeiconsIcon icon={StopIcon} strokeWidth={2} />
+        </Button>
+      </Tip>
       <Dialog open={confirming} onOpenChange={(open) => !open && !stopping && setConfirming(false)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -134,20 +138,34 @@ function AgentRow({
   return (
     <article
       className={cn(
-        'grid gap-3 rounded-xl border bg-card p-4 shadow-xs sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
+        'grid gap-2 rounded-lg border bg-card p-3 shadow-xs sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
         historical && '[content-visibility:auto] [contain-intrinsic-size:auto_112px]',
       )}
     >
-      <div className="flex min-w-0 gap-3">
+      <div className="flex min-w-0 gap-2.5">
         <div
-          className={cn('mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg', provider.className)}
+          className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md', provider.className)}
           title={provider.label}
         >
-          <HugeiconsIcon icon={provider.icon} strokeWidth={1.8} className="size-5" aria-label={provider.label} />
+          <HugeiconsIcon icon={provider.icon} strokeWidth={1.8} className="size-4" aria-label={provider.label} />
         </div>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="max-w-full truncate font-sans font-semibold">{session.name ?? session.title}</h3>
+            <h3 className="max-w-full truncate font-sans text-sm font-semibold">{session.name ?? session.title}</h3>
+            <span className="text-xs text-muted-foreground">{provider.label}</span>
+            {session.provider === 'codex' && session.codexProfileName && (
+              <span
+                className="inline-flex max-w-48 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px]"
+                aria-label={`Perfil: ${session.codexProfileName}`}
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: session.codexProfileColor }}
+                />
+                <span className="truncate">{session.codexProfileName}</span>
+              </span>
+            )}
             <span className="text-xs text-muted-foreground">{DATE_FORMAT.format(new Date(session.updatedAt))}</span>
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className={cn('size-2 rounded-full', meta.dot, isActive(session) && 'animate-pulse')} />
@@ -192,9 +210,7 @@ function AgentRow({
               </span>
             </div>
           )}
-          {session.activity ? (
-            <p className="mt-1.5 truncate text-xs text-muted-foreground">{session.activity}</p>
-          ) : null}
+          {session.activity ? <p className="mt-1 truncate text-xs text-muted-foreground">{session.activity}</p> : null}
         </div>
       </div>
       <div className="flex flex-col items-start gap-1 text-xs whitespace-nowrap text-muted-foreground sm:items-end">
@@ -332,7 +348,13 @@ function AgentGroup({
         style={group.length > 3 ? { maxHeight: maxHeight ?? 352 } : undefined}
       >
         {group.map((session) => (
-          <AgentRow key={session.id} session={session} card={card} onOpenCard={onOpenCard} historical={historical} />
+          <AgentRow
+            key={`${session.codexProfileId ?? session.provider}:${session.id}`}
+            session={session}
+            card={card}
+            onOpenCard={onOpenCard}
+            historical={historical}
+          />
         ))}
       </div>
     </div>
@@ -341,14 +363,33 @@ function AgentGroup({
 
 export function AgentsPage({ cards, onOpenCard }: { cards: Card[]; onOpenCard: (id: string) => void }) {
   const { sessions, loaded, refreshing, error } = useAgentSessions()
+  const [selectedProfile, setSelectedProfile] = useState('')
   const cardsById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards])
+  const profileOptions = useMemo(() => {
+    const options = new Map<string, string>()
+    for (const session of sessions) {
+      if (session.provider === 'claude') options.set('claude', 'Claude')
+      else
+        options.set(
+          `codex:${session.codexProfileId ?? ''}`,
+          session.codexProfileName ?? 'Codex · perfil não identificado',
+        )
+    }
+    return [...options].sort((left, right) => left[1].localeCompare(right[1], 'pt-BR'))
+  }, [sessions])
+  const profileFilter = profileOptions.some(([id]) => id === selectedProfile) ? selectedProfile : ''
 
   const { active, recent } = useMemo(() => {
     const current: AgentSession[] = []
     const history: AgentSession[] = []
-    for (const session of sessions) (isActive(session) ? current : history).push(session)
+    for (const session of sessions) {
+      const profile = session.provider === 'claude' ? 'claude' : `codex:${session.codexProfileId ?? ''}`
+      if (profileFilter && profile !== profileFilter) continue
+      const bucket = isActive(session) ? current : history
+      bucket.push(session)
+    }
     return { active: current, recent: history }
-  }, [sessions])
+  }, [sessions, profileFilter])
   const activeGroups = useMemo(() => groupSessions(active, cardsById), [active, cardsById])
   const recentGroups = useMemo(() => groupSessions(recent, cardsById), [recent, cardsById])
 
@@ -364,10 +405,34 @@ export function AgentsPage({ cards, onOpenCard }: { cards: Card[]; onOpenCard: (
             <h2 className="font-sans text-2xl font-semibold tracking-tight">Agentes</h2>
             <p className="mt-1 text-sm text-muted-foreground">Sessões do Claude e Codex detectadas nesta máquina.</p>
           </div>
-          <Button variant="outline" size="sm" disabled={refreshing} onClick={() => void refreshAgentSessions(true)}>
-            <HugeiconsIcon icon={RefreshIcon} strokeWidth={2} className={cn(refreshing && 'animate-spin')} />
-            Atualizar
-          </Button>
+          <div className="flex items-center gap-2">
+            {profileOptions.length > 1 && (
+              <select
+                aria-label="Filtrar por perfil"
+                className="max-w-56 rounded-md border bg-background px-2 py-1.5 text-xs"
+                value={profileFilter}
+                onChange={(event) => setSelectedProfile(event.target.value)}
+              >
+                <option value="">Todos os perfis</option>
+                {profileOptions.map(([id, label]) => (
+                  <option key={id} value={id}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Tip label="Atualizar agentes">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Atualizar agentes"
+                disabled={refreshing}
+                onClick={() => void refreshAgentSessions(true)}
+              >
+                <HugeiconsIcon icon={RefreshIcon} strokeWidth={2} className={cn(refreshing && 'animate-spin')} />
+              </Button>
+            </Tip>
+          </div>
         </header>
 
         {error ? (

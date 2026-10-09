@@ -1,3 +1,4 @@
+import { knowledgeRefs, type KnowledgeRef } from '../../shared/domain/knowledge'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { FlowLevel } from '../../shared/domain/cards'
@@ -11,6 +12,7 @@ export interface WorktreeOrigin {
 }
 
 export interface CardData {
+  knowledgeRefs?: KnowledgeRef[]
   title: string
   description: string
   status: string
@@ -25,7 +27,12 @@ export interface CardData {
 function readRefMap(value: unknown): Record<string, string[]> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   const entries = Object.entries(value).flatMap(([repo, refs]) => {
-    const list = typeof refs === 'string' ? [refs] : Array.isArray(refs) ? refs.filter((ref): ref is string => typeof ref === 'string') : []
+    const list =
+      typeof refs === 'string'
+        ? [refs]
+        : Array.isArray(refs)
+          ? refs.filter((ref): ref is string => typeof ref === 'string')
+          : []
     return list.length ? [[repo, list] as const] : []
   })
   return entries.length ? Object.fromEntries(entries) : undefined
@@ -36,7 +43,8 @@ function readPreparedBases(value: unknown): CardData['preparedBases'] {
   const entries = Object.entries(value).flatMap(([repo, entry]) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return []
     const { refs, preparedAt } = entry as Record<string, unknown>
-    if (!Array.isArray(refs) || !refs.every((ref) => typeof ref === 'string') || typeof preparedAt !== 'string') return []
+    if (!Array.isArray(refs) || !refs.every((ref) => typeof ref === 'string') || typeof preparedAt !== 'string')
+      return []
     return [[repo, { refs, preparedAt }] as const]
   })
   return entries.length ? Object.fromEntries(entries) : undefined
@@ -88,6 +96,7 @@ export function readCard(folderPath: string, name: string): CardData {
   }
   return {
     title: typeof data.title === 'string' && data.title ? data.title : name,
+    knowledgeRefs: knowledgeRefs(data.knowledgeRefs),
     description: typeof data.description === 'string' ? data.description : '',
     status: typeof data.status === 'string' && data.status ? data.status : 'a-fazer',
     flow: readFlow(data.flow),

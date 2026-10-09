@@ -75,6 +75,10 @@ export function isTauriDesktop(
   return Boolean(target?.__TAURI_INTERNALS__ && typeof target.__TAURI__?.core?.invoke === 'function')
 }
 
+export function isMacOSDesktop(): boolean {
+  return isTauriDesktop() && typeof navigator !== 'undefined' && /Macintosh|Mac OS X/.test(navigator.userAgent)
+}
+
 function sessionFrom(value: unknown): BackendSession | undefined {
   if (!value || typeof value !== 'object') return undefined
   const candidate = value as Record<string, unknown>

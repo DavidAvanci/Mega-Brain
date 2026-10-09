@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "macos", allow(dead_code))]
+
 //! Lifecycle state owned by the desktop backend supervisor.
 //!
 //! Starting the WSL process and parsing its handshake deliberately live in the
@@ -175,6 +177,17 @@ pub struct BackendSupervisor {
     child: Arc<Mutex<Option<Child>>>,
     failure: Arc<Mutex<Option<StartupFailure>>>,
     wsl_preference_path: Arc<Mutex<Option<PathBuf>>>,
+    native_backend_paths: Arc<Mutex<Option<NativeBackendPaths>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NativeBackendPaths {
+    pub node: PathBuf,
+    pub backend: PathBuf,
+    pub settings_file: PathBuf,
+    pub workspace_dir: PathBuf,
+    pub worktrees_dir: PathBuf,
+    pub home_dir: PathBuf,
 }
 
 impl Default for BackendSupervisor {
@@ -191,6 +204,7 @@ impl BackendSupervisor {
             child: Arc::new(Mutex::new(None)),
             failure: Arc::new(Mutex::new(None)),
             wsl_preference_path: Arc::new(Mutex::new(None)),
+            native_backend_paths: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -199,6 +213,10 @@ impl BackendSupervisor {
     /// default distribution: choosing one is a user-visible setup decision.
     pub fn set_wsl_preference_path(&self, path: PathBuf) {
         *self.wsl_preference_path.lock().expect("WSL preference lock poisoned") = Some(path);
+    }
+
+    pub fn set_native_backend_paths(&self, paths: NativeBackendPaths) {
+        *self.native_backend_paths.lock().expect("native backend paths lock poisoned") = Some(paths);
     }
 
     pub fn available_wsl_distributions(&self) -> Result<Vec<String>, String> {
@@ -249,6 +267,12 @@ impl BackendSupervisor {
     /// into the POSIX path consumed by the selected WSL backend. The WebView
     /// never receives shell or general filesystem capabilities.
     pub fn normalize_selected_directory(&self, selected: String) -> Result<String, String> {
+        #[cfg(target_os = "macos")]
+        {
+            return normalize_native_directory(&selected);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
         let distro = self.selected_wsl_distribution()
             .map_err(|_| StartupFailure::DistributionNotFound.code().to_owned())?;
         let selected = selected.trim();
@@ -282,6 +306,7 @@ impl BackendSupervisor {
             .map_err(|_| StartupFailure::RuntimeUnavailable.code().to_owned())?;
         status.success().then_some(path)
             .ok_or_else(|| StartupFailure::InvalidWorkspace.code().to_owned())
+        }
     }
 
     pub fn state(&self) -> SupervisorState {
@@ -305,6 +330,18 @@ impl BackendSupervisor {
     /// Starts exactly one WSL child. The first stdout line is a strict,
     /// versioned protocol message; ordinary backend logs remain on stderr.
     pub fn start_once(&self) -> Result<(), String> {
+        #[cfg(target_os = "macos")]
+        {
+            return self.start_native_once();
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            self.start_wsl_once()
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn start_wsl_once(&self) -> Result<(), String> {
         if self.state() != SupervisorState::Starting {
             return Ok(());
         }
@@ -399,6 +436,86 @@ impl BackendSupervisor {
             }
         }
         *self.config.lock().expect("backend config lock poisoned") = Some(config);
+        self.transition_to(SupervisorState::Ready).map_err(|error| error.to_string())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn start_native_once(&self) -> Result<(), String> {
+        if self.state() != SupervisorState::Starting {
+            return Ok(());
+        }
+        let paths = self.native_backend_paths.lock().expect("native backend paths lock poisoned")
+            .clone().ok_or_else(|| self.fail_before_spawn(StartupFailure::BackendFailed))?;
+        if !paths.backend.is_file() || !paths.node.is_file() {
+            return Err(self.fail_before_spawn(StartupFailure::RuntimeUnavailable));
+        }
+
+        let token = random_hex(32);
+        let session_id = random_hex(16);
+        let mut command = Command::new(&paths.node);
+        command
+            .arg(&paths.backend)
+            .current_dir(&paths.home_dir)
+            .env("MEGA_BRAIN_MODE", "desktop")
+            .env("MEGA_BRAIN_SESSION_TOKEN", &token)
+            .env("MEGA_BRAIN_SESSION_ID", &session_id)
+            .env("MEGA_BRAIN_SETTINGS_FILE", &paths.settings_file)
+            .env("WORKSPACE_DIR", &paths.workspace_dir)
+            .env("MEGA_BRAIN_WORKTREES_DIR", &paths.worktrees_dir)
+            .env("PATH", native_search_path(&paths.home_dir, &paths.node))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(debug_assertions)]
+        command.env("MEGA_BRAIN_DEV_ORIGIN", "http://127.0.0.1:15173");
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+
+        let mut child = command.spawn().map_err(|_| self.fail_before_spawn(StartupFailure::RuntimeUnavailable))?;
+        let stdout = match child.stdout.take() {
+            Some(stdout) => stdout,
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return self.fail_start_with("Backend sem stdout para handshake.".to_owned(), StartupFailure::BackendFailed);
+            }
+        };
+        let (stderr_tx, stderr_rx) = mpsc::sync_channel(1);
+        if let Some(stderr) = child.stderr.take() {
+            std::thread::spawn(move || {
+                let mut detail = String::new();
+                let _ = BufReader::new(stderr).read_to_string(&mut detail);
+                let _ = stderr_tx.send(detail);
+            });
+        }
+        *self.child.lock().expect("backend child lock poisoned") = Some(child);
+        let (tx, rx) = mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let result = BufReader::new(stdout).lines().next()
+                .ok_or_else(|| "Backend encerrou antes do handshake.".to_owned())
+                .and_then(|line| line.map_err(|_| "Não foi possível ler o handshake do backend.".to_owned()));
+            let _ = tx.send(result);
+        });
+        let line = match rx.recv_timeout(Duration::from_secs(10)) {
+            Ok(Ok(line)) => line,
+            Ok(Err(error)) => return self.fail_start_with_stderr(error, &stderr_rx),
+            Err(_) => return self.fail_start_with_stderr("Timeout aguardando o handshake do backend.".into(), &stderr_rx),
+        };
+        let ready = parse_ready_line(&line, &session_id).map_err(|error| {
+            self.terminate_owned_child();
+            self.mark_failed_with(StartupFailure::BackendIncompatible);
+            error
+        })?;
+        if self.state() != SupervisorState::Starting {
+            return Err("Backend foi encerrado durante a inicialização.".into());
+        }
+        *self.config.lock().expect("backend config lock poisoned") = Some(BackendConfig {
+            base_url: format!("http://127.0.0.1:{}", ready.port),
+            port: ready.port,
+            token,
+        });
         self.transition_to(SupervisorState::Ready).map_err(|error| error.to_string())
     }
 
@@ -517,6 +634,22 @@ impl BackendSupervisor {
     fn terminate_owned_child(&self) {
         let child = self.child.lock().expect("backend child lock poisoned").take();
         if let Some(mut child) = child {
+            #[cfg(target_os = "macos")]
+            {
+                let process_group = -(child.id() as i32);
+                unsafe {
+                    libc::kill(process_group, libc::SIGTERM);
+                }
+                for _ in 0..100 {
+                    if matches!(child.try_wait(), Ok(Some(_))) {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                unsafe {
+                    libc::kill(process_group, libc::SIGKILL);
+                }
+            }
             // `wsl.exe` owns the command it launched. Reaping that exact
             // handle closes this app's WSL command rather than targeting a
             // distro or any unrelated desktop/backend instance.
@@ -558,6 +691,60 @@ fn wsl_env_with(existing: Option<&str>, required: &[&str]) -> String {
         .collect();
     entries.extend(required.iter().copied());
     entries.join(":")
+}
+
+#[cfg(target_os = "macos")]
+fn native_search_path(home: &Path, node: &Path) -> String {
+    let mut entries: Vec<PathBuf> = [
+        home.join(".local/bin"),
+        home.join(".npm-global/bin"),
+        home.join(".cargo/bin"),
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+    ]
+    .into_iter()
+    .collect();
+    if let Some(directory) = node.parent() {
+        entries.insert(0, directory.to_path_buf());
+    }
+    let nvm_versions = home.join(".nvm/versions/node");
+    if let Ok(versions) = fs::read_dir(nvm_versions) {
+        entries.extend(versions.flatten().map(|version| version.path().join("bin")));
+    }
+    entries.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
+
+    let mut unique = Vec::new();
+    for entry in entries {
+        if !unique.contains(&entry) {
+            unique.push(entry);
+        }
+    }
+    std::env::join_paths(unique)
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+#[cfg(target_os = "macos")]
+fn normalize_native_directory(selected: &str) -> Result<String, String> {
+    let selected = selected.trim();
+    if selected.is_empty() || selected.len() > 4096 || selected.contains(['\0', '\r', '\n']) {
+        return Err(StartupFailure::InvalidWorkspace.code().to_owned());
+    }
+    let path = Path::new(selected);
+    if !path.is_absolute() {
+        return Err(StartupFailure::InvalidWorkspace.code().to_owned());
+    }
+    let normalized = fs::canonicalize(path)
+        .map_err(|_| StartupFailure::InvalidWorkspace.code().to_owned())?;
+    if !normalized.is_dir() {
+        return Err(StartupFailure::InvalidWorkspace.code().to_owned());
+    }
+    normalized
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| StartupFailure::InvalidWorkspace.code().to_owned())
 }
 
 fn wsl_environment_value(distro: &str, key: &str) -> Result<String, ()> {
@@ -954,6 +1141,7 @@ mod tests {
         assert!(WSL_RUNTIME_ACTIVATE.contains("mv -Tf \"$tmp\" \"$root/active\""));
     }
 
+    #[cfg(target_os = "windows")]
     #[test]
     fn refuses_to_start_without_a_persisted_distribution_choice() {
         let supervisor = BackendSupervisor::new();

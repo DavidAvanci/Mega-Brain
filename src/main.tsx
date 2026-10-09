@@ -5,9 +5,11 @@ import { AppToaster } from './components/ui/app-toaster'
 import { bootstrapWebApiClient } from './shared/api/api-client'
 import { DesktopConnectionBoundary } from './DesktopConnectionBoundary'
 import { startDesktopConnection } from './desktopConnection'
-import { isTauriDesktop } from './desktopBootstrap'
+import { isMacOSDesktop, isTauriDesktop } from './desktopBootstrap'
 import './index.css'
 import './theme'
+
+if (isMacOSDesktop()) document.documentElement.dataset.platform = 'macos'
 
 // The development profiler is opt-in. It is not needed to boot the app and a
 // third-party diagnostic must never prevent the desktop recovery screen from

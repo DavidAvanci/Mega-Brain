@@ -1,3 +1,4 @@
+import type { KnowledgeRef } from '../../../../shared/domain/knowledge'
 import { useSyncExternalStore } from 'react'
 import { reportDesktopApiFailure } from '../../../desktopConnection'
 import type { Card, FlowLevel, Status } from '../../../../shared/domain/cards'
@@ -81,8 +82,13 @@ export async function refresh(): Promise<void> {
   }
 }
 
-export async function createCard(title: string, description: string, flow: FlowLevel = 'dificil'): Promise<void> {
-  await createWorkspaceCard(title, description, flow)
+export async function createCard(
+  title: string,
+  description: string,
+  flow: FlowLevel = 'dificil',
+  knowledgeRefs: KnowledgeRef[] = [],
+): Promise<void> {
+  await createWorkspaceCard(title, description, flow, undefined, knowledgeRefs)
   await refresh()
 }
 
@@ -175,25 +181,16 @@ export const openFolder = (name: string) =>
 export const openPrs = (name: string, env: 'staging' | 'master', project?: string) =>
   action('/api/workspace/prs/open', 'Falha ao abrir os PRs', { name, env, project })
 export const openTerminal = (name: string) => action('/api/workspace/terminal', 'Falha ao abrir o terminal', { name })
+export const pauseCardAgents = (name: string, stage: string) =>
+  action('/api/workspace/stage/pause', 'Falha ao pausar os agentes', { name, stage }, true)
+export const resumeCardAgents = (name: string, stage: string) =>
+  action('/api/workspace/stage/resume', 'Falha ao retomar os agentes', { name, stage }, true)
 export const resetAutomaticStage = (name: string, stage: string) =>
   action('/api/workspace/stage/reset', 'Falha ao interromper e limpar a etapa', { name, stage }, true)
 export const stopCardAgent = (id: string) =>
   action('/api/agents/stop', 'Falha ao interromper o agente', { id }, true)
 export const clearLatestStage = (name: string, stage: string) =>
   action('/api/workspace/stage/clear', 'Falha ao limpar a etapa', { name, stage }, true)
-export const startDevEnv = async (name: string, frontend?: string): Promise<string[] | null> => {
-  try {
-    const result = (await workspaceAction('/api/workspace/dev-env', 'Falha ao iniciar o ambiente dev', {
-      name,
-      frontend,
-    })) as { needsFrontend?: string[] }
-    if (result.needsFrontend) return result.needsFrontend
-    await refresh()
-  } catch (error) {
-    setCardsState({ error: message(error) })
-  }
-  return null
-}
 export const stopDevEnv = (name: string) =>
   action('/api/workspace/dev-env/stop', 'Falha ao parar o ambiente dev', { name }, true)
 export const openDevEnv = (name: string, repo: string) =>

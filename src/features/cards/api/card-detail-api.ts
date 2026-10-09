@@ -1,3 +1,4 @@
+import type { KnowledgeRef } from '../../../../shared/domain/knowledge'
 import { ApiError, apiClient } from '@/shared/api/api-client'
 import { requestJson } from '@/shared/api/request-json'
 import { DEFAULT_PROMPTS, type EditorDiscovery, type MegaBrainSettings } from '../../../../shared/domain/settings'
@@ -61,6 +62,8 @@ export interface ChatHistory {
   sessionId: string | null
   entries: ChatEntry[]
   settings?: ChatAgentSettings | null
+  executionRunning?: boolean
+  pendingMessages?: number
 }
 
 export { requestJson } from '@/shared/api/request-json'
@@ -125,11 +128,16 @@ export async function abortChat(name: string): Promise<void> {
   })
 }
 
-export async function sendChat(name: string, text: string, onEvent: (event: ChatEvent) => void): Promise<void> {
+export async function sendChat(
+  name: string,
+  text: string,
+  onEvent: (event: ChatEvent) => void,
+  knowledgeRefs: KnowledgeRef[] = [],
+): Promise<void> {
   try {
     await apiClient().sse('/api/chat/send', {
       method: 'POST',
-      body: JSON.stringify({ name, text }),
+      body: JSON.stringify({ name, text, knowledgeRefs }),
       headers: { 'Content-Type': 'application/json' },
       onEvent: (event) => onEvent(event as ChatEvent),
     })

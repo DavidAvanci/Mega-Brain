@@ -2,12 +2,17 @@ import { closeSync, openSync, readFileSync, readSync, readdirSync, realpathSync,
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { AgentProvider, AgentSession, AgentSessionsResponse, AgentStatus } from '../../shared/domain/agents'
 import { agentProcesses, externalAgentCwd, type RunningAgentProcess } from '../agent-process'
-import { assistantText, parseJsonRecord, readTail, record } from '../agent-log'
+import { assistantText, parseJsonRecord, readTail, record, summarizeAgentInput, toolUse } from '../agent-log'
+import { activityVisualState, questionFromInput, questionFromText } from './activity'
+import type { IslandVisualState } from '../../shared/domain/activity-island'
+import type { CodexProfile } from '../../shared/domain/codex-profiles'
+import { canonicalCodexHome } from '../codex-profiles/service'
 
 const HEAD_BYTES = 192 * 1024
 const TAIL_BYTES = 192 * 1024
 const DEFAULT_HISTORY_LIMIT = 40
 const ACTIVE_CODEX_WINDOW_MS = 5 * 60 * 1000
+const PENDING_INPUT_WINDOW_MS = 24 * 60 * 60 * 1000
 const SESSION_NAMES_CACHE_MS = 30 * 1000
 
 interface SessionFile {
@@ -15,6 +20,9 @@ interface SessionFile {
   provider: AgentProvider
   birthtimeMs: number
   mtimeMs: number
+  size: number
+  codexHome?: string
+  codexProfile?: CodexProfile
 }
 
 export interface AgentSessionServiceOptions {
@@ -22,6 +30,8 @@ export interface AgentSessionServiceOptions {
   claudeHome?: string
   claudeProjects: string
   codexHomes?: readonly string[]
+  /** Read on each scan so edits to the profile registry take effect immediately. */
+  codexProfiles?: () => readonly CodexProfile[]
   historyLimit?: number
   now?: () => Date
   processes?: () => RunningAgentProcess[]
@@ -32,7 +42,7 @@ export interface AgentSessionServiceOptions {
 
 export interface AgentSessionService {
   list(): AgentSessionsResponse
-  stop(id: string): void
+  stop(id: string, codexProfileId?: string): void
 }
 
 function readHead(path: string, bytes: number): string {
@@ -47,7 +57,13 @@ function readHead(path: string, bytes: number): string {
   return buffer.toString('utf8')
 }
 
-function filesBelow(root: string, provider: AgentProvider, maxDepth: number): SessionFile[] {
+function filesBelow(
+  root: string,
+  provider: AgentProvider,
+  maxDepth: number,
+  codexHome?: string,
+  codexProfile?: CodexProfile,
+): SessionFile[] {
   const files: SessionFile[] = []
   const visit = (directory: string, depth: number) => {
     if (depth > maxDepth) return
@@ -63,7 +79,15 @@ function filesBelow(root: string, provider: AgentProvider, maxDepth: number): Se
       else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
         try {
           const stat = statSync(path)
-          files.push({ path, provider, birthtimeMs: stat.birthtimeMs, mtimeMs: stat.mtimeMs })
+          files.push({
+            path,
+            provider,
+            birthtimeMs: stat.birthtimeMs,
+            mtimeMs: stat.mtimeMs,
+            size: stat.size,
+            codexHome,
+            codexProfile,
+          })
         } catch {}
       }
     }
@@ -92,11 +116,8 @@ function cleanTitle(value: string | undefined, cwd: string): string {
   return clean ? clean.slice(0, 160) : basename(cwd) || cwd || 'Sessão sem título'
 }
 
-function sessionFromFile(
-  file: SessionFile,
-  activeProcess: RunningAgentProcess | undefined,
-  nowMs: number,
-): AgentSession | undefined {
+/** Cache only the events used for public status, retaining a thinking marker without its text. */
+function readSessionEvents(file: SessionFile): Record<string, unknown>[] | undefined {
   let head: string
   let tail: string
   try {
@@ -105,7 +126,37 @@ function sessionFromFile(
   } catch {
     return undefined
   }
-  const events = `${head}\n${tail}`.split('\n').map(parseJsonRecord).filter(Boolean)
+  return `${head}\n${tail}`.split('\n').flatMap((line) => {
+    const event = parseJsonRecord(line)
+    if (!event) return []
+    const payload = record(event.payload)
+    if (event.type === 'response_item' && payload?.type === 'reasoning')
+      return [{ type: 'response_item', payload: { type: 'reasoning' } }]
+    if (event.type === 'event_msg' && payload?.type === 'agent_reasoning')
+      return [{ type: 'event_msg', payload: { type: 'agent_reasoning' } }]
+    const message = record(event.message)
+    if (message && Array.isArray(message.content))
+      return [
+        {
+          ...event,
+          message: {
+            ...message,
+            content: message.content.map((block) =>
+              record(block)?.type === 'thinking' ? { type: 'thinking' } : block,
+            ),
+          },
+        },
+      ]
+    return [event]
+  })
+}
+
+function sessionFromFile(
+  file: SessionFile,
+  activeProcess: RunningAgentProcess | undefined,
+  nowMs: number,
+  events: readonly Record<string, unknown>[],
+): AgentSession {
   let id = basename(file.path, '.jsonl')
   let cwd = ''
   let title: string | undefined
@@ -115,11 +166,17 @@ function sessionFromFile(
   let effort: string | undefined
   let failed = false
   let waiting = false
+  let question: string | undefined
+  let visualState: IslandVisualState = 'working'
   let codexTurnOpen = false
+  let questionCallId: string | undefined
+  let explicitQuestion = false
+  let questionAskedAt = file.mtimeMs
   for (const event of events) {
     if (!event) continue
     const payload = record(event.payload)
     const message = record(event.message)
+    const eventTime = Date.parse(String(event.timestamp ?? payload?.timestamp ?? ''))
     if (typeof event.sessionId === 'string') id = event.sessionId
     if (typeof event.session_id === 'string') id = event.session_id
     if (typeof payload?.session_id === 'string') id = payload.session_id
@@ -142,15 +199,52 @@ function sessionFromFile(
       )
         title = event.content
       if (!title && event.type === 'user') title = eventText(message?.content)
-      if (event.type === 'user') waiting = false
+      if (event.type === 'user') {
+        waiting = false
+        question = undefined
+        explicitQuestion = false
+        visualState = 'working'
+        failed = false
+      }
       if (event.type === 'assistant') {
         if (typeof message?.model === 'string' && message.model.trim()) model = message.model
         if (typeof event.effort === 'string' && event.effort.trim()) effort = event.effort
-        waiting = message?.stop_reason === 'end_turn'
-        const narration = assistantText(event)
-        if (narration) activity = narration
+        const tool = toolUse(event)
+        if (tool) {
+          activity = [tool.name, summarizeAgentInput(record(tool.input))].filter(Boolean).join(': ')
+          visualState = activityVisualState(activity)
+          if (tool.name === 'AskUserQuestion') {
+            question = questionFromInput(tool.input)
+            waiting = Boolean(question)
+            explicitQuestion = waiting
+            questionAskedAt = Number.isFinite(eventTime) ? eventTime : file.mtimeMs
+          } else {
+            waiting = false
+            explicitQuestion = false
+          }
+        } else if (message?.stop_reason === 'end_turn') {
+          question = questionFromText(eventText(message.content))
+          waiting = Boolean(question)
+          explicitQuestion = false
+          activity = waiting ? 'Aguardando sua resposta' : 'Turno concluído'
+          visualState = waiting ? 'waiting' : 'idle'
+        } else {
+          const narration = assistantText(event)
+          if (narration) activity = narration
+          // Thinking is a state only; never expose thinking text in the island.
+          const content = message?.content
+          if (Array.isArray(content) && content.some((block) => record(block)?.type === 'thinking'))
+            visualState = 'thinking'
+        }
       }
-      if (event.type === 'result' && (event.is_error || event.subtype !== 'success')) failed = true
+      if (event.type === 'result') {
+        if (event.is_error || event.subtype !== 'success') failed = true
+        if (explicitQuestion) {
+          waiting = false
+          question = undefined
+          explicitQuestion = false
+        }
+      }
     } else {
       if (event.type === 'turn_context') {
         if (typeof payload?.model === 'string' && payload.model.trim()) model = payload.model
@@ -163,22 +257,98 @@ function sessionFromFile(
         const candidate = eventText(payload.content)
         if (candidate && !candidate.trimStart().startsWith('<')) title = candidate
       }
-      if (event.type === 'event_msg' && payload?.type === 'task_started') codexTurnOpen = true
+      if (event.type === 'event_msg' && payload?.type === 'task_started') {
+        codexTurnOpen = true
+        waiting = false
+        question = undefined
+        explicitQuestion = false
+        questionCallId = undefined
+        failed = false
+        visualState = 'working'
+      }
       if (
         event.type === 'event_msg' &&
         ['task_complete', 'task_completed', 'turn_completed'].includes(String(payload?.type))
-      )
+      ) {
         codexTurnOpen = false
+        if (explicitQuestion) {
+          waiting = false
+          question = undefined
+          explicitQuestion = false
+          questionCallId = undefined
+        }
+        if (!waiting) visualState = 'idle'
+      }
       if (event.type === 'turn.failed' || event.type === 'error') failed = true
       if (event.type === 'response_item' && payload) {
+        if (payload.type === 'reasoning') visualState = 'thinking'
+        if (payload.type === 'message' && payload.role === 'assistant') {
+          const text = eventText(payload.content)
+          if (payload.phase !== 'commentary') {
+            question = questionFromText(text)
+            waiting = Boolean(question)
+            explicitQuestion = false
+            if (waiting) visualState = 'waiting'
+          }
+        }
+        if (payload.type === 'function_call' || payload.type === 'custom_tool_call') {
+          const name = String(payload.name ?? '')
+          let input: unknown = payload.input ?? payload.arguments
+          if (typeof input === 'string') {
+            try {
+              input = JSON.parse(input)
+            } catch {
+              input = undefined
+            }
+          }
+          activity = [name, summarizeAgentInput(record(input))].filter(Boolean).join(': ')
+          // CLI tool arguments differ by provider; use commands to classify the
+          // operation while keeping raw shell arguments out of the status label.
+          const command = record(input)?.cmd
+          visualState = activityVisualState(typeof command === 'string' ? `${activity} ${command}` : activity)
+          if (/request_user_input$/.test(name)) {
+            question = questionFromInput(input)
+            waiting = Boolean(question)
+            explicitQuestion = waiting
+            questionAskedAt = Number.isFinite(eventTime) ? eventTime : file.mtimeMs
+            questionCallId = typeof payload.call_id === 'string' ? payload.call_id : undefined
+          }
+        }
+        if (
+          payload.type === 'function_call_output' &&
+          waiting &&
+          explicitQuestion &&
+          (!questionCallId || questionCallId === payload.call_id)
+        ) {
+          waiting = false
+          question = undefined
+          questionCallId = undefined
+          explicitQuestion = false
+          visualState = 'working'
+        }
         const value = payload.command ?? payload.text
-        if (typeof value === 'string') activity = value.slice(0, 300)
+        if (typeof value === 'string' && payload.type !== 'reasoning') {
+          activity = value.slice(0, 300)
+          visualState = activityVisualState(activity)
+        }
+      }
+      if (event.type === 'event_msg' && payload?.type === 'request_user_input') {
+        question = questionFromInput(payload)
+        waiting = Boolean(question)
+        explicitQuestion = waiting
+        questionCallId = typeof payload.call_id === 'string' ? payload.call_id : undefined
+        questionAskedAt = Number.isFinite(eventTime) ? eventTime : file.mtimeMs
+        if (waiting) visualState = 'waiting'
       }
     }
   }
   const freshOpenCodexTurn = file.provider === 'codex' && codexTurnOpen && nowMs - file.mtimeMs < ACTIVE_CODEX_WINDOW_MS
-  const active = Boolean(activeProcess) || freshOpenCodexTurn
-  const status: AgentStatus = active ? (waiting ? 'aguardando' : 'rodando') : failed ? 'erro' : 'concluido'
+  const freshQuestion =
+    waiting &&
+    nowMs - (explicitQuestion ? questionAskedAt : file.mtimeMs) <
+      (explicitQuestion ? PENDING_INPUT_WINDOW_MS : ACTIVE_CODEX_WINDOW_MS)
+  const active = Boolean(activeProcess) || (freshOpenCodexTurn && (!waiting || freshQuestion)) || freshQuestion
+  const status: AgentStatus = failed ? 'erro' : active ? (waiting ? 'aguardando' : 'rodando') : 'concluido'
   const fallbackStartedAt = new Date(file.birthtimeMs || file.mtimeMs).toISOString()
   return {
     id,
@@ -191,7 +361,23 @@ function sessionFromFile(
     startedAt: startedAt ?? fallbackStartedAt,
     updatedAt: new Date(file.mtimeMs).toISOString(),
     activity,
+    visualState:
+      status === 'aguardando'
+        ? 'waiting'
+        : status === 'erro'
+          ? 'error'
+          : status === 'concluido'
+            ? 'complete'
+            : visualState,
+    ...(status === 'aguardando' && question ? { question } : {}),
     pid: activeProcess?.pid,
+    ...(file.codexProfile
+      ? {
+          codexProfileId: file.codexProfile.id,
+          codexProfileName: file.codexProfile.name,
+          codexProfileColor: file.codexProfile.color,
+        }
+      : {}),
   }
 }
 
@@ -217,7 +403,11 @@ function realWorktreesRoot(worktreesDir: string | undefined): string | undefined
   }
 }
 
-function cardIdFromWorkspaceCwd(cwd: string, workspaceDir: string | undefined, cardIds: Set<string>): string | undefined {
+function cardIdFromWorkspaceCwd(
+  cwd: string,
+  workspaceDir: string | undefined,
+  cardIds: Set<string>,
+): string | undefined {
   if (!workspaceDir || !cwd) return undefined
   let realWorkspaceDir: string
   try {
@@ -299,7 +489,7 @@ function readSessionNames(claudeHome: string, codexHomes: readonly string[]): Ma
       for (const line of readTail(join(codexHome, 'session_index.jsonl'), 512 * 1024).split('\n')) {
         const entry = parseJsonRecord(line)
         if (typeof entry?.id === 'string' && typeof entry.thread_name === 'string' && entry.thread_name.trim()) {
-          names.set(`codex:${entry.id}`, entry.thread_name.trim())
+          names.set(`codex:${codexHome}:${entry.id}`, entry.thread_name.trim())
         }
       }
     } catch {}
@@ -332,6 +522,8 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
   const claudeHome = options.claudeHome ?? join(options.home, '.claude')
   let cachedNames = new Map<string, string>()
   let namesCachedAt = 0
+  let cachedHomeKey = ''
+  const cachedEvents = new Map<string, { mtimeMs: number; size: number; events: Record<string, unknown>[] }>()
   const list = (): AgentSessionsResponse => {
     const now = (options.now ?? (() => new Date()))()
     const running = (options.processes ?? agentProcesses)()
@@ -345,31 +537,61 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
       if (processes) processes.push(process)
       else activeByProviderAndCwd.set(key, [process])
     }
-    const codexHomes = uniqueExisting(options.codexHomes ?? [join(options.home, '.codex')])
+    const profiles = options.codexProfiles?.() ?? []
+    const homePath = (home: string) => canonicalCodexHome(home, options.home)
+    const profileByHome = new Map(profiles.map((profile) => [homePath(profile.home), profile]))
+    const codexHomes = uniqueExisting(
+      profiles.length
+        ? profiles.map(({ home }) => homePath(home))
+        : (options.codexHomes ?? [join(options.home, '.codex')]).map(homePath),
+    )
     const files = [
       ...filesBelow(options.claudeProjects, 'claude', 2),
       ...codexHomes.flatMap((home) => [
-        ...filesBelow(join(home, 'sessions'), 'codex', 5),
-        ...filesBelow(join(home, 'archived_sessions'), 'codex', 1),
+        ...filesBelow(join(home, 'sessions'), 'codex', 5, home, profileByHome.get(home)),
+        ...filesBelow(join(home, 'archived_sessions'), 'codex', 1, home, profileByHome.get(home)),
       ]),
     ]
       .sort((left, right) => right.mtimeMs - left.mtimeMs)
-      .slice(0, historyLimit)
+      // Retain all potentially running/waiting files across homes before limiting history.
+      .filter((file, index) => index < historyLimit || now.getTime() - file.mtimeMs < PENDING_INPUT_WINDOW_MS)
 
     const matchedPids = new Set<number>()
+    const homeBySession = new Map<AgentSession, string>()
+    const candidatePaths = new Set(files.map(({ path }) => path))
+    for (const path of cachedEvents.keys()) if (!candidatePaths.has(path)) cachedEvents.delete(path)
     const sessions = files.flatMap((file) => {
-      const candidate = sessionFromFile(file, undefined, now.getTime())
-      if (!candidate) return []
+      const cached = cachedEvents.get(file.path)
+      const events =
+        cached?.mtimeMs === file.mtimeMs && cached.size === file.size ? cached.events : readSessionEvents(file)
+      if (!events) return []
+      cachedEvents.set(file.path, { mtimeMs: file.mtimeMs, size: file.size, events })
+      const candidate = sessionFromFile(file, undefined, now.getTime(), events)
       const key = `${candidate.provider}:${candidate.cwd}`
-      const process = activeByProviderAndCwd.get(key)?.find(({ pid }) => !matchedPids.has(pid))
-      const session = process ? sessionFromFile(file, process, now.getTime()) : candidate
+      const process = activeByProviderAndCwd.get(key)?.find((candidateProcess) => {
+        if (matchedPids.has(candidateProcess.pid)) return false
+        if (candidate.provider !== 'codex') return true
+        if (candidateProcess.codexHome) return homePath(candidateProcess.codexHome) === file.codexHome
+        if (candidateProcess.codexProfileId) return candidateProcess.codexProfileId === file.codexProfile?.id
+        // A shared cwd does not identify the home of a multi-profile process.
+        return codexHomes.length === 1
+      })
+      const session = process ? sessionFromFile(file, process, now.getTime(), events) : candidate
       if (process) matchedPids.add(process.pid)
+      if (session && file.codexHome) homeBySession.set(session, file.codexHome)
       return session ? [session] : []
     })
 
     for (const process of running) {
       if (matchedPids.has(process.pid)) continue
-      sessions.unshift({
+      const profile =
+        process.provider === 'codex'
+          ? process.codexHome
+            ? (profileByHome.get(homePath(process.codexHome)) ??
+              profiles.find(({ id }) => id === process.codexProfileId))
+            : profiles.find(({ id }) => id === process.codexProfileId)
+          : undefined
+      const session: AgentSession = {
         id: `${process.provider}-${process.pid}`,
         provider: process.provider,
         status: 'rodando',
@@ -378,7 +600,12 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
         startedAt: process.startedAt ?? now.toISOString(),
         updatedAt: now.toISOString(),
         pid: process.pid,
-      })
+        ...(profile
+          ? { codexProfileId: profile.id, codexProfileName: profile.name, codexProfileColor: profile.color }
+          : {}),
+      }
+      if (process.codexHome) homeBySession.set(session, homePath(process.codexHome))
+      sessions.unshift(session)
     }
 
     sessions.sort((left, right) => {
@@ -387,20 +614,27 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
         Number(['rodando', 'aguardando'].includes(left.status))
       return activeDifference || right.updatedAt.localeCompare(left.updatedAt)
     })
-    if (now.getTime() - namesCachedAt >= SESSION_NAMES_CACHE_MS) {
+    const homeKey = codexHomes.join('\0')
+    if (homeKey !== cachedHomeKey || now.getTime() - namesCachedAt >= SESSION_NAMES_CACHE_MS) {
       cachedNames = readSessionNames(claudeHome, codexHomes)
       namesCachedAt = now.getTime()
+      cachedHomeKey = homeKey
     }
     const seen = new Set<string>()
+    let historicalCount = 0
     return {
       sessions: sessions
         .filter((session) => {
-          if (seen.has(session.id)) return false
-          seen.add(session.id)
+          const identity = `${session.provider}:${session.codexProfileId ?? homeBySession.get(session) ?? ''}:${session.id}`
+          if (seen.has(identity)) return false
+          seen.add(identity)
+          if (!['rodando', 'aguardando'].includes(session.status) && historicalCount++ >= historyLimit) return false
           return true
         })
         .flatMap((session) => {
-          const name = cachedNames.get(`${session.provider}:${session.id}`)
+          const name = cachedNames.get(
+            session.provider === 'codex' ? `codex:${homeBySession.get(session)}:${session.id}` : `claude:${session.id}`,
+          )
           if (isInternalResourcesSession(session, name)) return []
           const normalizedCwd = normalizedSessionCwd(session.cwd)
           const worktreeCardId =
@@ -419,16 +653,30 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
   }
   return {
     list,
-    stop(id) {
-      const session = list().sessions.find((candidate) => candidate.id === id)
+    stop(id, codexProfileId) {
+      const candidates = list().sessions.filter(
+        (candidate) => candidate.id === id && (!codexProfileId || candidate.codexProfileId === codexProfileId),
+      )
+      if (candidates.length > 1)
+        throw new Error('Há sessões com o mesmo identificador em perfis diferentes. Escolha o perfil do agente.')
+      const session = candidates[0]
       if (!session || !['rodando', 'aguardando'].includes(session.status) || !session.pid) {
         throw new Error('A sessão não possui um processo ativo para interromper')
       }
-      const liveProcess = (options.processes ?? agentProcesses)().find(
+      const liveProcess = (options.processes ?? (() => agentProcesses('/proc', true)))().find(
         (candidate) =>
           candidate.pid === session.pid && candidate.provider === session.provider && candidate.cwd === session.cwd,
       )
       if (!liveProcess) throw new Error('O processo do agente não está mais em execução')
+      const profile = options.codexProfiles?.().find(({ id }) => id === session.codexProfileId)
+      if (
+        profile &&
+        ((liveProcess.codexHome &&
+          liveProcess.codexProfileId !== profile.id &&
+          canonicalCodexHome(liveProcess.codexHome, options.home) !== canonicalCodexHome(profile.home, options.home)) ||
+          (liveProcess.codexProfileId && liveProcess.codexProfileId !== profile.id))
+      )
+        throw new Error('O processo do agente mudou de perfil. Atualize a lista antes de interromper.')
       ;(options.stopProcess ?? ((pid: number) => process.kill(pid, 'SIGTERM')))(liveProcess.pid)
     },
   }

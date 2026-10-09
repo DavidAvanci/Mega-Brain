@@ -642,3 +642,38 @@
   color: var(--card-foreground);
   border-color: var(--border);
 }
+
+/* The macOS WebView sits inside the system's rounded, shadowed NSWindow. */
+:root[data-platform='macos'] {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+[data-platform='macos'] body {
+  font-family: var(--font-sans);
+}
+
+[data-platform='macos'] .app-shell {
+  overflow: hidden;
+}
+
+[data-platform='macos'] .app-header--macos {
+  height: 52px;
+  min-height: 52px;
+  padding-left: 96px;
+  padding-right: 12px;
+  background: color-mix(in oklab, var(--card) 90%, var(--background));
+  border-bottom-color: color-mix(in oklab, var(--border) 65%, transparent);
+  user-select: none;
+}
+
+[data-platform='macos'] .app-header h1 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+[data-platform='macos'] .app-header h1 svg {
+  width: 20px;
+  height: 20px;
+}

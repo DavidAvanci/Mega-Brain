@@ -5,6 +5,9 @@ export function listAgentSessions(): Promise<AgentSessionsResponse> {
   return requestJson('/api/agents', 'Falha ao listar agentes')
 }
 
-export function stopAgentSession(id: string): Promise<{ ok: true }> {
-  return requestJson('/api/agents/stop', 'Falha ao interromper o agente', { method: 'POST', body: { id } })
+export function stopAgentSession(id: string, codexProfileId?: string): Promise<{ ok: true }> {
+  return requestJson('/api/agents/stop', 'Falha ao interromper o agente', {
+    method: 'POST',
+    body: { id, ...(codexProfileId ? { codexProfileId } : {}) },
+  })
 }

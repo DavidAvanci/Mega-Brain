@@ -87,6 +87,19 @@ test('restores actual DOM focus after sending with Enter', async () => {
   expect(document.activeElement).toBe(input())
 })
 
+test('mostra execução e mensagens pendentes, mantendo o composer disponível', async () => {
+  mocks.fetchChat.mockResolvedValue({ sessionId: null, executionRunning: true, pendingMessages: 1, entries: [{ role: 'assistant', text: 'Implementando API', source: 'BE1' }, { role: 'user', text: 'Inclua documentação', queued: true }] })
+  await act(async () => { root.render(<ChatTab cardId="running-card" />) })
+  expect(host.textContent).toContain('Implementando API')
+  expect(host.textContent).toContain('BE1')
+  expect(host.textContent).toContain('Pendente')
+  expect(input().disabled).toBe(false)
+  await type('Ajuste o contrato')
+  await sendWithEnter()
+  expect(mocks.sendChat).toHaveBeenCalledWith('running-card', 'Ajuste o contrato', expect.any(Function), [])
+  await finish()
+})
+
 test('restores focus after button send and a failed response', async () => {
   await type('olá')
   await act(async () => {

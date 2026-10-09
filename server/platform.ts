@@ -37,10 +37,18 @@ export function resolveOptionalExecutable(options: OptionalExecutableOptions): s
   )
 }
 
-export function wslDesktopCandidates(kind: 'cursor' | 'terminal' | 'browser' | 'powershell'): readonly string[] {
-  const wsl = Boolean(process.env.WSL_DISTRO_NAME)
+export function desktopCandidates(
+  kind: 'cursor' | 'terminal' | 'browser' | 'powershell',
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): readonly string[] {
+  if (platform === 'darwin' && kind === 'terminal')
+    return ['/System/Applications/Utilities/Terminal.app', '/Applications/Utilities/Terminal.app']
+  if (platform === 'darwin' && kind === 'browser') return ['/usr/bin/open']
+  const wsl = platform === 'linux' && Boolean(env.WSL_DISTRO_NAME)
   if (kind === 'cursor') return ['cursor', 'cursor.exe']
-  if (kind === 'terminal') return wsl ? ['wt.exe', '/mnt/c/Windows/System32/wt.exe'] : ['x-terminal-emulator']
+  if (kind === 'terminal')
+    return wsl || platform === 'win32' ? ['wt.exe', '/mnt/c/Windows/System32/wt.exe'] : ['x-terminal-emulator']
   if (kind === 'browser')
     return wsl
       ? ['/mnt/c/Program Files/Google/Chrome/Application/chrome.exe', 'chrome.exe']

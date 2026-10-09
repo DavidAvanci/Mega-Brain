@@ -1,5 +1,7 @@
+import { readStageAgentRecord, validCheckpoint, writeStageAgentRecord } from './agent-checkpoint'
+import { readCard } from './card-record'
 import { rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type { MegaBrainConfig } from '../config'
 import { type ProcessChild, type ProcessOwner, type ProcessRunner } from '../process'
 import type { CardData } from './card-record'
@@ -13,6 +15,8 @@ type StageControllerConfig = Pick<MegaBrainConfig, 'executables' | 'worktreesDir
 export interface StageController {
   start(path: string, stage: Stage, card: CardData, model?: string): void
   stop(cardPath: string, requestedStage: unknown): Promise<void>
+  pause(cardPath: string, requestedStage: unknown): Promise<void>
+  resume(cardPath: string, requestedStage: unknown): void
   clear(cardPath: string, requestedStage: unknown): void
 }
 
@@ -22,11 +26,23 @@ export function createStageController(
   runner: ProcessRunner,
   owner?: ProcessOwner,
 ): StageController {
+  const pausing = new Set<string>()
   const runningStages = new Map<string, { stage: string; child: ProcessChild }>()
 
-  const start = (path: string, stage: Stage, card: CardData, model?: string) => {
+  const start = (
+    path: string,
+    stage: Stage,
+    card: CardData,
+    model?: string,
+    resume?: { record: import('./agent-checkpoint').StageAgentRecord; sessionId?: string },
+  ) => {
     // Duas execuções no mesmo card disputam as worktrees dos itens e uma apaga a da outra
-    if (runningStages.has(path) || readAgent(path)?.status === 'rodando') return
+    if (
+      pausing.has(path) ||
+      runningStages.has(path) ||
+      ['rodando', 'aguardando', ...(resume ? [] : ['pausado'])].includes(readAgent(path)?.status ?? '')
+    )
+      return
     runStageAgent(
       path,
       stage,
@@ -46,29 +62,93 @@ export function createStageController(
         child.once('error', forget)
       },
       config.worktreesDir,
-      config.preferences.llmProvider,
+      resume ? (resume.record.provider === 'codex' ? 'chatgpt' : 'claude') : config.preferences.llmProvider,
       config.executables.codex,
       undefined,
       config.preferences.settingsFile,
+      resume,
     )
   }
 
+  const pause = async (cardPath: string, requestedStage: unknown) => {
+    const agent = readAgent(cardPath)
+    const record = readStageAgentRecord(cardPath)
+    const run = runningStages.get(cardPath)
+    if (pausing.has(cardPath)) throw new Error('A pausa já está em andamento')
+    if (
+      !agent ||
+      agent.stage !== requestedStage ||
+      !['rodando', 'aguardando'].includes(agent.status) ||
+      !record ||
+      !validCheckpoint(record.resume)
+    )
+      throw new Error('Essa execução não pode ser pausada')
+    if (!run || run.stage !== requestedStage || !owner)
+      throw new Error('Só é possível pausar agentes gerenciados por esta sessão do aplicativo')
+    pausing.add(cardPath)
+    try {
+      // Save first: board polling must not advance or retry an interrupted stage.
+      writeStageAgentRecord(cardPath, { ...record, sessionId: agent.sessionId, pausedAt: new Date().toISOString() })
+      await owner.stop(run.child)
+      runningStages.delete(cardPath)
+      writeStageAgentRecord(cardPath, {
+        ...readStageAgentRecord(cardPath),
+        ...record,
+        sessionId: agent.sessionId,
+        pid: null,
+        pausedAt: new Date().toISOString(),
+      })
+    } finally {
+      pausing.delete(cardPath)
+    }
+  }
+
+  const resume = (cardPath: string, requestedStage: unknown) => {
+    if (pausing.has(cardPath) || runningStages.has(cardPath)) throw new Error('A execução ainda está encerrando')
+    const agent = readAgent(cardPath)
+    const record = readStageAgentRecord(cardPath)
+    const stage = STAGES.find((candidate) => candidate.name === requestedStage)
+    const card = readCard(cardPath, basename(cardPath))
+    if (
+      !stage ||
+      agent?.stage !== stage.name ||
+      agent.status !== 'pausado' ||
+      !record ||
+      !validCheckpoint(record.resume)
+    )
+      throw new Error('Não há uma execução pausada para retomar')
+    if (typeof record.pid === 'number') {
+      let alive = false
+      try { process.kill(record.pid, 0); alive = true } catch { /* The previous process has exited. */ }
+      if (alive) throw new Error('A execução anterior ainda está encerrando; aguarde antes de retomar')
+    }
+    if (card.status !== stage.status)
+      throw new Error('O card mudou de etapa; restaure a etapa original antes de retomar')
+    start(cardPath, stage, card, typeof record.model === 'string' ? record.model : undefined, {
+      record,
+      sessionId: agent.sessionId,
+    })
+  }
+
   const stop = async (cardPath: string, requestedStage: unknown) => {
+    if (pausing.has(cardPath)) throw new Error('A pausa ainda está em andamento')
     const stageName = String(requestedStage ?? '')
     const stage = STAGES.find((candidate) => candidate.name === stageName)
     if (!stage) throw new Error('Etapa automática inválida')
     const agent = readAgent(cardPath)
-    if (agent?.stage !== stage.name || agent.status !== 'rodando') {
+    if (agent?.stage !== stage.name || !['rodando', 'aguardando', 'pausado'].includes(agent.status)) {
       throw new Error('Essa execução já terminou ou não está mais ativa')
     }
     const run = runningStages.get(cardPath)
-    if (!run || run.stage !== stage.name) {
+    if (agent.status !== 'pausado' && (!run || run.stage !== stage.name)) {
       throw new Error('Não é possível interromper uma execução iniciada por outra sessão do aplicativo')
     }
     // Hide the run before signalling it so a concurrent board poll cannot advance the card.
     rmSync(join(cardPath, AGENT_FILE), { force: true })
-    if (owner) await owner.stop(run.child)
-    else run.child.kill('SIGTERM')
+    if (run) {
+      if (owner) await owner.stop(run.child)
+      else run.child.kill('SIGTERM')
+    }
     runningStages.delete(cardPath)
     restoreStageSnapshot(cardPath, stage.name, agent.startedAt)
     for (const file of [`${stage.name}.jsonl`, `${stage.name}.log`]) {
@@ -82,7 +162,8 @@ export function createStageController(
     if (!stage) throw new Error('Etapa automática inválida')
     const agent = readAgent(cardPath)
     if (agent?.stage !== stage.name) throw new Error('Essa não é a última etapa registrada para o card')
-    if (agent.status === 'rodando') throw new Error('Interrompa o agente antes de limpar a etapa')
+    if (['rodando', 'aguardando', 'pausado'].includes(agent.status))
+      throw new Error('Interrompa o agente antes de limpar a etapa')
     for (const file of [...stageOwnedFiles(stage), `${stage.name}.jsonl`, `${stage.name}.log`]) {
       rmSync(join(cardPath, file), { force: true, recursive: true })
     }
@@ -90,5 +171,5 @@ export function createStageController(
     rmSync(join(cardPath, AGENT_FILE), { force: true })
   }
 
-  return { start, stop, clear }
+  return { start, stop, pause, resume, clear }
 }

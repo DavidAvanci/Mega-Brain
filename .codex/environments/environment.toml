@@ -1,0 +1,10 @@
+version = 1
+name = "Mega Brain"
+
+[setup]
+script = ""
+
+[[actions]]
+name = "Run"
+icon = "run"
+command = "npm run tauri:dev"

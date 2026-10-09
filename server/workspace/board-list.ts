@@ -77,7 +77,7 @@ export function listBoardCards(
       }
       const advanced = advanceStage(path, card, agent, startStage)
       if (advanced !== card) agent = readAgent(path)
-      const activeSessions = activeSessionsByCard.get(entry.name) ?? []
+      const activeSessions = agent?.status === 'pausado' ? [] : activeSessionsByCard.get(entry.name) ?? []
       const stageSession =
         agent?.status === 'rodando'
           ? activeSessions.find((session) => session.id === agent.sessionId || session.cwd === realpathSync(path))

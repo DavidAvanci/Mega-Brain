@@ -15,6 +15,7 @@ test('persists global preferences outside the workspace and reloads them', () =>
   const saved = writeGeneralSettings(config, {
     editor: 'custom',
     editorCommand: '/bin/sh',
+    terminalCommand: ' iTerm2 ',
     workspaceDir: join(home, 'cards'),
     worktreesDir: join(home, 'trees'),
     llmProvider: 'chatgpt',
@@ -27,6 +28,7 @@ test('persists global preferences outside the workspace and reloads them', () =>
 
   expect(saved).toMatchObject({
     editor: 'custom',
+    terminalCommand: 'iTerm2',
     llmProvider: 'chatgpt',
     jiraSite: 'example',
     jiraEmail: 'person@example.test',
@@ -44,6 +46,11 @@ test('persists global preferences outside the workspace and reloads them', () =>
 
   const reloaded = loadMegaBrainConfig({ homeDir: home, env: {} })
   expect(readGeneralSettings(reloaded)).toEqual(saved)
+  const legacyInput = { ...saved }
+  delete legacyInput.terminalCommand
+  expect(writeGeneralSettings(reloaded, legacyInput).terminalCommand).toBe('iTerm2')
+  expect(writeGeneralSettings(reloaded, { ...saved, terminalCommand: '' }).terminalCommand).toBe('')
+  expect(() => writeGeneralSettings(reloaded, { ...saved, terminalCommand: 'Terminal\ncommand' })).toThrow('sem quebras de linha')
 })
 
 test('rejects relative directories and incomplete custom editors', () => {

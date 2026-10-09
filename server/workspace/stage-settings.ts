@@ -1,17 +1,22 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ModelStageSettings } from '../../shared/domain/settings'
+import type { LlmProvider, ModelStageSettings } from '../../shared/domain/settings'
+import {
+  compatibleEffort,
+  defaultStageSettings,
+  FALLBACK_CODEX_CATALOG,
+  isClaudeModelAlias,
+  isEffort,
+  supportedEfforts,
+  type CodexModelCatalog,
+} from '../../shared/domain/codex-models'
 
 const SETTINGS_FILE = '.mega-brain-settings.json'
-const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
-
-const MODEL_STAGE_DEFAULTS: Record<string, ModelStageSettings> = {
-  'task-planning': { model: 'fable', effort: 'high' },
-  'run-task-checklist': { model: 'fable', effort: 'low' },
-  'run-test-checklist': { model: 'sonnet', effort: 'low' },
-}
-
-export function readStageSettings(root: string): Record<string, ModelStageSettings> {
+export function readStageSettings(
+  root: string,
+  provider: LlmProvider = 'claude',
+  catalog = FALLBACK_CODEX_CATALOG,
+): Record<string, ModelStageSettings> {
   let saved: unknown
   try {
     saved = JSON.parse(readFileSync(join(root, SETTINGS_FILE), 'utf8'))
@@ -21,34 +26,52 @@ export function readStageSettings(root: string): Record<string, ModelStageSettin
   const configured = saved && typeof saved === 'object' ? (saved as { stages?: unknown }).stages : undefined
   const entries = configured && typeof configured === 'object' ? (configured as Record<string, unknown>) : {}
   return Object.fromEntries(
-    Object.entries(MODEL_STAGE_DEFAULTS).map(([name, defaults]) => {
+    Object.entries(defaultStageSettings(provider, catalog)).map(([name, defaults]) => {
       const value = entries[name]
       if (!value || typeof value !== 'object') return [name, defaults]
       const { model, effort } = value as { model?: unknown; effort?: unknown }
+      const savedModel = typeof model === 'string' && model.trim() ? model.trim() : defaults.model
+      const effectiveModel = provider === 'chatgpt' && isClaudeModelAlias(savedModel) ? defaults.model : savedModel
       return [
         name,
         {
-          model: typeof model === 'string' && model.trim() ? model.trim() : defaults.model,
-          effort:
-            typeof effort === 'string' && EFFORTS.has(effort)
-              ? (effort as ModelStageSettings['effort'])
-              : defaults.effort,
+          model: effectiveModel,
+          effort: isEffort(effort) ? effort : defaults.effort,
         },
       ]
     }),
   )
 }
 
-export function writeStageSettings(root: string, stages: unknown): Record<string, ModelStageSettings> {
+export function validateStageSettings(
+  stages: unknown,
+  provider: LlmProvider = 'claude',
+  catalog: CodexModelCatalog = FALLBACK_CODEX_CATALOG,
+): void {
   if (!stages || typeof stages !== 'object') throw new Error('Configurações de etapas inválidas')
-  const settings = readStageSettings(root)
-  for (const name of Object.keys(MODEL_STAGE_DEFAULTS)) {
+  for (const name of Object.keys(defaultStageSettings(provider, catalog))) {
     const value = (stages as Record<string, unknown>)[name]
     if (!value || typeof value !== 'object') continue
     const { model, effort } = value as { model?: unknown; effort?: unknown }
     if (typeof model !== 'string' || !model.trim()) throw new Error(`Modelo inválido para ${name}`)
-    if (typeof effort !== 'string' || !EFFORTS.has(effort)) throw new Error(`Effort inválido para ${name}`)
-    settings[name] = { model: model.trim(), effort: effort as ModelStageSettings['effort'] }
+    if (!isEffort(effort) || !supportedEfforts(provider, model.trim(), catalog).includes(effort))
+      throw new Error(`Effort inválido para ${name}: não suportado pelo modelo ${model.trim()}`)
+  }
+}
+
+export function writeStageSettings(
+  root: string,
+  stages: unknown,
+  provider: LlmProvider = 'claude',
+  catalog = FALLBACK_CODEX_CATALOG,
+): Record<string, ModelStageSettings> {
+  validateStageSettings(stages, provider, catalog)
+  const settings = readStageSettings(root, provider, catalog)
+  for (const name of Object.keys(settings)) {
+    const value = (stages as Record<string, unknown>)[name]
+    if (!value || typeof value !== 'object') continue
+    const { model, effort } = value as ModelStageSettings
+    settings[name] = { model: model.trim(), effort: compatibleEffort(provider, model.trim(), effort, catalog) }
   }
   writeFileSync(join(root, SETTINGS_FILE), `${JSON.stringify({ stages: settings }, null, 2)}\n`)
   return settings

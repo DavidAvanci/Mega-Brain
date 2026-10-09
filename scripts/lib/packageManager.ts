@@ -17,9 +17,9 @@ export interface Command {
 export function detectPackageManager(dir: string): PackageManager {
   const declared = readDeclaredManager(dir)
   if (declared) return declared
+  if (existsSync(join(dir, 'pnpm-lock.yaml'))) return 'pnpm'
   if (existsSync(join(dir, '.yarnrc.yml')) || existsSync(join(dir, '.yarnrc'))) return 'yarn'
   if (existsSync(join(dir, 'package-lock.json'))) return 'npm'
-  if (existsSync(join(dir, 'pnpm-lock.yaml'))) return 'pnpm'
   if (existsSync(join(dir, 'yarn.lock'))) return 'yarn'
   return 'npm'
 }
@@ -44,8 +44,8 @@ export function lockfilesMatch(left: string, right: string): boolean {
 }
 
 export function runScriptCommand(dir: string, script: string, extra: string[] = []): Command {
-  const manager = detectPackageManager(dir)
-  if (manager !== 'npm') return { cmd: manager, args: [script, ...extra] }
+  if (detectPackageManager(dir) === 'yarn') return { cmd: 'yarn', args: [script, ...extra] }
+  if (detectPackageManager(dir) === 'pnpm') return { cmd: 'pnpm', args: ['run', script, ...extra] }
   return { cmd: 'npm', args: ['run', script, ...(extra.length ? ['--', ...extra] : [])] }
 }
 

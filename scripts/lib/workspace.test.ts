@@ -16,10 +16,21 @@ import {
   registeredWorktreePaths,
   stageItemChanges,
   taskInfo,
+  projectEnvironmentIssue,
 } from './workspace'
 import { currentBranch } from './git'
 import { existsSync, lstatSync, mkdirSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+
+test('preparação valida o lockfile pnpm sem exigir package-lock npm', () => {
+  const root = mkdtempSync(join(tmpdir(), 'pnpm-environment-'))
+  writeFileSync(join(root, 'package.json'), '{"packageManager":"pnpm@10.33.0"}')
+  writeFileSync(join(root, 'pnpm-lock.yaml'), 'lockfileVersion: 9')
+  mkdirSync(join(root, 'node_modules'))
+  expect(projectEnvironmentIssue(root)).toBeNull()
+  unlinkSync(join(root, 'pnpm-lock.yaml'))
+  expect(projectEnvironmentIssue(root)).toContain('pnpm-lock.yaml para pnpm')
+})
 
 test('taskInfo card mode', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ws-'))

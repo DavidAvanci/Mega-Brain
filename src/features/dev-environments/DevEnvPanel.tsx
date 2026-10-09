@@ -5,7 +5,10 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
-import { openDevEnv, openDevEnvAgent, startDevEnv, stopDevEnv } from '@/features/cards/model/card-commands'
+import { openDevEnv, openDevEnvAgent, stopDevEnv } from '@/features/cards/model/card-commands'
+import { previewDevEnv } from './dev-env-api'
+import { DevEnvConfiguration } from './DevEnvConfiguration'
+import type { DevEnvPreview } from '../../../shared/domain/dev-environments'
 import { Tip } from '@/Tip'
 import type { DevEnvApp, DevEnvAppStatus } from '../../../shared/domain/agents'
 import type { Card } from '../../../shared/domain/cards'
@@ -52,14 +55,21 @@ function AppLine({ app, cardId }: { app: DevEnvApp; cardId: string }) {
 
 export function DevEnvPanel({ card }: { card: Card }) {
   const env = card.devEnv
-  const [options, setOptions] = useState<string[] | null>(null)
+  const [preview, setPreview] = useState<DevEnvPreview | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
-  const start = async (frontend?: string) => {
+  const configure = async () => {
     if (pending) return
     setPending(true)
-    setOptions(await startDevEnv(card.id, frontend))
-    setPending(false)
+    setError(null)
+    try {
+      setPreview(await previewDevEnv(card.id))
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      setPending(false)
+    }
   }
 
   const stop = async () => {
@@ -69,55 +79,49 @@ export function DevEnvPanel({ card }: { card: Card }) {
     setPending(false)
   }
 
-  const retry = async () => {
-    if (pending) return
-    setPending(true)
-    await stopDevEnv(card.id)
-    setOptions(await startDevEnv(card.id))
-    setPending(false)
-  }
-
   const stopBubbling = (e: React.SyntheticEvent) => e.stopPropagation()
 
-  if (options) {
-    return (
-      <div className="mt-2 flex flex-col gap-1" onClick={stopBubbling} onPointerDown={stopBubbling}>
-        <span className="text-[11px] text-muted-foreground">Só o backend mudou — qual frontend subir?</span>
-        {options.map((repo) => (
-          <Button key={repo} size="xs" variant="outline" className="justify-start" onClick={() => start(repo)}>
-            {repo}
-          </Button>
-        ))}
-        <Button size="xs" variant="ghost" onClick={() => setOptions(null)}>
-          Cancelar
-        </Button>
-      </div>
-    )
-  }
+  const configuration = preview && (
+    <DevEnvConfiguration cardId={card.id} preview={preview} onClose={() => setPreview(null)} />
+  )
 
   if (!env || env.status === 'parado') {
     return (
-      <Tip label="Detecta os repos tocados e sobe backend/frontends localmente">
-        <Button
-          variant="outline"
-          size="xs"
-          className="mt-2 w-full text-muted-foreground"
-          disabled={pending}
-          onClick={(e) => {
-            stopBubbling(e)
-            start()
-          }}
-          onPointerDown={stopBubbling}
-        >
-          {pending ? <Spinner className="size-3" /> : <HugeiconsIcon icon={MonitorPlayIcon} strokeWidth={2} />}
-          Iniciar ambiente dev
-        </Button>
-      </Tip>
+      <div onClick={stopBubbling} onPointerDown={stopBubbling}>
+        <Tip label="Confira os projetos e escolha quais iniciar, as portas e o uso de Docker">
+          <Button
+            variant="outline"
+            size="xs"
+            className="mt-2 min-h-10 w-full text-muted-foreground"
+            disabled={pending}
+            onClick={(e) => {
+              stopBubbling(e)
+              void configure()
+            }}
+            onPointerDown={stopBubbling}
+          >
+            {pending ? <Spinner className="size-3" /> : <HugeiconsIcon icon={MonitorPlayIcon} strokeWidth={2} />}
+            Iniciar ambiente dev
+          </Button>
+        </Tip>
+        {error && (
+          <p role="alert" className="mt-1 text-[11px] text-destructive">
+            {error}
+          </p>
+        )}
+        {configuration}
+      </div>
     )
   }
 
   return (
     <div className="mt-2 flex flex-col gap-1 rounded-md border p-2" onClick={stopBubbling} onPointerDown={stopBubbling}>
+      {configuration}
+      {error && (
+        <p role="alert" className="text-[11px] text-destructive">
+          {error}
+        </p>
+      )}
       {env.status === 'subindo' && (
         <div className="flex items-center gap-1.5 text-[11px] text-primary">
           <Spinner className="size-3" />
@@ -138,13 +142,27 @@ export function DevEnvPanel({ card }: { card: Card }) {
       <div className="mt-1 flex gap-1.5">
         {env.status === 'erro' ? (
           <>
-            <Tip label="Tentar de novo">
-              <Button size="xs" variant="outline" disabled={pending} onClick={retry}>
+            <Tip label="Configurar e tentar de novo">
+              <Button
+                size="xs"
+                variant="outline"
+                aria-label="Configurar e tentar de novo"
+                className="min-h-10 min-w-10"
+                disabled={pending}
+                onClick={() => void configure()}
+              >
                 <HugeiconsIcon icon={Refresh01Icon} strokeWidth={2} />
               </Button>
             </Tip>
             <Tip label="Cancelar tentativa">
-              <Button size="xs" variant="outline" disabled={pending} onClick={stop}>
+              <Button
+                size="xs"
+                variant="outline"
+                className="min-h-10 min-w-10"
+                aria-label="Cancelar tentativa"
+                disabled={pending}
+                onClick={stop}
+              >
                 <HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
               </Button>
             </Tip>

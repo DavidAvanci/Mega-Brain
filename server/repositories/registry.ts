@@ -92,17 +92,24 @@ export class RepositoryRegistry {
     const path = await realpath(value.trim())
     if (!(await stat(path)).isDirectory()) throw new Error('O caminho escolhido não é uma pasta')
     const directories = (await readdir(path, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory() && entry.name !== '.git')
+      .filter((entry) => (entry.isDirectory() || entry.isSymbolicLink()) && entry.name !== '.git')
       .map((entry) => join(path, entry.name))
       .sort((left, right) => left.localeCompare(right, 'pt-BR'))
     if (directories.length > 1000) throw new Error('A pasta contém subpastas demais para a busca de repositórios')
+    // Workspaces can link a multi-project area such as backend/, rather than a Git checkout.
+    for (const directory of [...directories]) {
+      if (await stat(join(directory, '.git')).catch(() => null)) continue
+      const children = await readdir(directory, { withFileTypes: true }).catch(() => [])
+      directories.push(...children.filter(entry => !entry.name.startsWith('.') && (entry.isDirectory() || entry.isSymbolicLink())).map(entry => join(directory, entry.name)))
+      if (directories.length > 1000) throw new Error('O workspace contém subpastas demais para a busca de repositórios')
+    }
     const repositories: Awaited<ReturnType<RepositoryRegistry['preview']>>[] = []
     for (let index = 0; index < directories.length; index += 8) {
       const group = await Promise.all(directories.slice(index, index + 8).map(async (directory) => {
         if (!await stat(join(directory, '.git')).catch(() => null)) return null
         return this.preview(directory).catch(() => null)
       }))
-      for (const repository of group) if (repository) repositories.push(repository)
+      for (const repository of group) if (repository && !repositories.some(item => item.path === repository.path)) repositories.push(repository)
     }
     return { path, repositories }
   }
@@ -119,7 +126,7 @@ export class RepositoryRegistry {
     if (file.repositories.some((repo) => repo.alias.toLowerCase() === alias.toLowerCase())) throw new Error(`Alias já está em uso: ${alias}`)
     const repository: Repository = {
       id: `repo_${randomUUID().replaceAll('-', '')}`,
-      alias, displayName, path: preview.path, active: true, tags: [],
+      alias, displayName, path: preview.path, active: true, tags: input.tags === undefined ? [] : stringList(input.tags, 'tags'),
       githubUrl: input.githubUrl === undefined ? webOrigin(preview.origin) : optionalWebUrl(input.githubUrl),
       environments: normalizeEnvironments(input.environments),
     }

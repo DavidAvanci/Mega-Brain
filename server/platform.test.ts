@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, test } from 'vitest'
-import { resolveOptionalExecutable, wslDesktopCandidates } from './platform'
+import { resolveOptionalExecutable, desktopCandidates } from './platform'
 import { COFFEE_ARGS, createCoffeeService } from './coffee/service'
 
 describe('optional desktop executable discovery', () => {
@@ -31,8 +31,19 @@ describe('optional desktop executable discovery', () => {
   })
 
   test('WSL candidates preserve direct Windows executables as individual argv commands', () => {
-    expect(wslDesktopCandidates('browser')[0]).toBe('/mnt/c/Program Files/Google/Chrome/Application/chrome.exe')
-    expect(wslDesktopCandidates('terminal')).toContain('wt.exe')
+    const env = { WSL_DISTRO_NAME: 'Ubuntu' }
+    expect(desktopCandidates('browser', 'linux', env)[0]).toBe(
+      '/mnt/c/Program Files/Google/Chrome/Application/chrome.exe',
+    )
+    expect(desktopCandidates('terminal', 'linux', env)).toContain('wt.exe')
+  })
+
+  test('macOS uses native applications even with a stale WSL environment', () => {
+    expect(desktopCandidates('terminal', 'darwin', { WSL_DISTRO_NAME: 'Ubuntu' })).toContain(
+      '/System/Applications/Utilities/Terminal.app',
+    )
+    expect(desktopCandidates('browser', 'darwin')).toEqual(['/usr/bin/open'])
+    expect(desktopCandidates('terminal', 'linux', {})).toEqual(['x-terminal-emulator'])
   })
 })
 

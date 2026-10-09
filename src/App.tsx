@@ -1,3 +1,4 @@
+import { useAgentSounds } from './useAgentSounds'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -23,12 +24,13 @@ import { NewCardDialog } from './features/cards/ui/NewCard'
 import { AppSidebar } from './AppSidebar'
 import type { AppPage } from './AppSidebar'
 import { useAttention } from './useAttention'
+import { useActivityIsland } from './useActivityIsland'
 import { usePanScroll } from './usePanScroll'
 import { cn } from '@/lib/utils'
 import { STATUS_GROUPS } from './statusMeta'
 import { STATUS_LABELS, type Card, type Status } from '../shared/domain/cards'
 import type { EditorDiscovery, MegaBrainSettings } from '../shared/domain/settings'
-import { isTauriDesktop } from './desktopBootstrap'
+import { isMacOSDesktop, isTauriDesktop } from './desktopBootstrap'
 import { DesktopWindowControls, invokeDesktopWindowCommand } from './DesktopWindowControls'
 import { BrainIcon } from './BrainIcon'
 
@@ -43,19 +45,27 @@ const OnboardingDialog = lazy(() =>
   import('./OnboardingDialog').then((module) => ({ default: module.OnboardingDialog })),
 )
 const AgentsPage = lazy(() => import('./features/agents/AgentsPage').then((module) => ({ default: module.AgentsPage })))
-const RepositoriesPage = lazy(() => import('./features/repositories/RepositoriesPage').then((module) => ({ default: module.RepositoriesPage })))
+const RepositoriesPage = lazy(() =>
+  import('./features/repositories/RepositoriesPage').then((module) => ({ default: module.RepositoriesPage })),
+)
+
+const KnowledgePage = lazy(() =>
+  import('./features/knowledge/KnowledgePage').then((module) => ({ default: module.KnowledgePage })),
+)
 
 export default function App() {
   const { cards, error, loaded } = useCards()
-  useAttention(cards, loaded)
-  const [opened, setOpened] = useState<{ id: string; tab?: string } | null>(() => {
+  const macOS = isMacOSDesktop()
+  const [opened, setOpened] = useState<{ id: string; tab?: string; expanded?: boolean } | null>(() => {
     if (isTauriDesktop()) return null
     const params = new URLSearchParams(window.location.search)
     const id = params.get('card')
-    return id ? { id, tab: params.get('tab') ?? undefined } : null
+    return id ? { id, tab: params.get('tab') ?? undefined, expanded: params.get('cardView') === 'page' } : null
   })
+  const [cardDetailContainer, setCardDetailContainer] = useState<HTMLDivElement | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'general' | 'island'>('general')
   const [deployPrsOpen, setDeployPrsOpen] = useState(false)
   const [onboarding, setOnboarding] = useState<{ settings: MegaBrainSettings; editors: EditorDiscovery } | null>(null)
   const [newCardOpen, setNewCardOpen] = useState(false)
@@ -69,7 +79,7 @@ export default function App() {
     const syncFromUrl = () => {
       const params = new URLSearchParams(window.location.search)
       const id = params.get('card')
-      setOpened(id ? { id, tab: params.get('tab') ?? undefined } : null)
+      setOpened(id ? { id, tab: params.get('tab') ?? undefined, expanded: params.get('cardView') === 'page' } : null)
     }
     window.addEventListener('popstate', syncFromUrl)
     return () => window.removeEventListener('popstate', syncFromUrl)
@@ -98,6 +108,7 @@ export default function App() {
     if (isTauriDesktop()) return
     const url = new URL(window.location.href)
     url.searchParams.set('card', id)
+    url.searchParams.delete('cardView')
     if (tab) url.searchParams.set('tab', tab)
     else url.searchParams.delete('tab')
     window.history.pushState({}, '', url)
@@ -109,8 +120,36 @@ export default function App() {
     const url = new URL(window.location.href)
     url.searchParams.delete('card')
     url.searchParams.delete('tab')
+    url.searchParams.delete('cardView')
     window.history.replaceState({}, '', url)
   }, [])
+
+  const changeCardExpanded = useCallback((expanded: boolean) => {
+    setOpened((current) => current ? { ...current, expanded } : null)
+    if (isTauriDesktop()) return
+    const url = new URL(window.location.href)
+    if (expanded) url.searchParams.set('cardView', 'page')
+    else url.searchParams.delete('cardView')
+    window.history.replaceState({}, '', url)
+  }, [])
+
+  const navigatePage = useCallback((nextPage: AppPage) => {
+    closeCardDetail()
+    setPage(nextPage)
+  }, [closeCardDetail])
+
+  const openIslandSettings = useCallback(() => {
+    setSettingsTab('island')
+    setSettingsOpen(true)
+  }, [])
+  const openGeneralSettings = useCallback(() => {
+    setSettingsTab('general')
+    setSettingsOpen(true)
+  }, [])
+  const openIslandAgents = useCallback(() => navigatePage('agents'), [navigatePage])
+  const taskSounds = useActivityIsland(openCardDetail, openIslandSettings, openIslandAgents)
+  useAttention(cards, loaded, taskSounds)
+  useAgentSounds(taskSounds)
 
   const runWindowControl = (command: 'minimize_main_window' | 'toggle_maximize_main_window' | 'close_main_window') => {
     setWindowControlError(null)
@@ -123,6 +162,7 @@ export default function App() {
 
   const cardById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards])
   const openCard = opened ? (cardById.get(opened.id) ?? null) : null
+  const cardExpanded = Boolean(openCard && opened?.expanded)
   const dragCard = dragId ? (cardById.get(dragId) ?? null) : null
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -148,10 +188,13 @@ export default function App() {
 
   return (
     <TooltipProvider delay={300}>
-      <div className="relative flex h-dvh min-h-0 flex-col bg-background text-sm">
+      <div className="app-shell relative flex h-dvh min-h-0 flex-col bg-background text-sm">
         <header
           data-tauri-drag-region
-          className="flex min-h-11 shrink-0 items-center gap-2.5 border-b bg-card pl-3 md:pl-4"
+          className={cn(
+            'app-header flex min-h-11 shrink-0 items-center gap-2.5 border-b bg-card pl-3 md:pl-4',
+            macOS && 'app-header--macos',
+          )}
           onDoubleClick={(event) => {
             if (isTauriDesktop() && !(event.target as Element).closest('button, input, select, a')) {
               runWindowControl('toggle_maximize_main_window')
@@ -168,98 +211,123 @@ export default function App() {
             cards={cards}
             onOpenCard={openCardDetail}
             onNewCard={openNewCard}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onOpenRepositories={() => setPage('repositories')}
+            onOpenSettings={openGeneralSettings}
+            onOpenRepositories={() => navigatePage('repositories')}
+            onOpenKnowledge={() => navigatePage('knowledge')}
           />
-          {isTauriDesktop() && <DesktopWindowControls onError={setWindowControlError} />}
+          {isTauriDesktop() && !macOS && <DesktopWindowControls onError={setWindowControlError} />}
         </header>
 
         <div className="flex min-h-0 flex-1">
-          <AppSidebar activePage={page} onNavigate={setPage} onOpenSettings={() => setSettingsOpen(true)} />
+          <AppSidebar
+            activePage={page}
+            onNavigate={navigatePage}
+            onOpenSettings={openGeneralSettings}
+            compactOnMobile={cardExpanded}
+          />
 
-          {page === 'kanban' ? (
-            <section className="relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Página Kanban">
-              {(error || windowControlError) && (
-                <div
-                  className="flex shrink-0 items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
-                  role="alert"
-                >
-                  <span className="font-medium">Ação necessária:</span>
-                  <span className="min-w-0 flex-1 truncate">{windowControlError ?? error}</span>
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    className="border-destructive/30 bg-background text-foreground"
-                    onClick={() => {
-                      if (windowControlError) setWindowControlError(null)
-                      else void refresh()
-                    }}
+          <div className={cn('flex min-h-0 min-w-0 flex-1', cardExpanded && 'hidden')}>
+            {page === 'knowledge' ? (
+              <Suspense fallback={<p className="p-8 text-muted-foreground">Carregando conhecimento…</p>}>
+                <KnowledgePage />
+              </Suspense>
+            ) : page === 'kanban' ? (
+              <section className="relative flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Página Kanban">
+                {(error || windowControlError) && (
+                  <div
+                    className="flex shrink-0 items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                    role="alert"
                   >
-                    {windowControlError ? 'Dispensar' : 'Tentar novamente'}
-                  </Button>
-                </div>
-              )}
-
-              <main
-                ref={boardRef}
-                {...panHandlers}
-                className={cn(
-                  'kanban-canvas kanban-canvas--board grid min-h-0 flex-1 auto-cols-max grid-flow-col items-stretch gap-5 overflow-auto p-3 max-md:block md:p-4',
-                  panning ? 'cursor-grabbing select-none' : 'cursor-grab',
+                    <span className="font-medium">Ação necessária:</span>
+                    <span className="min-w-0 flex-1 truncate">{windowControlError ?? error}</span>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="border-destructive/30 bg-background text-foreground"
+                      onClick={() => {
+                        if (windowControlError) setWindowControlError(null)
+                        else void refresh()
+                      }}
+                    >
+                      {windowControlError ? 'Dispensar' : 'Tentar novamente'}
+                    </Button>
+                  </div>
                 )}
-              >
-                <DndContext
-                  sensors={sensors}
-                  onDragStart={onDragStart}
-                  onDragEnd={onDragEnd}
-                  onDragCancel={() => setDragId(null)}
-                >
-                  {STATUS_GROUPS.map(({ label, statuses }) => (
-                    <section key={label} className="kanban-group flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2 px-1 text-[10px] font-medium tracking-widest text-muted-foreground/70 uppercase">
-                        {label}
-                        <span className="h-px flex-1 bg-border" />
-                      </div>
-                      <div className="grid flex-1 auto-cols-[minmax(270px,310px)] grid-flow-col gap-3 max-md:mt-2 max-md:grid-flow-row max-md:grid-cols-1">
-                        {statuses.map((status) => (
-                          <Column
-                            key={status}
-                            status={status}
-                            title={STATUS_LABELS[status]}
-                            cards={cardsByStatus.get(status) ?? []}
-                            onOpen={openCardDetail}
-                            onOpenDeployPrs={status === 'aguardando-deploy' ? () => setDeployPrsOpen(true) : undefined}
-                            onNewCard={status === 'a-fazer' ? openNewCard : undefined}
-                            jiraSync={status === 'a-fazer'}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  ))}
-                  {createPortal(
-                    <DragOverlay>
-                      {dragCard && (
-                        <div className="w-[290px] cursor-grabbing rounded-md border bg-card p-3 shadow-xl">
-                          <CardBody card={dragCard} />
-                        </div>
-                      )}
-                    </DragOverlay>,
-                    document.body,
+
+                <main
+                  ref={boardRef}
+                  {...panHandlers}
+                  className={cn(
+                    'kanban-canvas kanban-canvas--board grid min-h-0 flex-1 auto-cols-max grid-flow-col items-stretch gap-5 overflow-auto p-3 max-md:block md:p-4',
+                    panning ? 'cursor-grabbing select-none' : 'cursor-grab',
                   )}
-                </DndContext>
-              </main>
-              <BoardMinimap boardRef={boardRef} cardsByStatus={cardsByStatus} />
-            </section>
-          ) : (
-            <Suspense fallback={<div className="min-h-0 flex-1 bg-background" />}>
-              {page === 'agents' ? <AgentsPage cards={cards} onOpenCard={openCardDetail} /> : <RepositoriesPage />}
+                >
+                  <DndContext
+                    sensors={sensors}
+                    onDragStart={onDragStart}
+                    onDragEnd={onDragEnd}
+                    onDragCancel={() => setDragId(null)}
+                  >
+                    {STATUS_GROUPS.map(({ label, statuses }) => (
+                      <section key={label} className="kanban-group flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2 px-1 text-[10px] font-medium tracking-widest text-muted-foreground/70 uppercase">
+                          {label}
+                          <span className="h-px flex-1 bg-border" />
+                        </div>
+                        <div className="grid flex-1 auto-cols-[minmax(270px,310px)] grid-flow-col gap-3 max-md:mt-2 max-md:grid-flow-row max-md:grid-cols-1">
+                          {statuses.map((status) => (
+                            <Column
+                              key={status}
+                              status={status}
+                              title={STATUS_LABELS[status]}
+                              cards={cardsByStatus.get(status) ?? []}
+                              onOpen={openCardDetail}
+                              onOpenDeployPrs={status === 'aguardando-deploy' ? () => setDeployPrsOpen(true) : undefined}
+                              onNewCard={status === 'a-fazer' ? openNewCard : undefined}
+                              jiraSync={status === 'a-fazer'}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                    {createPortal(
+                      <DragOverlay>
+                        {dragCard && (
+                          <div className="w-[290px] cursor-grabbing rounded-md border bg-card p-3 shadow-xl">
+                            <CardBody card={dragCard} />
+                          </div>
+                        )}
+                      </DragOverlay>,
+                      document.body,
+                    )}
+                  </DndContext>
+                </main>
+                <BoardMinimap boardRef={boardRef} cardsByStatus={cardsByStatus} />
+              </section>
+            ) : (
+              <Suspense fallback={<div className="min-h-0 flex-1 bg-background" />}>
+                {page === 'agents' ? <AgentsPage cards={cards} onOpenCard={openCardDetail} /> : <RepositoriesPage />}
+              </Suspense>
+            )}
+          </div>
+          <div ref={setCardDetailContainer} className={cardExpanded ? 'min-h-0 min-w-0 flex-1' : 'contents'}>
+            <Suspense fallback={cardExpanded ? <p className="p-8 text-muted-foreground">Carregando card…</p> : null}>
+              {openCard && cardDetailContainer && (
+                <CardModal
+                  card={openCard}
+                  initialTab={opened?.tab}
+                  onClose={closeCardDetail}
+                  expanded={cardExpanded}
+                  onExpandedChange={changeCardExpanded}
+                  container={cardDetailContainer}
+                />
+              )}
             </Suspense>
-          )}
+          </div>
         </div>
         <Suspense fallback={null}>
-          {openCard && <CardModal card={openCard} initialTab={opened?.tab} onClose={closeCardDetail} />}
           {deployPrsOpen && <DeployPrsDialog cards={cards} onClose={() => setDeployPrsOpen(false)} />}
-          {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+          {settingsOpen && <SettingsDialog initialTab={settingsTab} onClose={() => setSettingsOpen(false)} />}
           {onboarding && (
             <OnboardingDialog
               initial={onboarding.settings}

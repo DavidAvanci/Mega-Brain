@@ -1,9 +1,11 @@
+import { KnowledgeAttachments } from '@/features/knowledge/KnowledgeAttachments'
+import type { KnowledgeRef } from '../../../../shared/domain/knowledge'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { PlusSignIcon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { RepositoryMentionTextarea } from '@/components/RepositoryMentionTextarea'
 import { createCard } from '../model/card-commands'
@@ -16,6 +18,7 @@ import { FLOW_DESCRIPTIONS, FLOW_LABELS, FLOW_LEVELS, type FlowLevel } from '../
 function CardForm({ onDone }: { onDone: () => void }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [knowledgeRefs, setKnowledgeRefs] = useState<KnowledgeRef[]>([])
   const [flow, setFlow] = useState<FlowLevel>('dificil')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -63,7 +66,7 @@ function CardForm({ onDone }: { onDone: () => void }) {
     setPending(true)
     setError(null)
     try {
-      await createCard(trimmed, input.description, selectedFlow)
+      await createCard(trimmed, input.description, selectedFlow, knowledgeRefs)
       if (jevEnabled) {
         const suggestion = usedSuggestion && triage.state.status === 'suggested' ? triage.state : undefined
         const evidence = suggestion?.evidence
@@ -131,6 +134,7 @@ function CardForm({ onDone }: { onDone: () => void }) {
         onChange={(e) => edit('title', e.target.value)}
         onKeyDown={onKeyDown}
       />
+      <KnowledgeAttachments value={knowledgeRefs} onChange={setKnowledgeRefs} disabled={pending} />
       <RepositoryMentionTextarea
         aria-label="Descrição do card"
         disabled={pending}

@@ -51,6 +51,8 @@ export interface MegaBrainConfig {
     settingsFile: string
     editor: EditorPreference
     editorCommand: string
+    terminalCommand?: string
+    shellCommand?: string
     llmProvider: LlmProvider
     onboardingCompleted: boolean
     prompts?: PromptSettings
@@ -111,7 +113,7 @@ function loopbackHost(value: string | undefined): '127.0.0.1' {
 export function loadMegaBrainConfig(options: LoadMegaBrainConfigOptions = {}): MegaBrainConfig {
   const env = options.env ?? process.env
   const home = options.homeDir ?? homedir()
-  const claudeHome = optional(env.MEGA_BRAIN_CLAUDE_HOME) ?? join(home, '.claude')
+  const claudeHome = optional(env.MEGA_BRAIN_CLAUDE_HOME) ?? optional(env.CLAUDE_CONFIG_DIR) ?? join(home, '.claude')
   const settingsFile = optional(env.MEGA_BRAIN_SETTINGS_FILE) ?? join(home, '.config', 'mega-brain', 'settings.json')
   const saved = persistedSettings(settingsFile)
   const savedPrompts = saved.prompts && typeof saved.prompts === 'object' ? (saved.prompts as Record<string, unknown>) : {}
@@ -174,6 +176,8 @@ export function loadMegaBrainConfig(options: LoadMegaBrainConfigOptions = {}): M
       settingsFile,
       editor,
       editorCommand: typeof saved.editorCommand === 'string' ? saved.editorCommand.trim() : '',
+      terminalCommand: savedString(saved.terminalCommand) ?? '',
+      shellCommand: savedString(saved.shellCommand) ?? '',
       llmProvider,
       onboardingCompleted: saved.onboardingCompleted === true,
       prompts: Object.fromEntries(
