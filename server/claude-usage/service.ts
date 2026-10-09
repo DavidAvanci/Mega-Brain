@@ -1,12 +1,15 @@
-import { readFileSync } from 'node:fs'
+import { readClaudeCredentials } from './credentials'
 import type { ClaudeUsage, UsageWindow } from '../../shared/contracts/usage'
 import { systemClock, type Clock, type TextFileReader } from '../system'
 const EMPTY: ClaudeUsage = { fiveHour: null, sevenDay: null, fable: null }
 function window(value: unknown): UsageWindow | null {
   if (!value || typeof value !== 'object') return null
   const v = value as { utilization?: unknown; resets_at?: unknown }
-  return typeof v.utilization === 'number'
-    ? { utilization: v.utilization, resetsAt: typeof v.resets_at === 'string' ? v.resets_at : null }
+  return typeof v.utilization === 'number' && Number.isFinite(v.utilization)
+    ? {
+        utilization: Math.max(0, Math.min(100, v.utilization)),
+        resetsAt: typeof v.resets_at === 'string' ? v.resets_at : null,
+      }
     : null
 }
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -26,7 +29,11 @@ function fableLimit(value: unknown): UsageWindow | null {
 export function parseUsage(data: unknown): ClaudeUsage {
   const parsed = record(data)
   if (!parsed) return EMPTY
-  return { fiveHour: window(parsed.five_hour), sevenDay: window(parsed.seven_day), fable: fableLimit(parsed.limits) }
+  return {
+    fiveHour: window(parsed.five_hour),
+    sevenDay: window(parsed.seven_day),
+    fable: window(parsed.seven_day_sonnet) ?? window(parsed.seven_day_opus) ?? fableLimit(parsed.limits),
+  }
 }
 export interface ClaudeUsageService {
   getUsage(): Promise<ClaudeUsage>
@@ -36,9 +43,8 @@ export interface ClaudeUsageDependencies {
   clock?: Clock
   warn?: (message: string) => void
   files?: TextFileReader
+  credentials?: (file: string) => Promise<string>
 }
-
-const nodeTextFiles: TextFileReader = { readText: (path) => readFileSync(path, 'utf8') }
 
 /** Credentials and cache time are injectable so tests never read ~/.claude. */
 export function createClaudeUsageService(
@@ -47,7 +53,9 @@ export function createClaudeUsageService(
   dependencies: ClaudeUsageDependencies = {},
 ): ClaudeUsageService {
   const clock = dependencies.clock ?? systemClock
-  const files = dependencies.files ?? nodeTextFiles
+  const credentials =
+    dependencies.credentials ??
+    (dependencies.files ? async (file: string) => dependencies.files!.readText(file) : readClaudeCredentials)
   const warn = dependencies.warn ?? console.warn
   let cached: { value: ClaudeUsage; expires: number } | undefined
   let lastSuccess: ClaudeUsage | undefined
@@ -58,7 +66,7 @@ export function createClaudeUsageService(
     let value: ClaudeUsage | undefined
     let token: unknown
     try {
-      token = JSON.parse(files.readText(credentialsFile))?.claudeAiOauth?.accessToken
+      token = JSON.parse(await credentials(credentialsFile))?.claudeAiOauth?.accessToken
       failure = 'credentials_missing_token'
     } catch {
       // Report only a safe reason, never credentials or response bodies.
@@ -85,7 +93,19 @@ export function createClaudeUsageService(
     }
     if (!value) {
       warn(`[claude-usage] Refresh failed: ${failure}`)
-      value = { ...(lastSuccess ?? EMPTY), stale: true, updatedAt: lastSuccess?.updatedAt ?? null }
+      value = {
+        ...(lastSuccess ?? EMPTY),
+        stale: true,
+        updatedAt: lastSuccess?.updatedAt ?? null,
+        ...(dependencies.files
+          ? {}
+          : {
+              unavailableReason:
+                failure.startsWith('credentials_') || failure === 'http_401'
+                  ? 'Entre no Claude Code com /login para consultar seu consumo.'
+                  : 'Não foi possível atualizar o consumo do Claude. Tente novamente.',
+            }),
+      }
     }
     cached = { value, expires: clock.now() + 60_000 }
     return value

@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "macos", allow(dead_code))]
+
 //! Versioned, secret-free contract for the backend artifact installed in WSL.
 //!
 //! The installer owns copying the artifact and changing the active version. This

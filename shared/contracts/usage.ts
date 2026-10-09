@@ -4,6 +4,9 @@ export interface UsageWindow {
 }
 
 export interface ClaudeUsage {
+  codexProfileId?: string
+  codexProfileName?: string
+  unavailableReason?: string
   stale?: boolean
   updatedAt?: string | null
   fiveHour: UsageWindow | null

@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import { nodeProcessRunner, type ProcessOwner, type ProcessRunner } from '../process'
-import { resolveOptionalExecutable, wslDesktopCandidates } from '../platform'
+import { resolveOptionalExecutable, desktopCandidates } from '../platform'
 
 const script = `
 $sig = @'
@@ -58,7 +58,7 @@ export function createCoffeeService(
       if (session) return
       const command = resolveOptionalExecutable({
         configured: powershell,
-        candidates: wslDesktopCandidates('powershell'),
+        candidates: desktopCandidates('powershell'),
         label: 'PowerShell',
       })
       let child: ChildProcess

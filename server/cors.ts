@@ -3,13 +3,14 @@
  *
  * These values are deliberately constants, rather than configuration: an
  * arbitrary Origin from an environment variable would turn a local desktop
- * capability into a cross-origin API.  The two origins are the Tauri 2
- * Windows origins proven by the loopback spike.
+ * capability into a cross-origin API. These are the exact origins used by
+ * Tauri's Windows and macOS webviews, plus the fixed Vite origin for desktop
+ * development.
  */
-export const TAURI_ALLOWED_ORIGINS = ['http://tauri.localhost', 'https://tauri.localhost'] as const
+export const TAURI_ALLOWED_ORIGINS = ['http://tauri.localhost', 'https://tauri.localhost', 'tauri://localhost'] as const
 const TAURI_DEV_ORIGIN = 'http://127.0.0.1:15173'
 
-export const CORS_ALLOWED_METHODS = ['GET', 'POST', 'DELETE'] as const
+export const CORS_ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 export const CORS_ALLOWED_HEADERS = ['Authorization', 'Content-Type'] as const
 
 const allowedOrigins = new Set<string>([

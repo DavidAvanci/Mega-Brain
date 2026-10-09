@@ -1,3 +1,4 @@
+import { knowledgeRefs } from '../../shared/domain/knowledge'
 import { legacyJsonHandler, type ApiHandler, type SseHandler } from '../contracts'
 import type { ChatEvent } from '../../shared/contracts/chat'
 import type { ChatService } from './service'
@@ -34,7 +35,7 @@ export const chatAbortHttp = (service: ChatService): ApiHandler =>
 export const chatSendHttp =
   (service: ChatService): SseHandler<ChatEvent> =>
   async (r) => {
-    const body = r.body as { name?: unknown; text?: unknown } | undefined
+    const body = r.body as { name?: unknown; text?: unknown; knowledgeRefs?: unknown } | undefined
     return {
       status: 200,
       headers: SSE_HEADERS,
@@ -43,7 +44,7 @@ export const chatSendHttp =
       },
       stream: (emit) => {
         try {
-          service.send(String(body?.name ?? ''), String(body?.text ?? ''), emit)
+          service.send(String(body?.name ?? ''), String(body?.text ?? ''), emit, knowledgeRefs(body?.knowledgeRefs))
         } catch (error) {
           emit({ type: 'done', error: error instanceof Error ? error.message : String(error) })
         }

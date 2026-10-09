@@ -38,6 +38,7 @@ export function RepositoriesPage() {
   const [filter, setFilter] = useState<RepositoryFilter>('all')
   const [preview, setPreview] = useState<Preview | null>(null)
   const [discovery, setDiscovery] = useState<Discovery | null>(null)
+  const [workspaceAlias, setWorkspaceAlias] = useState('')
   const [busy, setBusy] = useState(false)
   const [decisionId, setDecisionId] = useState<string | null>(null)
   const [decisionAction, setDecisionAction] = useState<RepositoryDirtyAction | null>(null)
@@ -152,6 +153,7 @@ export function RepositoriesPage() {
         path: result.path,
         repositories: result.repositories.map((item) => ({ preview: item, alias: item.alias })),
       })
+      setWorkspaceAlias(result.path.split(/[\\/]/).filter(Boolean).at(-1) ?? '')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -187,6 +189,29 @@ export function RepositoriesPage() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
+      setBusy(false)
+    }
+  }
+
+  const addWorkspace = async () => {
+    if (!discovery || !/^[a-z0-9][a-z0-9._-]{0,62}$/.test(workspaceAlias)) return
+    setBusy(true)
+    try {
+      for (const item of discovery.repositories) {
+        const existing = repositories.find(repo => repo.path === item.preview.path)
+        await requestJson<Repository>(existing ? `/api/repositories?id=${encodeURIComponent(existing.id)}` : '/api/repositories', 'Falha ao cadastrar workspace', {
+          method: existing ? 'PATCH' : 'POST',
+          body: existing
+            ? { tags: [...new Set([...existing.tags, `workspace:${workspaceAlias}`])] }
+            : { path: item.preview.path, alias: item.alias.trim(), tags: [`workspace:${workspaceAlias}`] },
+        })
+      }
+      setDiscovery(null)
+      toast.success(`Workspace ${workspaceAlias} cadastrado. Use @${workspaceAlias} nos cards e chats.`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      await load()
       setBusy(false)
     }
   }
@@ -445,9 +470,14 @@ export function RepositoriesPage() {
           {discovery && (
             <div className="mt-4 space-y-3" aria-label="Repositórios encontrados na pasta">
               <p className="break-all text-xs text-muted-foreground">Pasta: {discovery.path}</p>
+              <div className="flex items-center gap-2">
+                <Input aria-label="Alias do workspace" value={workspaceAlias} onChange={event => setWorkspaceAlias(event.target.value)} placeholder="takeat-core" />
+                <Button size="sm" disabled={busy || !discovery.repositories.length || !/^[a-z0-9][a-z0-9._-]{0,62}$/.test(workspaceAlias)} onClick={() => void addWorkspace()}>Cadastrar workspace</Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Agrupa os repositórios encontrados, incluindo links, para mencionar todos com um único @alias.</p>
               {discovery.repositories.length === 0 && (
                 <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  Nenhum repositório Git pendente nas subpastas diretas.
+                  Nenhum checkout Git válido nas pastas e links do workspace.
                 </p>
               )}
               {discovery.repositories.map((item) => {

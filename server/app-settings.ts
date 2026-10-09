@@ -32,6 +32,8 @@ export function readGeneralSettings(config: MegaBrainConfig): GeneralSettings {
     jevCredentialSource: config.jev.environmentKey ? 'environment' : config.jev.savedKey ? 'saved' : 'none',
     editor: config.preferences.editor,
     editorCommand: config.preferences.editorCommand,
+    terminalCommand: config.preferences.terminalCommand ?? '',
+    shellCommand: config.preferences.shellCommand ?? '',
     workspaceDir: resolve(config.workspaceDir),
     worktreesDir: resolve(config.worktreesDir),
     llmProvider: config.preferences.llmProvider,
@@ -92,6 +94,22 @@ export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): G
   const editor = input.editor as GeneralSettings['editor']
   const editorCommand = typeof input.editorCommand === 'string' ? input.editorCommand.trim() : ''
   if (editor === 'custom' && !editorCommand) throw new Error('Informe o executável do editor personalizado')
+  const terminalCommand =
+    input.terminalCommand === undefined
+      ? config.preferences.terminalCommand ?? ''
+      : typeof input.terminalCommand === 'string'
+        ? input.terminalCommand.trim()
+        : undefined
+  if (terminalCommand === undefined || /[\0\r\n]/.test(terminalCommand))
+    throw new Error('Informe o nome do terminal ou um caminho para o aplicativo, sem quebras de linha')
+  const shellCommand =
+    input.shellCommand === undefined
+      ? config.preferences.shellCommand ?? ''
+      : typeof input.shellCommand === 'string'
+        ? input.shellCommand.trim()
+        : undefined
+  if (shellCommand === undefined || /[\0\r\n]/.test(shellCommand))
+    throw new Error('Informe o executável do shell, sem quebras de linha')
 
   const jiraSite =
     typeof input.jiraSite === 'string'
@@ -127,6 +145,8 @@ export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): G
     jevCredentialSource: config.jev.environmentKey ? 'environment' : savedJevKey ? 'saved' : 'none',
     editor,
     editorCommand,
+    terminalCommand,
+    shellCommand,
     workspaceDir: requiredAbsolutePath(input.workspaceDir, 'Workspace'),
     worktreesDir: requiredAbsolutePath(input.worktreesDir, 'Diretório de worktrees'),
     llmProvider: input.llmProvider as GeneralSettings['llmProvider'],
@@ -160,6 +180,8 @@ export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): G
   config.worktreesDir = settings.worktreesDir
   config.preferences.editor = settings.editor
   config.preferences.editorCommand = settings.editorCommand
+  config.preferences.terminalCommand = settings.terminalCommand
+  config.preferences.shellCommand = settings.shellCommand
   config.preferences.llmProvider = settings.llmProvider
   config.preferences.onboardingCompleted = settings.onboardingCompleted
   config.jira.site = jiraSite || undefined

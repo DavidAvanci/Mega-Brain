@@ -13,10 +13,12 @@ import type {
   MegaBrainSettings,
 } from '../../../shared/domain/settings'
 import { withGeneralSettings, withStageSetting } from '@/settings-state'
+import { useCodexModels } from './useCodexModels'
 
 const EMPTY_EDITOR_DISCOVERY: EditorDiscovery = { editors: [], scope: 'máquina do backend' }
 
 export function useSettingsDialog(desktop: boolean, onClose: () => void) {
+  const { catalog: codexCatalog, loading: codexModelsLoading, refreshModels } = useCodexModels()
   const [settings, setSettings] = useState<MegaBrainSettings | null>(null)
   const [editorDiscovery, setEditorDiscovery] = useState<EditorDiscovery>(EMPTY_EDITOR_DISCOVERY)
   const [autostartEnabled, setAutostartEnabled] = useState(false)
@@ -54,10 +56,10 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void) {
   }, [desktop])
 
   const updateStage = (key: keyof BoardSettings, field: 'model' | 'effort', value: string) => {
-    setSettings((current) => (current ? withStageSetting(current, key, field, value) : current))
+    setSettings((current) => (current ? withStageSetting(current, key, field, value, codexCatalog) : current))
   }
   const updateGeneral = (general: GeneralSettingsInput) => {
-    setSettings((current) => (current ? withGeneralSettings(current, general) : current))
+    setSettings((current) => (current ? withGeneralSettings(current, general, codexCatalog) : current))
   }
   const updatePrompts = (prompts: MegaBrainSettings['prompts']) => {
     setSettings((current) => (current ? { ...current, prompts } : current))
@@ -97,6 +99,9 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void) {
     autostartLoaded,
     error,
     saving,
+    codexCatalog,
+    codexModelsLoading,
+    refreshModels,
     setAutostartEnabled,
     updateStage,
     updateGeneral,

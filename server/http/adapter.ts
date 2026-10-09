@@ -1,3 +1,4 @@
+import { knowledgeCapabilityActor } from '../knowledge/agent'
 import { randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { hasValidBearerToken } from '../auth'
@@ -66,7 +67,12 @@ export async function handleHttpRequest(
     log('preflight', 204)
     return
   }
-  if (!hasValidBearerToken(headers.authorization, sessionToken)) {
+  const knowledgeAgentRequest =
+    request.method === 'POST' &&
+    new URL(request.url ?? '/', 'http://localhost').pathname === '/api/knowledge/agent' &&
+    !headers.origin &&
+    knowledgeCapabilityActor(headers['x-mega-knowledge-capability']) !== null
+  if (!knowledgeAgentRequest && !hasValidBearerToken(headers.authorization, sessionToken)) {
     writeJson(response, 401, { error: 'Não autorizado' })
     log('unauthorized', 401)
     return

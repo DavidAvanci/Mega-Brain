@@ -12,8 +12,6 @@ export const CLUBE = 'api-clube'
 export const BACKEND_LIBS = new Set(['api-core', 'takeat-services'])
 export const BACKEND_PORT = Number(process.env.DEVENV_BACKEND_PORT || 3333)
 export const CLUBE_PORT = Number(process.env.DEVENV_CLUBE_PORT || 3334)
-export const LOCAL_API = `http://localhost:${BACKEND_PORT}`
-export const LOCAL_CLUBE_API = `http://localhost:${CLUBE_PORT}`
 
 export const FRONTENDS: Readonly<Record<string, FrontendConfig>> = {
   'operation-takeat': {

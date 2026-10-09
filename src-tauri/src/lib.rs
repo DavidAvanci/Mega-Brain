@@ -2,13 +2,18 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Position, RunEvent, Size, WebviewWindow, WindowEvent};
 
+mod activity_island;
 mod supervisor;
 mod runtime_contract;
 mod stderr_tail;
 pub use supervisor::{BackendSupervisor, SupervisorState, SupervisorTransitionError};
 
 const MAIN_WINDOW_LABEL: &str = "main";
+#[cfg(target_os = "macos")]
+const WINDOW_STATE_FILE: &str = "macos-window-state.json";
+#[cfg(not(target_os = "macos"))]
 const WINDOW_STATE_FILE: &str = "window-state.json";
+#[cfg(target_os = "windows")]
 const WSL_DISTRO_FILE: &str = "wsl-distro.json";
 const MIN_WIDTH: u32 = 960;
 const MIN_HEIGHT: u32 = 640;
@@ -62,10 +67,13 @@ fn open_diagnostics_folder(app: AppHandle) -> Result<(), String> {
         Ok(())
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-        let _ = path;
-        Err("opening the diagnostics folder is available only in the Windows desktop build".into())
+        std::process::Command::new("/usr/bin/open")
+            .arg(&path)
+            .spawn()
+            .map_err(|error| format!("could not open diagnostics folder: {error}"))?;
+        Ok(())
     }
 }
 
@@ -141,6 +149,7 @@ fn state_path(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_config_dir().ok().map(|path| path.join(WINDOW_STATE_FILE))
 }
 
+#[cfg(target_os = "windows")]
 fn wsl_preference_path(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_config_dir().ok().map(|path| path.join(WSL_DISTRO_FILE))
 }
@@ -152,10 +161,14 @@ fn load_state(app: &AppHandle) -> Option<WindowState> {
 }
 
 fn save_state(window: &WebviewWindow) {
+    // Retain the normal macOS frame when entering full screen or using Zoom.
+    #[cfg(target_os = "macos")]
+    if window.is_maximized().unwrap_or(false) || window.is_fullscreen().unwrap_or(false) { return; }
     let Some(path) = state_path(&window.app_handle()) else {
         return;
     };
-    let (Ok(position), Ok(size)) = (window.outer_position(), window.outer_size()) else {
+    let size = if cfg!(target_os = "macos") { window.inner_size() } else { window.outer_size() };
+    let (Ok(position), Ok(size)) = (window.outer_position(), size) else {
         return;
     };
     let state = WindowState {
@@ -236,13 +249,14 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_dialog::init())
         .manage(BackendSupervisor::new())
+        .manage(activity_island::ActivityIsland::default())
         .setup(|app| {
             let window = app
                 .get_webview_window(MAIN_WINDOW_LABEL)
                 .expect("main window must be declared in tauri.conf.json");
             restore_state(&window);
-            // A saved size is useful when restoring from an invalid monitor,
-            // but the desktop product always starts maximized by design.
+            // macOS restores a regular native window; Windows keeps its maximized launch.
+            #[cfg(not(target_os = "macos"))]
             let _ = window.maximize();
             let state_window = window.clone();
             window.on_window_event(move |event| {
@@ -254,19 +268,60 @@ pub fn run() {
             // for the application lifetime. The command remains unavailable
             // until the versioned child handshake is accepted.
             let supervisor = app.state::<BackendSupervisor>().inner().clone();
+            #[cfg(target_os = "windows")]
             if let Some(path) = wsl_preference_path(&app.handle()) {
                 supervisor.set_wsl_preference_path(path);
             }
+            #[cfg(target_os = "macos")]
+            {
+                let home = PathBuf::from(std::env::var_os("HOME").ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "HOME is unavailable")
+                })?);
+                let config_dir = app.path().app_config_dir()?;
+                let resource_dir = app.path().resource_dir()?;
+                let bundled_backend = resource_dir.join("server/main.mjs");
+                let backend = if bundled_backend.is_file() || !cfg!(debug_assertions) {
+                    bundled_backend
+                } else {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dist/server/main.mjs")
+                };
+                let bundled_node = resource_dir.join("runtime/node");
+                let node = if cfg!(debug_assertions) {
+                    std::env::var_os("MEGA_BRAIN_NODE_BIN").map(PathBuf::from)
+                        .unwrap_or_else(|| if bundled_node.is_file() {
+                            bundled_node.clone()
+                        } else {
+                            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/mega-brain-runtime/node")
+                        })
+                } else {
+                    bundled_node
+                };
+                let data_dir = home.join("Documents/Mega Brain");
+                supervisor.set_native_backend_paths(supervisor::NativeBackendPaths {
+                    node,
+                    backend,
+                    settings_file: config_dir.join("settings.json"),
+                    workspace_dir: data_dir.join("cards"),
+                    worktrees_dir: data_dir.join("worktrees"),
+                    home_dir: home,
+                });
+            }
+            let island_app = app.handle().clone();
             std::thread::spawn(move || {
                 if supervisor.start_once().is_err() {
                     let failure = supervisor.backend_config().err().unwrap_or_else(|| "backend-failed".to_owned());
                     eprintln!("Mega Brain backend startup failed: {failure}");
+                } else if let Ok(config) = supervisor.backend_config() {
+                    if let Err(error) = island_app.state::<activity_island::ActivityIsland>().start(&island_app, &config) {
+                        eprintln!("Mega Brain activity island startup failed: {error}");
+                    }
                 }
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             backend_config,
+            activity_island::list_island_monitors,
             list_wsl_distributions,
             select_wsl_distribution,
             set_wsl_workspace_dir,
@@ -281,8 +336,9 @@ pub fn run() {
     app.run(|app, event| {
         // This runs for both an explicit app exit and the last-window close.
         // The supervisor operation is idempotent because Tauri can emit more
-        // than one exit-related event on Windows.
+        // than one exit-related event.
         if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+            app.state::<activity_island::ActivityIsland>().stop();
             app.state::<BackendSupervisor>().shutdown();
         }
     });

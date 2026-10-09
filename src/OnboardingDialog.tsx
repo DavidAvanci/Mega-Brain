@@ -12,19 +12,10 @@ import { GeneralSettingsForm } from './GeneralSettingsForm'
 import { BrainIcon } from './BrainIcon'
 import { refresh } from './features/cards/model/card-commands'
 import { saveMegaBrainSettings } from './features/cards/api/card-detail-api'
-import type { BoardSettings, EditorDiscovery, GeneralSettings, MegaBrainSettings } from '../shared/domain/settings'
-
-function stagesForProvider(stages: BoardSettings, provider: GeneralSettings['llmProvider']): BoardSettings {
-  return Object.fromEntries(
-    Object.entries(stages).map(([key, stage]) => [
-      key,
-      {
-        ...stage,
-        model: provider === 'chatgpt' ? 'default' : key === 'run-test-checklist' ? 'sonnet' : 'fable',
-      },
-    ]),
-  ) as BoardSettings
-}
+import { isMacOSDesktop } from './desktopBootstrap'
+import type { EditorDiscovery, MegaBrainSettings } from '../shared/domain/settings'
+import { defaultStageSettings, FALLBACK_CODEX_CATALOG, type CodexModelCatalog } from '../shared/domain/codex-models'
+import { requestJson } from '@/shared/api/request-json'
 
 export function OnboardingDialog({
   initial,
@@ -49,9 +40,12 @@ export function OnboardingDialog({
     setError(null)
     try {
       const providerChanged = initial.general.llmProvider !== general.llmProvider
+      const catalog = providerChanged && general.llmProvider === 'chatgpt'
+        ? await requestJson<CodexModelCatalog>('/api/codex/models', 'Falha ao consultar os modelos do Codex').catch(() => FALLBACK_CODEX_CATALOG)
+        : FALLBACK_CODEX_CATALOG
       const saved = await saveMegaBrainSettings({
         general: { ...general, onboardingCompleted: true },
-        stages: providerChanged ? stagesForProvider(initial.stages, general.llmProvider) : initial.stages,
+        stages: providerChanged ? defaultStageSettings(general.llmProvider, catalog) : initial.stages,
         prompts: initial.prompts,
       })
       await refresh()
@@ -112,7 +106,10 @@ export function OnboardingDialog({
                 ['Agentes', 'Acompanhe sessões de agentes, veja o estado de execução e abra o card relacionado.'],
                 ['Repositórios', 'Consulte repositórios e seus diretórios de trabalho para navegar pelo código.'],
                 ['Deploy e progresso', 'Prepare PRs para deploy, acompanhe o consumo de IA e use o minimapa para navegar pelo quadro.'],
-                ['Comandos rápidos', 'Use Ctrl+K para buscar cards, criar um card ou abrir configurações e repositórios.'],
+                [
+                  'Comandos rápidos',
+                  `Use ${isMacOSDesktop() ? '⌘K' : 'Ctrl+K'} para buscar cards, criar um card ou abrir configurações e repositórios.`,
+                ],
                 ['Configurações e integrações', 'Ajuste etapas e modelos de IA, editor, diretórios e integrações como Jira. O botão Café também fica no topo.'],
               ].map(([title, description]) => (
                 <div key={title} className="rounded-lg border p-3">

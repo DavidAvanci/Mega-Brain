@@ -1,3 +1,4 @@
+import type { KnowledgeRef } from '../../../../shared/domain/knowledge'
 import { requestJson } from '../../../shared/api/request-json'
 import type { FlowLevel } from '../../../../shared/domain/cards'
 import type { WorkspaceFolder } from '../model/card-mappers'
@@ -11,10 +12,11 @@ export function createWorkspaceCard(
   description: string,
   flow: FlowLevel,
   name?: string,
+  knowledgeRefs: KnowledgeRef[] = [],
 ): Promise<unknown> {
   return requestJson('/api/workspace', 'Falha ao criar pasta da task', {
     method: 'POST',
-    body: { title, description, flow, ...(name ? { name } : {}) },
+    body: { title, description, flow, knowledgeRefs, ...(name ? { name } : {}) },
   })
 }
 

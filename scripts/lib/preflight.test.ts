@@ -27,6 +27,15 @@ test('dep inexistente, id repetido e auto-dependência', () => {
   ])
 })
 
+test('preserva a causa do bloqueio de um checkout cadastrado', () => {
+  const issues = errors('## repo\n- [ ] T1 Fazer\n', {
+    ...allOk,
+    repoExists: () => false,
+    repoIssue: () => 'Checkout de repo não está disponível: /checkout',
+  })
+  expect(issues[0].message).toBe('Checkout de repo não está disponível: /checkout')
+})
+
 test('ciclo em deps', () => {
   const issues = errors('## repo\n- [ ] T1 A {deps: T3}\n- [ ] T2 B {deps: T1}\n- [ ] T3 C {deps: T2}\n')
   expect(issues[0].message).toMatch(/^Ciclo em deps: T1 → T3 → T2 → T1$/)

@@ -6,11 +6,6 @@ import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const windows = process.platform === 'win32'
-if (!windows) {
-  throw new Error(
-    'O shell do Mega Brain deve ser iniciado no Windows. Execute npm run tauri:dev pelo PowerShell no checkout Windows.',
-  )
-}
 const viteCli = resolve(repositoryRoot, 'node_modules/vite/bin/vite.js')
 const tauriCli = resolve(repositoryRoot, 'node_modules/@tauri-apps/cli/tauri.js')
 const backendBuild = resolve(repositoryRoot, 'scripts/commands/server-build.mjs')
@@ -46,8 +41,14 @@ function localDevelopmentEnvironment() {
     }
     environment[key] = entries.join(',')
   }
-  const cargoBin = resolve(environment.USERPROFILE, '.cargo', 'bin')
-  environment.Path = [cargoBin, dirname(process.execPath), environment.Path ?? ''].join(';')
+  environment.MEGA_BRAIN_NODE_BIN = process.execPath
+  if (windows) {
+    const cargoBin = resolve(environment.USERPROFILE, '.cargo', 'bin')
+    environment.Path = [cargoBin, dirname(process.execPath), environment.Path ?? ''].join(';')
+  } else {
+    const cargoBin = resolve(environment.HOME ?? process.env.HOME ?? '', '.cargo', 'bin')
+    environment.PATH = [cargoBin, dirname(process.execPath), environment.PATH ?? ''].join(':')
+  }
   return environment
 }
 
@@ -104,6 +105,9 @@ process.once('SIGTERM', () => stop('SIGTERM'))
 
 try {
   await run(process.execPath, [backendBuild], environment)
+  if (process.platform === 'darwin') {
+    await run(process.execPath, [resolve(repositoryRoot, 'scripts/commands/prepare-native-runtime.mjs')], environment)
+  }
   const existingServer = await probeVite()
   if (existingServer === 'other') {
     throw new Error(`A porta ${vitePort} já está ocupada por um servidor que não é o Vite deste projeto.`)

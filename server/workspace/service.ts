@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { startDevEnv, stopDevEnv } from '../modules/dev-environments/dev-env'
+import { previewDevEnv, startDevEnv, stopDevEnv } from '../modules/dev-environments/dev-env'
+import { parseDevEnvOptions } from '../modules/dev-environments/dev-env-options'
 import { createOwnedProcessRunner, nodeProcessRunner, type ProcessOwner, type ProcessRunner } from '../process'
 import { editorExecutable } from '../app-settings'
 import { assertTestWorkspace } from '../test-safety'
@@ -13,6 +14,7 @@ import { createStageController } from './stage-controller'
 import { inspectCard, inspectCardDiff } from './card-inspection'
 import { createSmartDiffReview } from './smart-diff-review'
 import type { AgentSession } from '../../shared/domain/agents'
+import type { CodexModelCatalog } from '../../shared/domain/codex-models'
 import { completeWorkspaceConfig, type WorkspaceConfigInput } from './workspace-config'
 import { openAgentTerminal, openDevEnvironment, openDevEnvironmentAgent, openPullRequests } from './card-actions'
 import { updateCard } from './card-update'
@@ -49,6 +51,7 @@ export function createWorkspaceService(
   runner: ProcessRunner = nodeProcessRunner,
   owner?: ProcessOwner,
   agentSessions: () => readonly AgentSession[] = () => [],
+  codexModels?: () => Promise<CodexModelCatalog>,
 ): WorkspaceService {
   const config = completeWorkspaceConfig(inputConfig)
   const stages = createStageController(config, runner, owner)
@@ -64,7 +67,8 @@ export function createWorkspaceService(
       mkdirSync(root, { recursive: true })
       if (method === 'GET') {
         if (path === '/settings/editors') return availableWorkspaceEditors(config)
-        if (path === '/settings') return readWorkspaceSettings(config, root)
+        if (path === '/settings') return readWorkspaceSettings(config, root,
+          config.preferences.llmProvider === 'chatgpt' ? await codexModels?.() : undefined)
         if (path === '/')
           return listBoardCards(
             root,
@@ -92,7 +96,8 @@ export function createWorkspaceService(
       if (method !== 'POST') throw new Error('Método não suportado')
       const data = (body ?? {}) as Record<string, unknown>
       if (path === '/settings') {
-        const result = writeWorkspaceSettings(config, data)
+        const provider = (data.general as { llmProvider?: unknown } | undefined)?.llmProvider ?? config.preferences.llmProvider
+        const result = writeWorkspaceSettings(config, data, provider === 'chatgpt' ? await codexModels?.() : undefined)
         root = result.root
         assertTestWorkspace(root)
         mkdirSync(root, { recursive: true })
@@ -110,23 +115,32 @@ export function createWorkspaceService(
       const { name, path: cardPath } = card
       if (path === '/diff') return diffReview.start(cardPath, data.regenerate === true)
       if (path === '/terminal') {
-        openAgentTerminal(cardPath, config, runner)
+        await openAgentTerminal(cardPath, config, runner)
         return { ok: true }
       }
       if (path === '/prs/open') {
-        openPullRequests(cardPath, name, data.env, data.project, config, runner)
+        await openPullRequests(cardPath, name, data.env, data.project, config, runner)
         return { ok: true }
       }
+      if (path === '/dev-env/preview') return previewDevEnv(cardPath, runner, config.preferences.settingsFile)
       if (path === '/dev-env/stop') {
         stopDevEnv(cardPath)
         return { ok: true }
       }
       if (path === '/dev-env/open') {
-        openDevEnvironment(cardPath, data.repo, config, runner)
+        await openDevEnvironment(cardPath, data.repo, config, runner)
         return { ok: true }
       }
       if (path === '/dev-env/agent') {
-        openDevEnvironmentAgent(cardPath, config, runner)
+        await openDevEnvironmentAgent(cardPath, config, runner)
+        return { ok: true }
+      }
+      if (path === '/stage/pause') {
+        await stages.pause(cardPath, data.stage)
+        return { ok: true }
+      }
+      if (path === '/stage/resume') {
+        stages.resume(cardPath, data.stage)
         return { ok: true }
       }
       if (path === '/stage/reset') {
@@ -145,6 +159,7 @@ export function createWorkspaceService(
             data.frontend ? String(data.frontend) : undefined,
             owner ? createOwnedProcessRunner(runner, owner) : runner,
             config.preferences.settingsFile,
+            parseDevEnvOptions(data.configuration),
           ),
         }
       if (path === '/update') {

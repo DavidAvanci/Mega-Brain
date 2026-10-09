@@ -1,3 +1,4 @@
+import { knowledgeRefs } from '../../shared/domain/knowledge'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { FLOW_LEVELS, type FlowLevel } from '../../shared/domain/cards.ts'
@@ -59,6 +60,7 @@ export function createCard(root: string, data: Record<string, unknown>): { folde
   const { name, path } = /^[\w-]+$/.test(requested) ? claimNamedFolder(root, requested) : claimNextCardFolder(root)
   const card = {
     title: String(data.title ?? '').trim() || name,
+    knowledgeRefs: knowledgeRefs(data.knowledgeRefs),
     description: String(data.description ?? '').trim(),
     status: 'a-fazer',
     flow: readFlow(data.flow),

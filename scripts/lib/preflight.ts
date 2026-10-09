@@ -8,6 +8,7 @@ export interface PreflightIssue {
 
 export interface PreflightDeps {
   repoExists: (repo: string) => boolean
+  repoIssue?: (repo: string) => string | undefined
   pathExists: (repo: string, pattern: string) => boolean
 }
 
@@ -67,7 +68,7 @@ export function preflight(items: Item[], deps: PreflightDeps): PreflightIssue[] 
     issues.push({
       level: 'error',
       where: `## ${repo}`,
-      message: `Heading não resolve para um repositório ativo em Repositórios — corrija o nome ou marque a seção como descartada (\`## ~~${repo}~~\`)`,
+      message: deps.repoIssue?.(repo) ?? `Repositório ausente ou inativo em Repositórios. Cadastre/ative o checkout com o alias \`${repo}\`, ou corrija o título da seção para o alias cadastrado. Descarte a seção (\`## ~~${repo}~~\`) somente se ela não fizer parte da tarefa.`,
     })
   }
 

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.megabrain.desktop",
   "build": {
-    "beforeBuildCommand": "npm run build && npm run server:build",
+    "beforeBuildCommand": "npm run build && npm run server:build && npm run tauri:runtime",
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:15173"
   },

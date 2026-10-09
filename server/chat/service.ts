@@ -1,3 +1,14 @@
+import { knowledgeContext, knowledgeAgentEnvironment } from '../knowledge/agent'
+import { knowledgeRefs, type KnowledgeRef } from '../../shared/domain/knowledge'
+import { readCard } from '../workspace/card-record'
+import {
+  appendConversation,
+  executionEntries,
+  pendingTaskMessages,
+  taskConversation,
+  taskMessageContext,
+} from './task-conversation'
+import { STAGES } from '../workspace/stage-catalog'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -5,6 +16,7 @@ import { readTail, summarizeAgentInput } from '../agent-log'
 import { claudeBin, codexBin } from '../agent-executable'
 import { agentCwds } from '../agent-process'
 import { readAgent } from '../workspace/stage-agent-status'
+import { codexProfileEnvironment } from '../codex-profiles/service'
 import { createWorkspacePathResolver } from '../workspace/path'
 import type { ChatAgentSettings, ChatEntry, ChatEvent } from '../../shared/contracts/chat'
 import { loadMegaBrainConfig, type MegaBrainConfig } from '../config'
@@ -146,7 +158,7 @@ function terminalOpen(path: string): boolean {
 
 function busyReason(path: string, running: Map<string, ProcessChild>): string | undefined {
   if (running.has(path)) return 'Já há uma mensagem em andamento'
-  if (readAgent(path)?.status === 'rodando') return 'O agente da etapa está rodando; espere ele terminar'
+  if (['rodando', 'pausado'].includes(readAgent(path)?.status ?? '')) return 'O agente da etapa está rodando; espere ele terminar'
   if (terminalOpen(path)) return 'Há um Claude aberto no terminal dessa pasta; feche antes de usar o chat'
   return undefined
 }
@@ -178,12 +190,14 @@ function streamChat(
   running: Map<string, ProcessChild>,
   aborted: WeakSet<ProcessChild>,
   owner?: ProcessOwner,
+  environment?: NodeJS.ProcessEnv,
 ): void {
   const usageId = startAgentUsage(path, new Date(), { label: 'chat', provider: 'claude' })
   let costUsd: number | undefined
   const child = runner.spawn(claudeBin(executable), chatArgs(text, resolveSession(path, projectsRoot)), {
     cwd: path,
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, ...environment },
   })
   owner?.own(child, { label: 'chat' })
   running.set(path, child)
@@ -200,7 +214,8 @@ function streamChat(
     buffer = lines.pop() ?? ''
     for (const line of lines) {
       const usageEvent = jsonRecord(line)
-      if (usageEvent?.type === 'result' && typeof usageEvent.total_cost_usd === 'number') costUsd = usageEvent.total_cost_usd
+      if (usageEvent?.type === 'result' && typeof usageEvent.total_cost_usd === 'number')
+        costUsd = usageEvent.total_cost_usd
       const settings = settingsEvent(line)
       if (settings) emit(settings)
       const event = chatEvent(line)
@@ -230,12 +245,14 @@ function streamCodexChat(
   running: Map<string, ProcessChild>,
   aborted: WeakSet<ProcessChild>,
   owner?: ProcessOwner,
+  environment?: NodeJS.ProcessEnv,
 ): void {
   const usageId = startAgentUsage(path, new Date(), { label: 'chat', provider: 'codex' })
   const args = ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', text]
   const child = runner.spawn(codexBin(executable), args, {
     cwd: path,
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, ...environment },
   })
   owner?.own(child, { label: 'chat' })
   running.set(path, child)
@@ -281,8 +298,14 @@ function streamCodexChat(
 export interface ChatService {
   history(
     name: string,
-  ): Promise<{ sessionId: string | null; entries: ChatEntry[]; settings?: ChatAgentSettings | null }>
-  send(name: string, text: string, emit: (event: ChatEvent) => void): void
+  ): Promise<{
+    sessionId: string | null
+    entries: ChatEntry[]
+    settings?: ChatAgentSettings | null
+    executionRunning?: boolean
+    pendingMessages?: number
+  }>
+  send(name: string, text: string, emit: (event: ChatEvent) => void, refs?: KnowledgeRef[]): void
   abort(name: string): boolean
   shutdown?(): Promise<void>
 }
@@ -304,32 +327,118 @@ export function createChatService(
   return {
     async history(name) {
       const path = folderPath(name)
-      if (config.preferences?.llmProvider === 'chatgpt') return { sessionId: null, entries: [], settings: null }
       const projectsRoot = config.directories.claudeProjects
-      return { sessionId: resolveSession(path, projectsRoot) ?? null, ...transcript(path, projectsRoot) }
+      const saved = taskConversation(path)
+      const stages = STAGES.flatMap((stage) => {
+        const file = join(path, `${stage.name}.jsonl`)
+        return existsSync(file)
+          ? readTail(file, TRANSCRIPT_TAIL_BYTES)
+              .split('\n')
+              .flatMap((line) => executionEntries(line).map((entry) => ({ ...entry, source: stage.name })))
+          : []
+      })
+      const legacy =
+        config.preferences?.llmProvider === 'chatgpt' ? { entries: [], settings: null } : transcript(path, projectsRoot)
+      return {
+        sessionId: resolveSession(path, projectsRoot) ?? null,
+        settings: legacy.settings,
+        entries: [...stages, ...(saved.length ? saved : legacy.entries)].slice(-500),
+        executionRunning: readAgent(path)?.status === 'rodando',
+        pendingMessages: pendingTaskMessages(path).length,
+      }
     },
-    send(name, text, emit) {
+    send(name, text, emit, refs) {
       if (closing) throw new Error('O serviço de chat está encerrando.')
       const path = folderPath(name)
       const message = String(text ?? '').trim()
       if (!message) throw new Error('Mensagem vazia')
+      if (['rodando', 'pausado'].includes(readAgent(path)?.status ?? '')) {
+        const prompt = knowledgeContext(
+          repositoryMentionContext(message, config.preferences?.settingsFile),
+          [...(readCard(path, String(name)).knowledgeRefs ?? []), ...knowledgeRefs(refs)],
+          config.preferences?.settingsFile,
+        )
+        appendConversation(path, { role: 'user', text: message }, true, prompt)
+        emit({ type: 'queued' })
+        emit({ type: 'done' })
+        return
+      }
       const busy = busyReason(path, running)
       if (busy) throw new Error(busy)
-      const prompt = repositoryMentionContext(message, config.preferences?.settingsFile)
+      if (!taskConversation(path).length && config.preferences?.llmProvider !== 'chatgpt')
+        for (const entry of transcript(path, config.directories.claudeProjects).entries) appendConversation(path, entry)
+      const prior = taskConversation(path)
+        .slice(-30)
+        .map((entry) => entry.text ?? entry.tool ?? '')
+        .join('\n')
+      const messages = taskMessageContext(path)
+      const prompt = knowledgeContext(
+        repositoryMentionContext(
+          `${prior ? `Conversa e execuções anteriores desta task:\n${prior}\n\nNova mensagem do usuário:\n` : ''}${message}${messages.prompt}`,
+          config.preferences?.settingsFile,
+        ),
+        [...(readCard(path, String(name)).knowledgeRefs ?? []), ...knowledgeRefs(refs)],
+        config.preferences?.settingsFile,
+      )
+      const profileEnvironment =
+        config.preferences?.llmProvider === 'chatgpt'
+          ? codexProfileEnvironment(
+              config.preferences?.settingsFile ??
+                join(config.directories.home, '.config', 'mega-brain', 'settings.json'),
+              undefined,
+              config.directories.home,
+            )
+          : {}
+      const environment = {
+        ...profileEnvironment,
+        ...knowledgeAgentEnvironment(config.preferences?.settingsFile, {
+          kind: 'agent',
+          name: config.preferences?.llmProvider === 'chatgpt' ? 'Codex' : 'Claude',
+          taskId: String(name),
+          sessionId: randomUUID(),
+        }),
+      }
+      const source = profileEnvironment.MEGA_BRAIN_CODEX_PROFILE_NAME
+        ? `Codex · ${profileEnvironment.MEGA_BRAIN_CODEX_PROFILE_NAME}`
+        : undefined
+      appendConversation(path, { role: 'user', text: message, ...(source ? { source } : {}) })
+      let response = ''
+      const persistAndEmit = (event: ChatEvent) => {
+        if (event.type === 'text') response += event.text
+        if (event.type === 'tool')
+          appendConversation(path, { role: 'assistant', tool: event.tool, ...(source ? { source } : {}) })
+        if (event.type === 'done') {
+          if (response) appendConversation(path, { role: 'assistant', text: response, ...(source ? { source } : {}) })
+          response = ''
+        }
+        emit(event)
+      }
       if (config.preferences?.llmProvider === 'chatgpt')
-        streamCodexChat(path, prompt, emit, config.executables.codex, runner, running, aborted, owner)
+        streamCodexChat(
+          path,
+          prompt,
+          persistAndEmit,
+          config.executables.codex,
+          runner,
+          running,
+          aborted,
+          owner,
+          environment,
+        )
       else
         streamChat(
           path,
           prompt,
-          emit,
+          persistAndEmit,
           config.directories.claudeProjects,
           config.executables.claude,
           runner,
           running,
           aborted,
           owner,
+          environment,
         )
+      messages.acknowledge()
     },
     abort(name) {
       const child = running.get(folderPath(name))

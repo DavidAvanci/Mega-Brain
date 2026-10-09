@@ -1,3 +1,4 @@
+import type { KnowledgeRef } from './knowledge'
 import type { AgentInfo, DevEnvInfo } from './agents'
 
 export const STATUSES = [
@@ -49,6 +50,7 @@ export interface PrLinks {
 export type PrState = 'open' | 'merged' | 'closed'
 
 export interface Card {
+  knowledgeRefs?: KnowledgeRef[]
   id: string
   title: string
   description: string

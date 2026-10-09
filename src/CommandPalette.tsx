@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CommandIcon, Folder01Icon, GridViewIcon, PlusSignIcon, Search01Icon, Settings02Icon } from '@hugeicons/core-free-icons'
+import {
+  BookOpen01Icon,
+  CommandIcon,
+  Folder01Icon,
+  GridViewIcon,
+  PlusSignIcon,
+  Search01Icon,
+  Settings02Icon,
+} from '@hugeicons/core-free-icons'
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { isMacOSDesktop } from './desktopBootstrap'
 import type { Card } from '../shared/domain/cards'
 
 interface CommandPaletteProps {
@@ -13,6 +22,7 @@ interface CommandPaletteProps {
   onNewCard: () => void
   onOpenSettings: () => void
   onOpenRepositories: () => void
+  onOpenKnowledge?: () => void
 }
 
 interface CommandAction {
@@ -22,7 +32,14 @@ interface CommandAction {
   run: () => void
 }
 
-export function CommandPalette({ cards, onOpenCard, onNewCard, onOpenSettings, onOpenRepositories }: CommandPaletteProps) {
+export function CommandPalette({
+  cards,
+  onOpenCard,
+  onNewCard,
+  onOpenSettings,
+  onOpenRepositories,
+  onOpenKnowledge,
+}: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -41,10 +58,15 @@ export function CommandPalette({ cards, onOpenCard, onNewCard, onOpenSettings, o
   const actions: CommandAction[] = [
     { label: 'Novo card', keywords: 'adicionar criar tarefa', icon: PlusSignIcon, run: onNewCard },
     { label: 'Configurações', keywords: 'preferências ajustes', icon: Settings02Icon, run: onOpenSettings },
+    ...(onOpenKnowledge
+      ? [{ label: 'Conhecimento', keywords: 'notas páginas pastas base', icon: BookOpen01Icon, run: onOpenKnowledge }]
+      : []),
     { label: 'Repositórios', keywords: 'repos git checkout', icon: Folder01Icon, run: onOpenRepositories },
   ]
   const visibleActions = normalizedQuery
-    ? actions.filter((action) => `${action.label} ${action.keywords}`.toLocaleLowerCase('pt-BR').includes(normalizedQuery))
+    ? actions.filter((action) =>
+        `${action.label} ${action.keywords}`.toLocaleLowerCase('pt-BR').includes(normalizedQuery),
+      )
     : actions
   const visibleCards = useMemo(() => {
     if (!normalizedQuery) return []
@@ -78,7 +100,7 @@ export function CommandPalette({ cards, onOpenCard, onNewCard, onOpenSettings, o
         <HugeiconsIcon icon={CommandIcon} strokeWidth={2} />
         <span className="hidden xl:inline">Comandos</span>
         <kbd className="hidden rounded border bg-background px-1.5 py-0.5 text-[10px] leading-none font-normal lg:inline">
-          Ctrl K
+          {isMacOSDesktop() ? '⌘ K' : 'Ctrl K'}
         </kbd>
       </Button>
 
@@ -121,7 +143,10 @@ export function CommandPalette({ cards, onOpenCard, onNewCard, onOpenSettings, o
             )}
 
             {visibleCards.length > 0 && (
-              <section className={cn(visibleActions.length > 0 && 'mt-2 border-t pt-2')} aria-labelledby="palette-cards">
+              <section
+                className={cn(visibleActions.length > 0 && 'mt-2 border-t pt-2')}
+                aria-labelledby="palette-cards"
+              >
                 <h2 id="palette-cards" className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
                   Cards
                 </h2>

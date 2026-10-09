@@ -1,4 +1,7 @@
-export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'morto'
+import type { IslandVisualState } from './activity-island'
+import type { DevEnvStartOptions } from './dev-environments'
+
+export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'morto' | 'pausado'
 
 export interface AgentInfo {
   provider?: AgentProvider
@@ -8,10 +11,17 @@ export interface AgentInfo {
   stage?: string
   status: AgentStatus
   startedAt?: string
+  pausedAt?: string
+  resumable?: boolean
   activity?: string
   phase?: string
   error?: string
   progress?: { done: number; total: number }
+  visualState?: IslandVisualState
+  question?: string
+  codexProfileId?: string
+  codexProfileName?: string
+  codexProfileColor?: string
 }
 
 export type AgentProvider = 'claude' | 'codex'
@@ -47,6 +57,11 @@ export interface AgentSession {
   startedAt: string
   updatedAt: string
   activity?: string
+  visualState?: IslandVisualState
+  question?: string
+  codexProfileId?: string
+  codexProfileName?: string
+  codexProfileColor?: string
   pid?: number
 }
 
@@ -77,5 +92,6 @@ export interface DevEnvInfo {
   phase?: string
   error?: string
   warnings?: string[]
+  configuration?: DevEnvStartOptions
   apps: DevEnvApp[]
 }

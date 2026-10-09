@@ -112,10 +112,14 @@ export function createProcessOwner(options: ProcessOwnerOptions = {}): ProcessOw
       return children.size
     },
     async stop(child) {
-      if (!children.has(child)) return
+      const entry = children.get(child)
+      if (!entry) return
       signal(child, 'SIGTERM')
       await waitForExit(child)
-      if (children.has(child)) signal(child, 'SIGKILL')
+      // The group can outlive its leader (for example a provider ignoring TERM).
+      if (entry.tree && child.pid && options.signalTree) {
+        try { options.signalTree(child.pid, 'SIGKILL') } catch { /* The owned group has exited. */ }
+      } else if (children.has(child)) signal(child, 'SIGKILL')
       children.delete(child)
     },
     shutdown() {

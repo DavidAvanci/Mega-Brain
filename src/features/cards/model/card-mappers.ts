@@ -1,3 +1,4 @@
+import type { KnowledgeRef } from '../../../../shared/domain/knowledge'
 import type { AgentInfo, DevEnvInfo } from '../../../../shared/domain/agents'
 import {
   STATUSES,
@@ -9,6 +10,7 @@ import {
 } from '../../../../shared/domain/cards'
 
 export interface WorkspaceFolder {
+  knowledgeRefs?: KnowledgeRef[]
   name: string
   path: string
   createdAt: string
@@ -34,6 +36,7 @@ export function toCards(folders: WorkspaceFolder[], jiraStatuses: Readonly<Recor
     id: folder.name,
     title: folder.title,
     description: folder.description,
+    knowledgeRefs: folder.knowledgeRefs,
     folder: folder.path,
     createdAt: folder.createdAt,
     updatedAt: folder.updatedAt,

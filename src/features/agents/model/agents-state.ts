@@ -44,12 +44,14 @@ export function refreshAgentSessions(manual = false): Promise<void> {
   return pending
 }
 
-export async function stopAgentSession(id: string): Promise<void> {
+export async function stopAgentSession(id: string, codexProfileId?: string): Promise<void> {
   try {
-    await requestAgentStop(id)
+    await requestAgentStop(id, codexProfileId)
     update({
       sessions: state.sessions.map((session) =>
-        session.id === id ? { ...session, status: 'morto', pid: undefined, updatedAt: new Date().toISOString() } : session,
+        session.id === id && (!codexProfileId || session.codexProfileId === codexProfileId)
+          ? { ...session, status: 'morto', pid: undefined, updatedAt: new Date().toISOString() }
+          : session,
       ),
       error: null,
     })
