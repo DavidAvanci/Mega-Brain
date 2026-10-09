@@ -1,5 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { PromptSettings } from '../../../shared/domain/settings'
+import { Button } from '@/components/ui/button'
+import { DEFAULT_PROMPTS, type PromptSettings } from '../../../shared/domain/settings'
 import { PromptMarkdownEditor } from './PromptMarkdownEditor'
 
 export const PROMPT_FIELDS: { key: keyof PromptSettings; label: string; title: string; help: string }[] = [
@@ -73,9 +74,20 @@ export function PromptsSettings({
         </TabsList>
         {PROMPT_FIELDS.map(({ key, title, help }) => (
           <TabsContent key={key} value={key} keepMounted data-settings-section={`prompt-${key}`}>
-            <div className="mb-3 grid gap-1">
-              <h3 className="text-sm font-medium">{title}</h3>
-              <p className="text-xs text-muted-foreground">{help}</p>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="grid gap-1">
+                <h3 className="text-sm font-medium">{title}</h3>
+                <p className="text-xs text-muted-foreground">{help}</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={disabled || value[key] === DEFAULT_PROMPTS[key]}
+                onClick={() => onChange({ ...value, [key]: DEFAULT_PROMPTS[key] })}
+              >
+                Restaurar padrão
+              </Button>
             </div>
             <PromptMarkdownEditor
               title={title}

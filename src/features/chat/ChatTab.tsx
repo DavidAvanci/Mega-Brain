@@ -203,6 +203,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
           sendLabel="Enviar mensagem"
           stopLabel="Parar resposta"
           mentions
+          showKeyboardHint={false}
           placeholder={
             executionRunning
               ? 'Adicione uma orientação à execução…'

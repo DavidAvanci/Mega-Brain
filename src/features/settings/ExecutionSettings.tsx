@@ -2,6 +2,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { Refresh01Icon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { AppSelect } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Tip } from '@/Tip'
 import type { BoardSettings, MegaBrainSettings } from '../../../shared/domain/settings'
 import {
@@ -32,7 +33,11 @@ export function ExecutionSettings({
 }: {
   settings: MegaBrainSettings
   onGeneralChange: SettingsSectionProps['onChange']
-  onStageChange: (key: keyof BoardSettings, field: 'model' | 'effort', value: string) => void
+  onStageChange: (
+    key: keyof BoardSettings,
+    field: keyof BoardSettings[keyof BoardSettings],
+    value: string | boolean,
+  ) => void
   disabled?: boolean
   catalog: CodexModelCatalog
   loading: boolean
@@ -147,6 +152,20 @@ export function ExecutionSettings({
                       </p>
                     </div>
                   </div>
+                  {!codex && (
+                    <div className="grid gap-2 sm:grid-cols-[5rem_minmax(0,1fr)] sm:gap-3">
+                      <span className="text-xs font-medium sm:pt-0.5">Velocidade</span>
+                      <label htmlFor={`fast-mode-${key}`} className="flex items-center gap-2 text-xs font-medium">
+                        <Checkbox
+                          id={`fast-mode-${key}`}
+                          checked={stage.fastMode}
+                          disabled={disabled}
+                          onCheckedChange={(checked) => onStageChange(key, 'fastMode', checked === true)}
+                        />
+                        Fast Mode
+                      </label>
+                    </div>
+                  )}
                 </div>
               </fieldset>
             )

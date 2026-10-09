@@ -56,6 +56,7 @@ export function KnowledgeAttachments({
           type="button"
           size="icon-sm"
           variant="ghost"
+          className={onMention ? 'size-10' : undefined}
           aria-label={onMention ? 'Mencionar página ou pasta' : 'Anexar conhecimento'}
           disabled={disabled}
           onClick={() => setOpen(true)}

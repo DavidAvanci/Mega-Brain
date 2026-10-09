@@ -98,7 +98,7 @@ const ENTRIES: SettingsSearchEntry[] = [
     title: 'Modelo e esforço de planejamento',
     description: 'Modelo e raciocínio para criar planos e checklists.',
     keywords:
-      'modelos de execução claude codex effort reasoning low medium high x-high max ultra fable opus sonnet haiku gpt',
+      'modelos de execução claude codex effort reasoning fast mode velocidade low medium high x-high max ultra fable opus sonnet haiku gpt',
   },
   {
     target: 'run-task-checklist',
@@ -106,7 +106,7 @@ const ENTRIES: SettingsSearchEntry[] = [
     title: 'Modelo e esforço de desenvolvimento',
     description: 'Modelo e raciocínio para executar as tarefas.',
     keywords:
-      'modelos de execução claude codex effort reasoning low medium high x-high max ultra fable opus sonnet haiku gpt',
+      'modelos de execução claude codex effort reasoning fast mode velocidade low medium high x-high max ultra fable opus sonnet haiku gpt',
   },
   {
     target: 'codex-profiles',

@@ -5,10 +5,10 @@ const STORAGE_KEY = 'mega-brain-theme'
 
 export type Theme = 'light' | 'dark'
 export type ColorModePreference = 'system' | 'light' | 'dark'
-export type PalettePreference = 'classic' | 'takeat' | 'ocean' | 'terracotta' | 'berry'
-export type TypographyPreference = 'classic' | 'takeat' | 'editorial' | 'technical'
-export type ShapePreference = 'classic' | 'takeat' | 'squircle' | 'soft' | 'angular'
-export type PresetPreference = 'classic' | 'takeat' | null
+export type PalettePreference = 'classic' | 'takeat' | 'ocean' | 'terracotta' | 'berry' | 'minecraft'
+export type TypographyPreference = 'classic' | 'takeat' | 'editorial' | 'technical' | 'minecraft'
+export type ShapePreference = 'classic' | 'takeat' | 'squircle' | 'soft' | 'angular' | 'minecraft'
+export type PresetPreference = 'classic' | 'takeat' | 'minecraft' | null
 
 export interface ThemeSettings {
   mode: ColorModePreference
@@ -34,10 +34,18 @@ const TAKEAT_SETTINGS: ThemeSettings = {
   shape: 'takeat',
   preset: 'takeat',
 }
+const MINECRAFT_SETTINGS: ThemeSettings = {
+  mode: 'system',
+  palette: 'minecraft',
+  typography: 'minecraft',
+  shape: 'minecraft',
+  preset: 'minecraft',
+}
 
 function loadSettings(): ThemeSettings {
   const saved = localStorage.getItem(STORAGE_KEY)
   if (saved === 'takeat') return TAKEAT_SETTINGS
+  if (saved === 'minecraft') return MINECRAFT_SETTINGS
   if (!saved || saved === 'classic') return CLASSIC_SETTINGS
   if (saved === 'light' || saved === 'dark') return { ...CLASSIC_SETTINGS, mode: saved }
 
@@ -46,16 +54,16 @@ function loadSettings(): ThemeSettings {
     if (typeof parsed !== 'object' || parsed === null) return CLASSIC_SETTINGS
     const candidate = parsed as Partial<ThemeSettings>
     if (
-      ['classic', 'takeat', 'ocean', 'terracotta', 'berry'].includes(candidate.palette ?? '') &&
-      ['classic', 'takeat', 'editorial', 'technical'].includes(candidate.typography ?? '') &&
-      ['classic', 'takeat', 'squircle', 'soft', 'angular'].includes(candidate.shape ?? '')
+      ['classic', 'takeat', 'ocean', 'terracotta', 'berry', 'minecraft'].includes(candidate.palette ?? '') &&
+      ['classic', 'takeat', 'editorial', 'technical', 'minecraft'].includes(candidate.typography ?? '') &&
+      ['classic', 'takeat', 'squircle', 'soft', 'angular', 'minecraft'].includes(candidate.shape ?? '')
     ) {
       return {
         mode: candidate.mode === 'light' || candidate.mode === 'dark' ? candidate.mode : 'system',
         palette: candidate.palette as PalettePreference,
         typography: candidate.typography as TypographyPreference,
         shape: candidate.shape as ShapePreference,
-        preset: candidate.preset === 'takeat' || candidate.preset === 'classic' ? candidate.preset : null,
+        preset: candidate.preset === 'takeat' || candidate.preset === 'classic' || candidate.preset === 'minecraft' ? candidate.preset : null,
       }
     }
   } catch {
@@ -121,7 +129,8 @@ export function setShape(shape: ShapePreference): void {
 }
 
 export function setThemePreset(preset: Exclude<PresetPreference, null>): void {
-  const next = { ...(preset === 'takeat' ? TAKEAT_SETTINGS : CLASSIC_SETTINGS), mode: settings.mode }
+  const presetSettings = preset === 'takeat' ? TAKEAT_SETTINGS : preset === 'minecraft' ? MINECRAFT_SETTINGS : CLASSIC_SETTINGS
+  const next = { ...presetSettings, mode: settings.mode }
   if (settings.preset === preset) return
   persist(next)
 }

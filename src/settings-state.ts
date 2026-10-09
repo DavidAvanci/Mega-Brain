@@ -21,18 +21,24 @@ export function withGeneralSettings(
 export function withStageSetting(
   current: MegaBrainSettings,
   key: keyof BoardSettings,
-  field: 'model' | 'effort',
-  value: string,
+  field: keyof BoardSettings[keyof BoardSettings],
+  value: string | boolean,
   catalog: CodexModelCatalog = FALLBACK_CODEX_CATALOG,
 ): MegaBrainSettings {
   const previous = current.stages[key]
   const stage =
-    field === 'model'
-      ? { model: value, effort: compatibleEffort(current.general.llmProvider, value, previous.effort, catalog) }
+    field === 'fastMode'
+      ? { ...previous, fastMode: value === true }
+      : field === 'model'
+      ? {
+          ...previous,
+          model: String(value),
+          effort: compatibleEffort(current.general.llmProvider, String(value), previous.effort, catalog),
+        }
       : {
           ...previous,
-          effort: isEffort(value)
-            ? compatibleEffort(current.general.llmProvider, previous.model, value, catalog)
+          effort: isEffort(String(value))
+            ? compatibleEffort(current.general.llmProvider, previous.model, String(value), catalog)
             : previous.effort,
         }
   return { ...current, stages: { ...current.stages, [key]: stage } }

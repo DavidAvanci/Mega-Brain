@@ -23,6 +23,7 @@ export function ChatComposer({
   sendLabel,
   stopLabel,
   mentions = false,
+  showKeyboardHint = true,
   children,
 }: {
   input: string
@@ -41,6 +42,7 @@ export function ChatComposer({
   sendLabel: string
   stopLabel: string
   mentions?: boolean
+  showKeyboardHint?: boolean
   children?: ReactNode
 }) {
   const composing = useRef(false)
@@ -94,9 +96,9 @@ export function ChatComposer({
           onChange={(event) => onInput(event.target.value)}
         />
       )}
-      {children}
       <div className="mt-2 flex items-end gap-2">
         <ChatModelPicker selection={selection} onChange={onSelection} disabled={busy || loading || modelLocked} />
+        {children}
         <Button
           ref={actionRef}
           type={busy ? 'button' : 'submit'}
@@ -110,9 +112,11 @@ export function ChatComposer({
           <HugeiconsIcon icon={busy ? StopIcon : SentIcon} strokeWidth={2} className="size-4" />
         </Button>
       </div>
-      <p className="mt-2 px-1 text-[10px] text-muted-foreground">
-        Enter envia · Shift+Enter quebra linha{busy ? ' · Você pode preparar a próxima mensagem.' : ''}
-      </p>
+      {showKeyboardHint && (
+        <p className="mt-2 px-1 text-[10px] text-muted-foreground">
+          Enter envia · Shift+Enter quebra linha{busy ? ' · Você pode preparar a próxima mensagem.' : ''}
+        </p>
+      )}
     </form>
   )
 }

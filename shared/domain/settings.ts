@@ -3,6 +3,7 @@ export type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 
 export interface ModelStageSettings {
   model: string
   effort: Effort
+  fastMode?: boolean
 }
 
 export type BoardSettings = Record<'task-planning' | 'run-task-checklist', ModelStageSettings>

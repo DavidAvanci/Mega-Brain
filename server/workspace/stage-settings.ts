@@ -29,7 +29,7 @@ export function readStageSettings(
     Object.entries(defaultStageSettings(provider, catalog)).map(([name, defaults]) => {
       const value = entries[name]
       if (!value || typeof value !== 'object') return [name, defaults]
-      const { model, effort } = value as { model?: unknown; effort?: unknown }
+      const { model, effort, fastMode } = value as { model?: unknown; effort?: unknown; fastMode?: unknown }
       const savedModel = typeof model === 'string' && model.trim() ? model.trim() : defaults.model
       const effectiveModel = provider === 'chatgpt' && isClaudeModelAlias(savedModel) ? defaults.model : savedModel
       return [
@@ -37,6 +37,7 @@ export function readStageSettings(
         {
           model: effectiveModel,
           effort: isEffort(effort) ? effort : defaults.effort,
+          fastMode: fastMode === true,
         },
       ]
     }),
@@ -52,10 +53,11 @@ export function validateStageSettings(
   for (const name of Object.keys(defaultStageSettings(provider, catalog))) {
     const value = (stages as Record<string, unknown>)[name]
     if (!value || typeof value !== 'object') continue
-    const { model, effort } = value as { model?: unknown; effort?: unknown }
+    const { model, effort, fastMode } = value as { model?: unknown; effort?: unknown; fastMode?: unknown }
     if (typeof model !== 'string' || !model.trim()) throw new Error(`Modelo inválido para ${name}`)
     if (!isEffort(effort) || !supportedEfforts(provider, model.trim(), catalog).includes(effort))
       throw new Error(`Effort inválido para ${name}: não suportado pelo modelo ${model.trim()}`)
+    if (fastMode !== undefined && typeof fastMode !== 'boolean') throw new Error(`Fast Mode inválido para ${name}`)
   }
 }
 
@@ -70,8 +72,12 @@ export function writeStageSettings(
   for (const name of Object.keys(settings)) {
     const value = (stages as Record<string, unknown>)[name]
     if (!value || typeof value !== 'object') continue
-    const { model, effort } = value as ModelStageSettings
-    settings[name] = { model: model.trim(), effort: compatibleEffort(provider, model.trim(), effort, catalog) }
+    const { model, effort, fastMode } = value as ModelStageSettings
+    settings[name] = {
+      model: model.trim(),
+      effort: compatibleEffort(provider, model.trim(), effort, catalog),
+      fastMode: fastMode === true,
+    }
   }
   writeFileSync(join(root, SETTINGS_FILE), `${JSON.stringify({ stages: settings }, null, 2)}\n`)
   return settings

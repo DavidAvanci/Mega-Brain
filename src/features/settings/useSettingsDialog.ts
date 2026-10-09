@@ -62,7 +62,11 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void, activeT
     }
   }, [activeTab, desktop, settings])
 
-  const updateStage = (key: keyof BoardSettings, field: 'model' | 'effort', value: string) => {
+  const updateStage = (
+    key: keyof BoardSettings,
+    field: keyof BoardSettings[keyof BoardSettings],
+    value: string | boolean,
+  ) => {
     setSettings((current) => (current ? withStageSetting(current, key, field, value, codexCatalog) : current))
   }
   const updateGeneral = (general: GeneralSettingsInput) => {

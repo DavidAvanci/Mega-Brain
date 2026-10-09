@@ -2,6 +2,7 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 @import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource-variable/pixelify-sans';
 
 @keyframes agent-working-text-glow {
   from {
@@ -248,21 +249,61 @@
   --sidebar: #291f2e; --sidebar-foreground: #f4eaf5; --sidebar-primary: #e88bd2; --sidebar-primary-foreground: #35142e;
   --sidebar-accent: #49334f; --sidebar-accent-foreground: #f4dff6; --sidebar-border: #4c3d51; --sidebar-ring: #e88bd2;
 }
+[data-palette='minecraft'] {
+  color-scheme: light;
+  --background: #e8efdd; --foreground: #263222; --card: #f7faef; --card-foreground: #263222;
+  --popover: #f7faef; --popover-foreground: #263222; --primary: #4b7d32; --primary-foreground: #ffffff;
+  --secondary: #d8e5c8; --secondary-foreground: #344b27; --muted: #dfe8d4; --muted-foreground: #5d6d53;
+  --accent: #e9d7a7; --accent-foreground: #51401f; --destructive: #a83c32; --border: #bdcbaa; --input: #b5c49f; --ring: #6b963d;
+  --chart-1: #4b7d32; --chart-2: #78a84a; --chart-3: #8c6b3d; --chart-4: #5b8b9a; --chart-5: #d2a542;
+  --status-1: #71806a; --status-2: #5b8b9a; --status-3: #6179a3; --status-4: #8571a1; --status-5: #a36b91;
+  --status-6: #bd6253; --status-7: #c28b35; --status-8: #6b963d; --status-9: #438b69;
+  --sidebar: #dce7cf; --sidebar-foreground: #263222; --sidebar-primary: #4b7d32; --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e9d7a7; --sidebar-accent-foreground: #51401f; --sidebar-border: #bdcbaa; --sidebar-ring: #6b963d;
+}
+[data-palette='minecraft-dark'] {
+  color-scheme: dark;
+  --background: #1d271d; --foreground: #e5edda; --card: #283629; --card-foreground: #e5edda;
+  --popover: #303e30; --popover-foreground: #e5edda; --primary: #91c45e; --primary-foreground: #172311;
+  --secondary: #394b36; --secondary-foreground: #e0edce; --muted: #303c2e; --muted-foreground: #b1c0a4;
+  --accent: #51472d; --accent-foreground: #f3e6bb; --destructive: #f07868; --border: #485743; --input: #53644c; --ring: #91c45e;
+  --chart-1: #91c45e; --chart-2: #b3d875; --chart-3: #c2995d; --chart-4: #7db4c2; --chart-5: #e3bf62;
+  --status-1: #aab69f; --status-2: #7db4c2; --status-3: #8ea8da; --status-4: #b3a0d5; --status-5: #d498bd;
+  --status-6: #f07868; --status-7: #e3bf62; --status-8: #a8d16c; --status-9: #69c49a;
+  --sidebar: #253326; --sidebar-foreground: #e5edda; --sidebar-primary: #91c45e; --sidebar-primary-foreground: #172311;
+  --sidebar-accent: #51472d; --sidebar-accent-foreground: #f3e6bb; --sidebar-border: #485743; --sidebar-ring: #91c45e;
+}
 
 [data-typography='classic'] { --font-ui: 'JetBrains Mono Variable', monospace; --text-line-height: 1.45; --text-tracking: 0; }
 [data-typography='takeat'] { --font-ui: 'Poppins', Arial, sans-serif; --text-line-height: 1.5; --text-tracking: 0; }
 [data-typography='editorial'] { --font-ui: Georgia, 'Times New Roman', serif; --text-line-height: 1.65; --text-tracking: -0.01em; }
 [data-typography='technical'] { --font-ui: 'JetBrains Mono Variable', monospace; --text-line-height: 1.4; --text-tracking: 0.015em; }
+[data-typography='minecraft'] { --font-ui: 'Pixelify Sans Variable', monospace; --text-line-height: 1.6; --text-tracking: 0; }
+[data-typography='minecraft'] h1,
+[data-typography='minecraft'] h2,
+[data-typography='minecraft'] h3,
+[data-typography='minecraft'] h4,
+[data-typography='minecraft'] button { font-weight: 700; letter-spacing: 0.035em; }
 
 [data-shape='classic'] { --radius: 0.625rem; --corner-profile: round; }
 [data-shape='takeat'] { --radius: 0.75rem; --corner-profile: round; }
 [data-shape='squircle'] { --radius: 1.75rem; --corner-profile: superellipse(1.5); }
 [data-shape='soft'] { --radius: 1.25rem; --corner-profile: superellipse(1.2); }
 [data-shape='angular'] { --radius: 0.3rem; --corner-profile: superellipse(4); }
+[data-shape='minecraft'] { --radius: 0; --corner-profile: round; }
 [data-shape] * { corner-shape: var(--corner-profile, round); }
 [data-shape] .rounded-full { corner-shape: round; }
 [data-preset='classic'] { --spacing: 0.25rem; }
 [data-preset='takeat'] { --spacing: calc(0.25rem * 1.08); }
+[data-preset='minecraft'] { --spacing: 0.25rem; }
+[data-preset='minecraft'] button,
+[data-preset='minecraft'] input,
+[data-preset='minecraft'] [role='dialog'],
+[data-preset='minecraft'] [data-slot='card'],
+[data-preset='minecraft'] [data-slot='popover-content'] {
+  border-radius: 0 !important;
+  box-shadow: 2px 2px 0 color-mix(in srgb, var(--foreground) 16%, transparent);
+}
 
 @layer base {
   * {

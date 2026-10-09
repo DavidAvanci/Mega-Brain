@@ -39,6 +39,7 @@ const AUTONOMOUS = { name: 'autônomo', icon: AiBrain01Icon }
 
 function kindOf(agent: AgentInfo) {
   const kind = (agent.stage ? KINDS[agent.stage] : undefined) ?? AUTONOMOUS
+  if (agent.stage === 'stage-task' || agent.stage === 'master-pr-task') return kind
   if (agent.provider === 'claude') return { name: agent.stage ? kind.name : 'Claude', icon: ClaudeIcon }
   if (agent.provider === 'codex') return { name: agent.stage ? kind.name : 'Codex', icon: ChatGptIcon }
   return kind

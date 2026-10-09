@@ -1,102 +1,99 @@
-## Planning instructions (planner subagent — or orchestrator itself when explicitly told to run inline)
+## Instruções de planejamento (subagente planejador — ou o próprio orquestrador quando receber instrução explícita para executar inline)
 
-### 1. Understand the task
+### 1. Entenda a tarefa
 
-If the task includes a link (Jira, ClickUp, GitHub issue, doc), fetch it **read-only** as source material — never transition, comment or edit anything.
+Se a tarefa incluir um link (Jira, ClickUp, issue do GitHub, documento), consulte-o **somente para leitura** como material de referência — nunca altere status, comente ou edite.
 
-1. Confirm the **task id** (given in the prompt, or derive a kebab-case slug). The id goes in every artifact's `issue:` line.
-2. Classify the **task type** — bug | feature | refactor | chore/migração. It shapes the PLAN.md sections below.
-3. Build a brief in context: goal, symptom/motivation, in/out of scope, definition of done, candidate repos.
+1. Confirme o **id da tarefa** (fornecido no prompt ou derive um identificador kebab-case). O id deve aparecer na linha `issue:` de cada artefato.
+2. Classifique o **tipo da tarefa** — bug | feature | refactor | chore/migração. Isso define as seções de PLAN.md.
+3. Registre o contexto em um resumo: objetivo, sintoma/motivação, escopo incluído e excluído, critérios de conclusão e repositórios candidatos.
 
-### 2. Investigate the code
+### 2. Investigue o código
 
-1. Determine candidate repos. In a Takeat workspace, list the real repos:
+1. Determine os repositórios candidatos. Em um workspace Takeat, liste os repositórios reais:
    ```bash
    find /home/david/takeat -maxdepth 2 -name .git -type d 2>/dev/null | sed 's|/\.git$||'
    ```
-   If already inside a single repo, that repo is the scope unless the task says otherwise.
-2. Search the relevant repos for the task's anchors: error strings, endpoints, components, functions, feature flags, the code to be refactored. Use Grep/Explore across repos; read the suspect files.
-3. Ground every claim in real code — cite paths as `repo/path:line`. Prefer evidence (code, logs, links from the task) over speculation.
+   Se já estiver dentro de um único repositório, considere-o como escopo, a menos que a tarefa diga o contrário.
+2. Pesquise nos repositórios relevantes os pontos de referência da tarefa: textos de erro, endpoints, componentes, funções, feature flags. Use Grep/Explore entre repositórios e leia os arquivos suspeitos.
+3. Baseie cada afirmação em código real — cite caminhos como `repo/path:line`. Prefira evidências (código, logs e links da tarefa) a suposições.
 
-### 3. Write PLAN.md (artifact dir)
+### 3. Escreva PLAN.md (diretório de artefatos)
 
-Portuguese, at `<artifact dir>/PLAN.md`. Its job is to preserve **why, architectural decisions, constraints and item-specific context**. Keep responsibilities separate:
+Em português, em `<artifact dir>/PLAN.md`. O arquivo registra **motivos, decisões de arquitetura, restrições e contexto específico da tarefa**. Mantenha as responsabilidades separadas:
 
-- `PLAN.md`: why, evidence, decisions, contracts, risks and the context an executor cannot infer from one checklist line.
-- `TASK-CHECKLIST.md`: what atomic action runs, which files it may touch and its dependencies.
-Do not repeat the same implementation prose across these artifacts. Follow this compact template:
+- `PLAN.md`: motivos, evidências, decisões, contratos, riscos e contexto que o executor não consegue inferir de uma linha da checklist.
+- `TASK-CHECKLIST.md`: ações atômicas que serão executadas.
+Não repita a mesma descrição de implementação nos dois artefatos. Use este modelo compacto:
 
 ```markdown
 # PLAN
-issue: <slug or card key>
-title: <summary>
+issue: <slug ou chave do card>
+title: <resumo>
 type: <bug | feature | refactor | chore>
-estimate: <e.g. 2h 30m>
+estimate: <ex.: 2h 30m>
 
 ## Objetivo e escopo
-- Resultado esperado: <one observable outcome>
-- Inclui: <scope>
-- Não inclui: <explicit boundary, only when useful>
+- Resultado esperado: <resultado observável>
+- Inclui: <escopo>
+- Não inclui: <limite explícito, somente quando útil>
 
 ## Evidências e decisões
 ### <Diagnóstico | Estado atual>
-- `<repo/path:line>` — <finding and its implication>
+- `<repo/path:line>` — <constatação e implicação>
 
 ### Decisões
-- <contract, existing pattern to follow or architectural choice + why>
-- **Não fazer:** <tempting but incorrect alternative, only when useful>
+- <contrato, padrão existente ou decisão de arquitetura + motivo>
+- **Não fazer:** <alternativa tentadora, porém incorreta, somente quando útil>
 
 ## Repositórios afetados
-- `<repo>` — <its role in the change>
+- `<repo>` — <papel no trabalho>
 
 ## Plano por repositório
 ### <repo>
-#### T1 <short item title>
-- <only the context, contract, edge case or ordering reason that is not already in the TASK-CHECKLIST line>
-- Validação local: <cheap check specific to the item, when useful>
-
-#### T2 <short item title>
-- <item-specific context>
+#### T1 <título curto do item>
+- <contexto, contrato, caso limite ou motivo de ordenação que não esteja na linha da TASK-CHECKLIST>
+- Validação local: <verificação simples e específica, quando útil>
 
 ## Resumo para PR
 ### O que acontecia
-<bug only: one short paragraph>
+<somente para bug: um parágrafo curto>
 
 ### O que foi feito
-<one short paragraph, past tense; consumed by staging/master PR scripts>
+<um parágrafo curto no passado; consumido pelos scripts de PR de staging/master>
 
 ## Riscos e impactos
-- <non-obvious regression, compatibility or migration risk; omit section when trivial>
+- <risco de regressão, compatibilidade ou migração que não seja óbvio; omita se trivial>
 
-## Definition of done
-- <observable acceptance criterion>
+## Critérios de conclusão
+- <critério observável>
 ```
 
-Rules for a useful, lean plan:
+Regras para manter o plano útil e conciso:
 
-- Ground important claims in real code using `repo/path:line`, but cite once; do not narrate the whole investigation.
-- Prefer contracts, data flow and decisions over large code snippets. Use a snippet only when prose would be ambiguous, at most 8 lines.
-- Quando dois itens trocam um **contrato** — payload de endpoint, evento de socket, coluna nova, assinatura de símbolo exportado — escreva o contrato **literal** (o JSON/tipo com o nome e o tipo de cada campo, incluindo os de fallback) uma vez em `Decisões`, e faça as seções `Tn` do produtor e do consumidor apontarem para ele. Contrato descrito em prosa (`"core opcional"`) é a causa clássica de dois itens paralelos implementarem formas diferentes; o snippet do contrato não conta no limite de 8 linhas.
-- The `Plano por repositório` is the single implementation section. Do not add separate `Approach`, `Design proposto`, `Itens` or `Commit breakpoints` sections.
-- Every checklist id must have exactly one matching heading (`#### T1`, `#### T2`, ...). `dev-stage.ts` extracts that section and sends only it to the corresponding executor.
-- A `Tn` section complements its checklist line; it must not copy the action, file list or dependency metadata. Keep it to 1–3 bullets and normally under 80 words.
-- `Resumo para PR` is retained because `stage.ts` and `master-pr.ts` consume it. Do not predict details that are not yet implemented.
-- `Definition of done` contains observable acceptance criteria, not implementation steps or commands already assigned to a checklist item.
-- Omit empty optional content. Keep objective to at most 3 bullets, evidence/decisions to the decisive findings, risks to at most 5 bullets and Definition of done to at most 8 bullets.
-- For a normal task, target roughly 800–1,500 words. Exceed 2,000 only when multiple repos or contracts genuinely require it; never add detail merely to fill the template.
-- Adapt the diagnosis label by type: bug=`Diagnóstico`; feature=`Estado atual e contrato proposto`; refactor=`Problemas atuais e estado alvo`; chore/migration=`Situação atual e alvo`.
+- Baseie afirmações importantes em código real usando `repo/path:line`; cite cada evidência uma vez.
+- Prefira contratos, fluxo de dados e decisões a trechos grandes de código. Use snippets somente quando a prosa ficar ambígua, com no máximo 8 linhas.
+- `Plano por repositório` é a única seção de implementação. Não crie seções separadas de abordagem, design proposto, itens ou etapas de commit.
+- Cada id da checklist deve ter exatamente um título correspondente (`#### T1`, `#### T2` etc.). `dev-stage.ts` extrai essa seção e envia somente ela ao executor correspondente.
+- Cada seção `Tn` complementa a linha da checklist; não copie ação, arquivos ou dependências. Use de 1 a 3 tópicos e, normalmente, menos de 80 palavras.
+- Mantenha `Resumo para PR`: `stage.ts` e `master-pr.ts` o consomem. Não antecipe detalhes ainda não implementados.
+- `Critérios de conclusão` descreve resultados observáveis, não etapas de implementação nem comandos já atribuídos a um item da checklist.
+- Omita conteúdo opcional vazio. Limite o objetivo a 3 tópicos, evidências e decisões aos achados determinantes, riscos a 5 tópicos e critérios de conclusão a 8 tópicos.
+- Para uma tarefa comum, mire em 800–1.500 palavras. Passe de 2.000 somente se vários repositórios ou contratos realmente exigirem; não acrescente conteúdo só para atingir uma contagem.
+- Adapte o título do diagnóstico ao tipo: bug = `Diagnóstico`; feature = `Estado atual e contrato proposto`; refactor = `Problemas atuais e estado alvo`; chore/migração = `Situação atual e alvo`.
+- Quando dois itens trocarem um **contrato** — payload de endpoint, evento de socket, nova coluna ou assinatura de símbolo exportado — escreva o contrato **literalmente** (JSON/tipo com nome e tipo de cada campo, inclusive fallbacks) uma vez em `Decisões`, e faça as seções `Tn` de produtor e consumidor apontarem para ele. A descrição em prosa (por exemplo, “core opcional”) costuma fazer itens paralelos implementarem formatos diferentes; o snippet do contrato não conta no limite de 8 linhas.
 
-### 4. Write TASK-CHECKLIST.md (artifact dir)
+### 4. Escreva TASK-CHECKLIST.md (diretório de artefatos)
 
-Portuguese, at `<artifact dir>/TASK-CHECKLIST.md` — atomic execution checklist derived from PLAN.md. Each item is one small, independently completable action (a change in one file/module, a migration, a config), ordered by dependency and grouped per repo:
+Em português, em `<artifact dir>/TASK-CHECKLIST.md`. A checklist contém ações atômicas de implementação derivadas do PLAN.md, ordenadas por dependência e agrupadas por repositório:
 
-`TASK-CHECKLIST.md` contains **implementation work only**. Never create checklist items for tests of any kind, creating or changing test files, validation, checking, QA, smoke tests, visual review, screenshots, or manual/automated verification. Do not append validation clauses such as “e validar”, “e conferir” or “e testar” to an implementation item. Do not include test or verification tasks in the implementation checklist.
+`TASK-CHECKLIST.md` contém **somente trabalho de implementação**. Nunca crie itens para testes de qualquer tipo, criação ou alteração de arquivos de teste, validação, conferência, QA, smoke tests, revisão visual, screenshots ou verificação manual/automatizada. Não acrescente cláusulas de validação como “e validar”, “e conferir” ou “e testar” aos itens.
 
-Every item gets a sequential id (`T1`, `T2`, …, global across repos) and a machine-readable metadata block `{files: …; deps: …}` — the Mega Brain scheduler uses it to decide which items can run **in parallel** (disjoint `files` in the same repo) and in which order (`deps`):
+Cada item recebe um id sequencial (`T1`, `T2` etc., global entre repositórios) e um bloco de metadados legível por máquina `{files: …; deps: …}` — o scheduler do Mega Brain usa esses dados para decidir quais itens podem rodar **em paralelo** (arquivos distintos no mesmo repositório) e em que ordem (`deps`):
 
 ```markdown
 # TASK CHECKLIST
-issue: <same id as PLAN.md>
+issue: <mesmo id do PLAN.md>
 
 ## <repo>
 - [ ] T1 <ação atômica> {files: src/database/migrations/*; deps: -}
@@ -106,21 +103,23 @@ issue: <same id as PLAN.md>
 - [ ] T3 <ação atômica> {files: src/pages/Split/*; deps: -}
 ```
 
-Metadata rules (they gate parallelism, so be precise):
+Regras dos metadados (eles controlam o paralelismo; seja preciso):
 
-- `files`: comma-separated paths/globs of **everything** the item touches — including shared files (rotas, `package.json`, lockfiles, arquivos de tradução, index barrels). Items with overlapping `files` in the same repo are serialized; omitting `files` serializes the item against the whole repo (safe default when unsure).
-- **Items that remove or rename an exported symbol take `{files: -}`** unless you actually grepped every consumer and listed them. The blast radius of a deletion is the call sites, and those are exactly what a plan gets wrong; `-` costs some parallelism and buys a correct commit. Same for wide refactors and codemods.
-- Discarded items and sections must be struck through (`## ~~descartados~~`, `- [ ] ~~T9 …~~ — motivo`) — the scheduler skips them. A section heading that is not a real repo under `~/takeat` aborts the run in preflight.
-- `deps`: comma-separated ids the item depends on, or `-` for none. Only real ordering dependencies — don't chain everything linearly out of caution, that kills parallelism.
-- Um item que **consome** um contrato produzido por outro declara `deps` nele, mesmo em repos diferentes e mesmo com `files` disjuntos. A única dispensa é o contrato literal já estar escrito em `Decisões` no PLAN.md — aí os dois lados leem a mesma fonte e podem rodar em paralelo.
-- One checkbox per line, no nested checkboxes. Notes added later by the scheduler start with `>` — never use `>` lines yourself.
-- A task may implement production observability, validation rules or error handling when those are product behavior. It may not exist merely to prove, inspect or visually confirm another implementation item; that is test work and does not belong in this implementation checklist.
+- `files`: caminhos/globs separados por vírgula de **tudo** que o item altera — inclusive arquivos compartilhados (rotas, `package.json`, lockfiles, traduções e barrels de índice). Itens com `files` sobrepostos no mesmo repositório são serializados. Se não souber, omita `files` para serializar o item em relação ao repositório inteiro.
+- Itens que removem ou renomeiam um símbolo exportado usam `{files: -}`, a menos que você tenha pesquisado todos os consumidores e os listado. O mesmo vale para refatorações amplas e codemods.
+- Para pré-condições, declare `requires:`; para arquivos criados pelo item, use `creates:` e nunca os trate como existentes. Se uma migração ou base for obrigatória, registre-a em `card.json` no campo `requiredBases` e declare as dependências correspondentes. Limites específicos podem usar `timeoutMin:` e `attempts:`.
 
-### 5. Estimate and handoff
+- Itens e seções descartados devem ficar riscados (`## ~~descartados~~`, `- [ ] ~~T9 …~~ — motivo`) — o scheduler os ignora. Um título de seção que não corresponda a um repositório real em `~/takeat` interrompe a execução no preflight.
+- `deps`: ids dos itens dos quais este depende, separados por vírgula, ou `-` quando não houver dependências. Declare somente dependências reais de ordenação; não encadeie tudo sem necessidade.
+- Um item que **consome** um contrato produzido por outro declara `deps` para ele, mesmo entre repositórios e com `files` distintos. A única exceção é quando o contrato literal já está em `Decisões` do PLAN.md; nesse caso, os dois lados consultam a mesma fonte e podem rodar em paralelo.
+- Use uma checkbox por linha, sem checkboxes aninhadas. Notas adicionadas depois pelo scheduler começam com `>`; não use esse formato.
+- A checklist pode incluir observabilidade, regras de validação ou tratamento de erro quando forem comportamento do produto. Não crie itens apenas para provar, inspecionar ou confirmar visualmente outra implementação: isso é trabalho de teste e não pertence à checklist.
 
-1. Based on PLAN.md scope (repos, files, risk), record a time estimate in the `estimate:` line.
-2. Do not create branches, worktrees or symlinks. The Mega Brain scheduler creates the managed worktrees only when execution starts. In particular, never run `git worktree add` or `ln -s` from planning.
+### 5. Estime e prepare a entrega
 
-### 6. Return (subagent) / report
+1. Com base no escopo do PLAN.md (repositórios, arquivos e riscos), registre uma estimativa na linha `estimate:`.
+2. Não crie branches, worktrees ou symlinks. O scheduler do Mega Brain cria worktrees gerenciadas somente quando a execução começa. Em particular, nunca execute `git worktree add` nem `ln -s` durante o planejamento.
 
-Return raw data (it feeds the orchestrator's report): task id + type, paths of PLAN.md and TASK-CHECKLIST.md, affected repos and estimate.
+### 6. Retorne (subagente) / reporte
+
+Retorne os dados brutos usados pelo orquestrador: id e tipo da tarefa, caminhos de PLAN.md e TASK-CHECKLIST.md, repositórios afetados e estimativa.
