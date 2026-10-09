@@ -4,8 +4,9 @@
 
 1. O status é salvo e inicia `run-task-checklist`, se não houver outra execução ativa. Em movimentação feita na interface, uma chave Jira válida tenta mudar para `em desenvolvimento`.
 2. O script exige `TASK-CHECKLIST.md` e faz validação prévia da checklist, das dependências e das worktrees. Prepara os repositórios citados, confere bases obrigatórias e impede a execução se uma worktree de integração estiver suja ou faltar pré-condição. Recupera trabalho de itens preservado de execuções anteriores quando possível.
-3. Executa itens com até **quatro agentes em paralelo**, em worktrees próprias. Respeita dependências, limites de tempo e tentativas definidos nos itens, registra tentativas, faz commits e integra o trabalho. Se o hook de pré-commit reprovar, tenta reparo automático. Também tenta reparar testes que tenham falhado durante o desenvolvimento.
-4. O progresso vem das caixas marcadas em `TASK-CHECKLIST.md`. Se a etapa termina com sucesso, a próxima leitura do quadro move o card para **Code Review** nos fluxos simples/médio, ou para **Auto Testing** no difícil. Uma falha deixa o card na etapa e mostra atenção.
+3. Executa itens com até **quatro agentes em paralelo**, em worktrees próprias. Respeita dependências, limites de tempo e tentativas definidos nos itens, registra tentativas, faz commits ignorando hooks Git (`--no-verify`) e integra o trabalho. Também tenta reparar testes que tenham falhado durante o desenvolvimento.
+4. Quando a leva de executores termina, mesmo com falhas, inicia um agente de verificação para rodar os checks configurados em cada projeto. Para cada check reprovado, ele gera uma task de correção na `TASK-CHECKLIST.md`; o scheduler executa outra leva e a verificação se repete. O padrão permite até cinco levas de correção (`CHECKLIST_MAX_VERIFICATION_WAVES`) e 60 minutos por agente de verificação (`CHECKLIST_VERIFICATION_TIMEOUT_MINUTES`). Hooks que modificariam arquivos são registrados como ignorados.
+5. O progresso vem das caixas marcadas em `TASK-CHECKLIST.md`. Se todas as tasks e verificações terminam com sucesso, a próxima leitura do quadro move o card para **Code Review** nos fluxos simples/médio, ou para **Auto Testing** no difícil. Uma falha ou o limite de correções atingido deixa o card na etapa e mostra atenção.
 
 ## Contrato técnico
 
@@ -15,7 +16,7 @@
 
 **Agentes de item:** para cada item pronto, `runChecklist({ max: 4 })` cria uma worktree própria e chama `runClaudeItem`. Com provedor Claude, o formato é `claude -p <PROMPT_DO_ITEM> --name "<CARD_ID> · <ITEM_ID>" --model <MODEL> [--fallback-model opus] --effort <EFFORT> --json-schema <RESULT_SCHEMA> --strict-mcp-config --mcp-config '{"mcpServers":{}}' --tools Read,Edit,Write,Grep,Glob,Bash --dangerously-skip-permissions --output-format json`. Com provedor ChatGPT, é `codex exec --json --dangerously-bypass-approvals-and-sandbox [--model <MODEL>] --config 'model_reasoning_effort="<EFFORT>"' <PROMPT_DO_ITEM+INSTRUÇÃO_JSON>`. O comando do item roda com `cwd` na worktree. `<PROMPT_DO_ITEM>` **não é texto literal**: representa uma única string produzida por `buildPrompt(item, plan.raw)` e passada como um único argumento da CLI. Sua [montagem completa está abaixo](#prompts-enviados-aos-agentes); o retorno esperado tem `status` (`done`, `failed` ou `blocked`) e `note`.
 
-**Persistência e fim:** cada tentativa vai para `execution-attempts.json`; `TASK-CHECKLIST.md` recebe marcas de conclusão/falha/bloqueio e notas. Itens concluídos são commitados e integrados na feature branch, com reparo por novo agente se um hook de pré-commit falhar. Se `TEST-CHECKLIST.md` contiver cenários falhos de uma execução anterior, há uma rodada adicional de reparo de código. `readAgent` extrai o resultado do log da etapa e `checklistProgress` conta as caixas concluídas. Em `GET /api/workspace`, `advanceStage` consulta `FLOW_PROFILES` e grava `code-review` (simples/médio) ou `auto-testing` (difícil) somente após resultado de sucesso.
+**Persistência e fim:** cada tentativa vai para `execution-attempts.json`; `TASK-CHECKLIST.md` recebe marcas de conclusão/falha/bloqueio e as tasks de correção geradas por verificações. Itens concluídos são commitados e integrados na feature branch com `--no-verify`. Se `TEST-CHECKLIST.md` contiver cenários falhos de uma execução anterior, há uma rodada adicional de reparo de código. Cada rodada de verificação grava `verification-round-N.json` no diretório do card. `readAgent` extrai o resultado do log da etapa e `checklistProgress` conta as caixas concluídas. Em `GET /api/workspace`, `advanceStage` consulta `FLOW_PROFILES` e grava `code-review` (simples/médio) ou `auto-testing` (difícil) somente após resultado de sucesso.
 
 ## Prompts enviados aos agentes
 
@@ -41,21 +42,6 @@ Contexto do plano:
 
 `Arquivos permitidos` vira literalmente `(não especificado)` quando `item.files` é vazio. O bloco `Contexto do plano` **inteiro**, inclusive sua linha vazia inicial, é omitido se `itemContext(PLAN.md, item.id)` não encontrar seção correspondente. `<TEXTO_DO_ITEM>`, `<FILES>` e `<ITEM_ID>` vêm de `TASK-CHECKLIST.md`; a seção de contexto vem de `PLAN.md`. O prompt não inclui automaticamente o `PLAN.md` inteiro nem o tipo de fluxo.
 
-Se o primeiro commit falhar por `husky`, `pre-commit` ou `lint-staged`, um novo agente recebe, na mesma worktree, este prompt de reparo:
-
-````text
-<TASK_ITEM>
-
-Item: <ITEM_ID> — <TEXTO_DO_ITEM>
-Modo reparo: as alterações do item já estão no worktree, mas o hook de pre-commit reprovou.
-Corrija a causa exata do erro abaixo e nada além dela. Não reverta o item.
-
-Saída do hook:
-```
-<ÚLTIMOS_4000_CARACTERES_DA_SAÍDA>
-```
-````
-
 Se `TEST-CHECKLIST.md` tiver cenários com marca `!`, cada cenário falho também pode gerar um agente de **reparo de código**. O prompt é:
 
 ```text
@@ -69,7 +55,7 @@ Investigue a causa no código, aplique a correção necessária e execute a vali
 Não altere TEST-CHECKLIST.md nem marque o cenário como aprovado: ele será executado novamente na próxima etapa de testes.
 ```
 
-As linhas de detalhe aparecem uma por vez, com dois espaços iniciais; `Arquivos preferenciais` é omitido quando não há `files`. Para **qualquer um** desses três prompts, `runClaudeItem` acrescenta somente no caso Codex este sufixo literal, separado por duas quebras de linha:
+As linhas de detalhe aparecem uma por vez, com dois espaços iniciais; `Arquivos preferenciais` é omitido quando não há `files`. Para esses prompts, `runClaudeItem` acrescenta somente no caso Codex este sufixo literal, separado por duas quebras de linha:
 
 ```text
 Ao terminar, responda somente com JSON válido no formato {"status":"done|failed|blocked","note":"resumo curto"}.

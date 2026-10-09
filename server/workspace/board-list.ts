@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { readDevEnv } from '../modules/dev-environments/dev-env'
 import { prStates } from '../platform/pr-status'
 import type { ProcessRunner } from '../process'
 import type { AgentInfo, AgentSession } from '../../shared/domain/agents'
+import { countTasks } from '../../shared/domain/checklist-counts'
 import { readCard, type CardData } from './card-record'
 import { AGENT_FILE } from './stage-agent'
 import { canRetryStageWithOpus, readAgent, stageEndedDueToRateLimit } from './stage-agent-status'
@@ -53,13 +54,14 @@ export function listBoardCards(
         return []
       }
       const stat = statSync(path)
+      const repoNames = cardRepos(path).map((repo) => repo.name)
       let agent = readAgent(path)
       const stage = stageFor(card.status)
       if (
         isResolvedAgentError(
           card,
           agent,
-          cardRepos(path).map((repo) => repo.name),
+          repoNames,
         )
       ) {
         unlinkSync(join(path, AGENT_FILE))
@@ -103,6 +105,11 @@ export function listBoardCards(
         })
       }
       const prUrls = Object.values(advanced.prs?.staging ?? {}).concat(Object.values(advanced.prs?.master ?? {}))
+      const taskCounts = Object.fromEntries(
+        (['TASK-CHECKLIST.md', 'TEST-CHECKLIST.md'] as const)
+          .filter((file) => existsSync(join(path, file)))
+          .map((file) => [file, countTasks(readFileSync(join(path, file), 'utf8'))]),
+      )
       const cardFile = join(path, 'card.json')
       const updatedAt = existsSync(cardFile)
         ? new Date(statSync(cardFile).mtimeMs).toISOString()
@@ -115,6 +122,8 @@ export function listBoardCards(
         agents,
         lastStage: agent?.stage,
         smartDiffRunning: isSmartDiffRunning(path),
+        taskCounts,
+        repoCount: repoNames.length,
         devEnv: readDevEnv(path),
         prStates: prUrls.length ? prStates(prUrls) : undefined,
         ...advanced,

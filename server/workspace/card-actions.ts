@@ -39,6 +39,18 @@ export async function openPullRequests(
   await openBrowser(urls, config.executables.browser, runner, { newWindow: !selectedProject })
 }
 
+export async function openExternalUrl(rawUrl: unknown, config: ActionConfig, runner: ProcessRunner): Promise<void> {
+  if (typeof rawUrl !== 'string' || rawUrl.length > 8192) throw new Error('URL inválida')
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    throw new Error('URL inválida')
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('URL inválida')
+  await openBrowser([url.href], config.executables.browser, runner)
+}
+
 export async function openDevEnvironment(
   cardPath: string,
   repo: unknown,

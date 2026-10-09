@@ -1,4 +1,5 @@
 import { systemClock, type Clock } from '../system'
+import { BoundedCache } from '../../shared/lib/bounded-cache'
 
 export interface JiraEnv {
   site?: string
@@ -90,7 +91,7 @@ export function createJiraService(
   dependencies: JiraServiceDependencies = {},
 ): JiraService {
   const clock = dependencies.clock ?? systemClock
-  const cache = new Map<string, { value: string | null; expires: number }>()
+  const cache = new BoundedCache<string, { value: string | null; expires: number }>(1000)
   const enabled = () => Boolean(env.site && env.email && env.token)
   const api = (path: string, init?: RequestInit) =>
     request(`https://${env.site}.atlassian.net${path}`, {
@@ -127,6 +128,8 @@ export function createJiraService(
     },
     async statuses(keys) {
       if (!enabled()) return {}
+      const now = clock.now()
+      cache.prune((entry) => entry.expires <= now)
       const valid = keys
         .split(',')
         .filter((x) => JIRA_KEY_PATTERN.test(x))
@@ -138,6 +141,8 @@ export function createJiraService(
       if (!enabled())
         throw new Error('Integração com Jira não configurada. Informe site, e-mail e token em Configurações.')
       if (!JIRA_KEY_PATTERN.test(key) || !target) throw new Error('Requisição inválida: esperado { key, status }')
+      const now = clock.now()
+      cache.prune((entry) => entry.expires <= now)
       const r = await api(`/rest/api/3/issue/${key}/transitions`)
       if (!r.ok) throw new Error(`Jira respondeu HTTP ${r.status}`)
       const transition = matchTransition(transitions(await r.json()), target)

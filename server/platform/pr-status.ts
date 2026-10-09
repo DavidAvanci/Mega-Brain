@@ -1,7 +1,9 @@
 import type { PrState } from '../../shared/domain/cards'
+import { BoundedCache } from '../../shared/lib/bounded-cache'
 import { nodeProcessRunner, type ProcessRunner } from '../process'
 
 const OPEN_TTL_MS = 60_000
+const CACHE_IDLE_MS = 24 * 60 * 60 * 1000
 
 function ghPrState(url: string, runner: ProcessRunner = nodeProcessRunner): Promise<PrState | undefined> {
   return new Promise((resolve) => {
@@ -21,23 +23,30 @@ function ghPrState(url: string, runner: ProcessRunner = nodeProcessRunner): Prom
 interface CacheEntry {
   state?: PrState
   checkedAt: number
-  pending: boolean
+  accessedAt: number
 }
 
 export function createPrTracker(fetchState: (url: string) => Promise<PrState | undefined> = ghPrState) {
-  const cache = new Map<string, CacheEntry>()
+  const cache = new BoundedCache<string, CacheEntry>(1000)
+  // Active requests must not be evicted: that would allow duplicate lookups.
+  const pending = new Set<string>()
   return (urls: string[], now = Date.now()): Record<string, PrState> => {
+    cache.prune((entry) => now - entry.accessedAt >= CACHE_IDLE_MS)
     const states: Record<string, PrState> = {}
     for (const url of urls) {
       if (!/^https?:\/\//.test(url)) continue
       const entry = cache.get(url)
+      if (entry) entry.accessedAt = now
       if (entry?.state) states[url] = entry.state
       const settled = entry?.state === 'merged' || entry?.state === 'closed'
-      if (entry && (entry.pending || settled || now - entry.checkedAt < OPEN_TTL_MS)) continue
-      cache.set(url, { state: entry?.state, checkedAt: now, pending: true })
-      fetchState(url).then((state) => {
-        cache.set(url, { state: state ?? entry?.state, checkedAt: now, pending: false })
-      })
+      if (pending.has(url) || (entry && (settled || now - entry.checkedAt < OPEN_TTL_MS))) continue
+      pending.add(url)
+      void fetchState(url)
+        .catch(() => undefined)
+        .then((state) => {
+          cache.set(url, { state: state ?? entry?.state, checkedAt: now, accessedAt: now })
+          pending.delete(url)
+        })
     }
     return states
   }

@@ -25,6 +25,8 @@ export interface WorkspaceFolder {
   devEnv?: DevEnvInfo | null
   prs?: PrLinks | null
   prStates?: Record<string, PrState> | null
+  taskCounts?: Card['taskCounts']
+  repoCount?: number
 }
 
 function statusOf(folder: WorkspaceFolder): Status {
@@ -49,5 +51,7 @@ export function toCards(folders: WorkspaceFolder[], jiraStatuses: Readonly<Recor
     devEnv: folder.devEnv ?? undefined,
     prs: folder.prs ?? undefined,
     prStates: folder.prStates ?? undefined,
+    taskCounts: folder.taskCounts ?? undefined,
+    repoCount: folder.repoCount,
   }))
 }

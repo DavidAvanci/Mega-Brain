@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { BoundedCache } from '../../shared/lib/bounded-cache'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -88,6 +89,7 @@ export function reviewPrompt(
 
 export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRunner, owner?: ProcessOwner) {
   const states = new Map<string, DiffState>()
+  const errors = new BoundedCache<string, DiffState>(100)
 
   function step(cardPath: string, message: string): void {
     const current = states.get(cardPath)
@@ -173,7 +175,8 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
     const temporary = join(cardPath, 'diff.json.tmp')
     writeFileSync(temporary, `${JSON.stringify(document, null, 2)}\n`)
     renameSync(temporary, join(cardPath, 'diff.json'))
-    states.set(cardPath, { status: 'ready', result: document, started: true })
+    // The completed document is already persisted. Do not retain all its patches.
+    states.delete(cardPath)
   }
 
   return {
@@ -181,7 +184,7 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
       return states.get(cardPath)?.status === 'running'
     },
     read(cardPath: string): DiffState {
-      const current = states.get(cardPath)
+      const current = states.get(cardPath) ?? errors.get(cardPath)
       if (current) return current
       const result = readDocument(cardPath)
       if (result) return { status: 'ready', result, started: true }
@@ -201,9 +204,11 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
       writeFileSync(join(work, 'started.json'), `${JSON.stringify({ startedAt: new Date().toISOString() })}\n`)
       const running: DiffState = { status: 'running', steps: ['Iniciando revisão Smart Diff'], started: true }
       states.set(cardPath, running)
+      errors.delete(cardPath)
       void generate(cardPath).catch((error: unknown) => {
         const latest = states.get(cardPath)
-        states.set(cardPath, {
+        states.delete(cardPath)
+        errors.set(cardPath, {
           status: 'error',
           error: error instanceof Error ? error.message : String(error),
           steps: latest?.steps,

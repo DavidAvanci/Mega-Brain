@@ -212,20 +212,21 @@ function AgentLine({
   }
 
   const progress = agent.status === 'rodando' ? agent.progress : undefined
+  const visibleProgress = agent.stage === 'stage-task' || agent.stage === 'master-pr-task' ? undefined : progress
   return (
     <div>
       <div className="flex items-center gap-1.5">
         <AgentBadge agent={agent} cardId={cardId} iconOnly muted={mutedByParent} />
-        {progress && (
+        {visibleProgress && (
           <span className="text-[11px] text-muted-foreground tabular-nums">
-            {Math.round((progress.done / progress.total) * 100)}%
+            {Math.round((visibleProgress.done / visibleProgress.total) * 100)}%
           </span>
         )}
       </div>
-      {progress && (
+      {visibleProgress && (
         <Progress
-          value={progress.done}
-          max={progress.total}
+          value={visibleProgress.done}
+          max={visibleProgress.total}
           className="mt-1.5"
           aria-label={`Progresso do agente ${agentName(agent)}`}
         />
@@ -342,8 +343,8 @@ export function CardBody({
               </span>
             </Tip>
           )}
+          <CardAgentControl agent={resumableAgent} cardId={card.id} />
           <FlowIndicator flow={card.flow} />
-          {resumableAgent && <CardAgentControl agent={resumableAgent} cardId={card.id} />}
         </span>
       </div>
       {interactive ? (

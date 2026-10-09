@@ -6,6 +6,7 @@ mod activity_island;
 mod chat_export;
 mod supervisor;
 mod runtime_contract;
+mod stderr_tail;
 pub use supervisor::{BackendSupervisor, SupervisorState, SupervisorTransitionError};
 
 const MAIN_WINDOW_LABEL: &str = "main";

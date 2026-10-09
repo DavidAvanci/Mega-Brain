@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { requestJson } from '@/shared/api/request-json'
 import { FALLBACK_CODEX_CATALOG, type CodexModelCatalog } from '../../../shared/domain/codex-models'
 
-export function useCodexModels() {
+export function useCodexModels(enabled: boolean) {
   const [catalog, setCatalog] = useState(FALLBACK_CODEX_CATALOG)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const refreshModels = useCallback(() => setRefreshKey((key) => key + 1), [])
   useEffect(() => {
+    if (!enabled) return
     let cancelled = false
     setLoading(true)
     void requestJson<CodexModelCatalog>(
@@ -26,7 +27,7 @@ export function useCodexModels() {
     return () => {
       cancelled = true
     }
-  }, [refreshKey])
+  }, [enabled, refreshKey])
   useEffect(() => {
     window.addEventListener('megabrain:codex-profiles-changed', refreshModels)
     return () => window.removeEventListener('megabrain:codex-profiles-changed', refreshModels)

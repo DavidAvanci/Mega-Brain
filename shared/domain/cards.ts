@@ -49,6 +49,13 @@ export interface PrLinks {
 
 export type PrState = 'open' | 'merged' | 'closed'
 
+export interface CardTaskCounts {
+  total: number
+  done: number
+  skipped: number
+  failed: number
+}
+
 export interface Card {
   knowledgeRefs?: KnowledgeRef[]
   id: string
@@ -66,4 +73,6 @@ export interface Card {
   devEnv?: DevEnvInfo
   prs?: PrLinks
   prStates?: Record<string, PrState>
+  taskCounts?: Partial<Record<'TASK-CHECKLIST.md' | 'TEST-CHECKLIST.md', CardTaskCounts>>
+  repoCount?: number
 }

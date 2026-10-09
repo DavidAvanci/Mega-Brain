@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, join, posix, resolve } from 'node:path'
 import { runsAsCommand } from '../lib/env.ts'
 import { markItem, matchesPattern, parseChecklist, pendingRequires, resetUnfinished, type Item } from '../lib/checklist.ts'
@@ -73,21 +73,6 @@ function buildPrompt(item: Item, planRaw: string): string {
     .join('\n')
 }
 
-function repairPrompt(item: Item, output: string): string {
-  return [
-    megaBrainPrompt('taskItem'),
-    '',
-    `Item: ${item.id} — ${item.text}`,
-    'Modo reparo: as alterações do item já estão no worktree, mas o hook de pre-commit reprovou.',
-    'Corrija a causa exata do erro abaixo e nada além dela. Não reverta o item.',
-    '',
-    'Saída do hook:',
-    '```',
-    output.slice(-4000),
-    '```',
-  ].join('\n')
-}
-
 function failedTestRepairPrompt(item: Item): string {
   return [
     megaBrainPrompt('taskItem'),
@@ -118,11 +103,9 @@ function withRepoLock<T>(repo: string, fn: () => T): Promise<T> {
   return next
 }
 
-const HOOK_FAILURE = /husky|pre-commit|lint-staged/i
-
 function commitMessage(task: ReturnType<typeof taskInfo>, item: Item): string[] {
   const subject = item.text.charAt(0).toLowerCase() + item.text.slice(1)
-  const args = ['commit', '-m', `${task.type === 'fix' ? 'fix' : 'feat'}: ${subject}`.slice(0, 100)]
+  const args = ['commit', '--no-verify', '-m', `${task.type === 'fix' ? 'fix' : 'feat'}: ${subject}`.slice(0, 100)]
   if (task.jiraKey) args.push('-m', `Refs: ${task.jiraKey}`)
   return args
 }
@@ -151,36 +134,12 @@ async function commitItem(
     return integration.commits ? { status: 'done', note: `${integration.commits} commit(s) existentes foram integrados.` } : null
   }
 
-  let repair: ItemOutcome | undefined
   stageItemChanges(cwd)
   try {
     git(cwd, ...commitMessage(task, item))
   } catch (error) {
     const output = error instanceof CmdError ? error.raw : String(error)
-    if (!HOOK_FAILURE.test(output)) {
-      return { status: 'failed', note: `Commit falhou: ${output.split('\n').slice(-3).join(' | ')}` }
-    }
-    activity('Item', `${item.id} pre-commit reprovou — tentando reparo automático`)
-    repair = await runClaudeItem({
-      cwd,
-      prompt: repairPrompt(item, output),
-      model: AGENT.model,
-      effort: AGENT.effort,
-      tools: AGENT.tools,
-      timeoutMs: limitsFor(item).timeoutMs,
-    })
-    try {
-      stageItemChanges(cwd)
-      git(cwd, ...commitMessage(task, item))
-    } catch (retry) {
-      const detail = retry instanceof CmdError ? retry.raw : String(retry)
-      return {
-        status: 'failed',
-        note: `Pre-commit reprovou mesmo após o reparo automático: ${detail.split('\n').slice(-3).join(' | ')}`,
-        costUsd: repair.costUsd,
-        durationMs: repair.durationMs,
-      }
-    }
+    return { status: 'failed', note: `Commit falhou: ${output.split('\n').slice(-3).join(' | ')}` }
   }
 
   const integration = await withRepoLock(item.repo, () => {
@@ -192,8 +151,6 @@ async function commitItem(
     return {
       status: 'failed',
       note: `Trabalho preservado em \`${branch}\` (${integration.commits} commit(s)) — a integração para \`${task.branch}\` conflitou em: ${integration.conflict}. Nada foi perdido; resolva o conflito ou rode de novo e o scheduler tenta reaplicar antes de gastar agente.`,
-      costUsd: repair?.costUsd,
-      durationMs: repair?.durationMs,
     }
   }
 
@@ -201,17 +158,83 @@ async function commitItem(
   const widen = item.files.length
     ? touched.filter((path) => !item.files.some((pattern) => matchesPattern(path, pattern)))
     : []
-  const notes = [
-    repair ? 'Pre-commit reprovou e foi corrigido por um agente de reparo.' : '',
-    widen.length ? `Arquivos fora do \`files\` declarado (acrescentados ao checklist): ${widen.join(', ')}` : '',
-  ].filter(Boolean)
   return {
     status: 'done',
-    note: notes.join(' '),
-    costUsd: repair?.costUsd,
-    durationMs: repair?.durationMs,
+    note: widen.length ? `Arquivos fora do \`files\` declarado (acrescentados ao checklist): ${widen.join(', ')}` : '',
     widen,
   }
+}
+
+interface VerificationReport {
+  checks: { repo: string; name: string; command: string; status: 'passed' | 'failed' | 'skipped'; summary: string }[]
+  failures: { repo: string; check: string; command: string; summary: string; task: string; files?: string[] }[]
+}
+
+function verificationPrompt(repos: string[], reportPath: string, round: number): string {
+  return [
+    `Item: VFY${round} — Verificar os projetos após a execução dos agentes`,
+    'Você é o agente de verificação final. Confira cada projeto listado abaixo e execute os comandos de validação que o próprio projeto oferece, como lint, formatação em modo check, typecheck, testes e verificações configuradas em hooks Husky.',
+    'Descubra os comandos pelos manifests e configurações do projeto. Use scripts e binários que já estejam instalados localmente; não instale dependências nem use npx para baixar ferramentas. Não corrija arquivos, não faça commits e não altere TASK-CHECKLIST.md. Execute apenas comandos de verificação; não use modos que formatem ou modifiquem arquivos. Se um hook modificar arquivos ou não puder ser executado sem mudanças, registre-o como skipped com a razão.',
+    'Rode cada verificação relevante em cada projeto e registre resultado, comando e resumo. Para cada verificação que falhar, crie uma correção implementável, específica, em linguagem pt-BR, indicando os arquivos preferenciais quando identificáveis. Não crie correções para verificações skipped.',
+    'Grave somente o relatório JSON no caminho indicado. Use exatamente este formato: {"checks":[{"repo":"alias","name":"lint","command":"comando executado","status":"passed|failed|skipped","summary":"resumo curto"}],"failures":[{"repo":"alias","check":"nome exato da verificação","command":"comando","summary":"erro observado","task":"ação de correção","files":["caminho/relativo"]}]}. Toda verificação failed deve ter pelo menos uma entrada correspondente em failures. Use arrays vazios quando não houver registros.',
+    `Projetos: ${repos.join(', ')}`,
+    `Relatório JSON: ${reportPath}`,
+  ].join('\n\n')
+}
+
+function readVerificationReport(path: string, repos: Set<string>): VerificationReport {
+  const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+  if (!parsed || typeof parsed !== 'object') throw new Error('Relatório de verificações inválido')
+  const value = parsed as Record<string, unknown>
+  if (!Array.isArray(value.checks) || !Array.isArray(value.failures)) throw new Error('Relatório de verificações sem checks/failures')
+  const checks = value.checks.map((entry) => {
+    if (!entry || typeof entry !== 'object') throw new Error('Verificação inválida no relatório')
+    const check = entry as Record<string, unknown>
+    if (!repos.has(String(check.repo)) || typeof check.name !== 'string' || typeof check.command !== 'string' || typeof check.summary !== 'string' || !['passed', 'failed', 'skipped'].includes(String(check.status)))
+      throw new Error('Campos ou repositório inválido em uma verificação')
+    return { repo: String(check.repo), name: check.name, command: check.command, status: check.status as 'passed' | 'failed' | 'skipped', summary: check.summary }
+  })
+  const failures = value.failures.map((entry) => {
+    if (!entry || typeof entry !== 'object') throw new Error('Correção inválida no relatório')
+    const failure = entry as Record<string, unknown>
+    if (!repos.has(String(failure.repo)) || typeof failure.check !== 'string' || typeof failure.command !== 'string' || typeof failure.summary !== 'string' || typeof failure.task !== 'string' || !failure.task.trim())
+      throw new Error('Campos ou repositório inválido em uma correção')
+    const files = Array.isArray(failure.files) ? failure.files.filter((path): path is string => typeof path === 'string' && Boolean(path.trim())) : []
+    if (files.some((path) => path.startsWith('/') || path.includes('\\') || path.split('/').includes('..') || /[{},;]/.test(path)))
+      throw new Error('A correção contém um caminho de arquivo inválido')
+    return { repo: String(failure.repo), check: failure.check, command: failure.command, summary: failure.summary, task: failure.task.trim(), files }
+  })
+  for (const check of checks.filter((entry) => entry.status === 'failed')) {
+    if (!failures.some((failure) => failure.repo === check.repo && failure.check === check.name))
+      throw new Error('A falha ' + check.name + ' em ' + check.repo + ' não gerou task de correção')
+  }
+  for (const failure of failures) {
+    if (!checks.some((check) => check.repo === failure.repo && check.name === failure.check && check.status === 'failed'))
+      throw new Error('A correção não corresponde a uma verificação reprovada: ' + failure.check)
+  }
+  for (const repo of repos) {
+    if (!checks.some((check) => check.repo === repo)) throw new Error('Nenhuma verificação foi reportada para ' + repo)
+  }
+  return { checks, failures }
+}
+
+function appendVerificationTasks(report: VerificationReport): number {
+  const existing = new Set(parseChecklist(readFileSync(file, 'utf8')).map((item) => item.id))
+  let next = 1
+  const additions: string[] = []
+  for (const failure of report.failures) {
+    while (existing.has('VFY' + next)) next++
+    const id = 'VFY' + next++
+    existing.add(id)
+    const clean = (value: string) => value.replace(/[\r\n{}]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500)
+    const task = clean(failure.task)
+    if (!task) throw new Error('A task de correção veio vazia')
+    const description = task + ' (corrigir ' + clean(failure.check) + ': ' + clean(failure.summary) + ')'
+    const meta = failure.files?.length ? ' {files: ' + failure.files.join(', ') + '}' : ''
+    additions.push('## ' + failure.repo, '- [ ] ' + id + ' ' + description + meta)
+  }
+  if (additions.length) appendFileSync(file, (readFileSync(file, 'utf8').endsWith('\n') ? '' : '\n') + '\n' + additions.join('\n') + '\n')
+  return report.failures.length
 }
 
 async function repairFailedTests(task: ReturnType<typeof taskInfo>): Promise<ItemOutcome[]> {
@@ -426,7 +449,7 @@ export async function runDevStage(): Promise<void> {
   resetUnfinished(file)
   recoverOrphans(task, prepared)
 
-  const summary = await runChecklist({
+  const runExecutorWave = () => runChecklist({
     file,
     max: 4,
     execute: async (item) => {
@@ -514,17 +537,84 @@ export async function runDevStage(): Promise<void> {
     },
     afterDone: (item) => commitItem(task, item),
   })
+  let totalTaskCost = 0
+  let totalTaskDuration = 0
+  const waveFailures: { id: string; note: string }[] = []
+  const executeWave = async () => {
+    const result = await runExecutorWave()
+    totalTaskCost += result.costUsd
+    totalTaskDuration += result.durationMs
+    waveFailures.push(...result.failures)
+    return result
+  }
+  await executeWave()
 
   const testRepairs = await repairFailedTests(task)
   const failedRepairs = testRepairs.filter((outcome) => outcome.status !== 'done')
   const repairCost = testRepairs.reduce((total, outcome) => total + (outcome.costUsd ?? 0), 0)
   const repairDuration = testRepairs.reduce((total, outcome) => total + (outcome.durationMs ?? 0), 0)
 
+  const allowedRepos = new Set(repos)
+  const maxRepairWaves = positiveInt(process.env.CHECKLIST_MAX_VERIFICATION_WAVES, 5, 'CHECKLIST_MAX_VERIFICATION_WAVES')
+  let repairWaves = 0
+  let verificationCost = 0
+  let verificationDuration = 0
+  let verificationOk = true
+  let verificationSummary = ''
+  for (let round = 1; ; round++) {
+    const reportPath = join(wsPath, `verification-round-${round}.json`)
+    try { unlinkSync(reportPath) } catch {}
+    activity('Verificação', `Rodada ${round}: verificando ${repos.length} projeto(s)`)
+    const result = await runClaudeItem({
+      cwd: wsPath,
+      prompt: verificationPrompt(repos.map((repo) => `${repo}: ${repoPath(repo)}`), reportPath, round),
+      model: AGENT.model,
+      effort: AGENT.effort,
+      tools: AGENT.tools,
+      timeoutMs: positiveInt(process.env.CHECKLIST_VERIFICATION_TIMEOUT_MINUTES, 60, 'CHECKLIST_VERIFICATION_TIMEOUT_MINUTES') * 60_000,
+    })
+    verificationCost += result.costUsd ?? 0
+    verificationDuration += result.durationMs ?? 0
+    if (result.status !== 'done' || !existsSync(reportPath)) {
+      verificationOk = false
+      verificationSummary = `O agente de verificação não concluiu: ${result.note || 'relatório ausente'}`
+      break
+    }
+
+    let report: VerificationReport
+    try {
+      report = readVerificationReport(reportPath, allowedRepos)
+    } catch (error) {
+      verificationOk = false
+      verificationSummary = `Relatório de verificações inválido: ${error instanceof Error ? error.message : error}`
+      break
+    }
+    for (const check of report.checks) activity('Verificação', `${check.repo} · ${check.name}: ${check.status} — ${check.summary}`.slice(0, 240))
+    verificationSummary = `${report.checks.filter((check) => check.status === 'passed').length} aprovadas, ${report.checks.filter((check) => check.status === 'failed').length} falhas, ${report.checks.filter((check) => check.status === 'skipped').length} ignoradas`
+    if (!report.failures.length) break
+
+    const added = appendVerificationTasks(report)
+    activity('Verificação', `${added} task(s) de correção adicionadas à TASK-CHECKLIST.md`)
+    if (repairWaves >= maxRepairWaves) {
+      verificationOk = false
+      verificationSummary += ` · limite de ${maxRepairWaves} levas de correção atingido; tasks pendentes foram preservadas`
+      break
+    }
+    repairWaves++
+    await executeWave()
+  }
+
+  const finalItems = parseChecklist(readFileSync(file, 'utf8'))
+  const allTasksDone = finalItems.length > 0 && finalItems.every((item) => item.state === 'done')
+  const stageOk = allTasksDone && !failedRepairs.length && verificationOk
+
   finish(
-    summary.ok && !failedRepairs.length,
+    stageOk,
     [
-      `Itens: ${summary.done}/${summary.total} concluídos, ${summary.failed} falhas, ${summary.blocked} bloqueados · Custo: $${(summary.costUsd + repairCost).toFixed(2)} · Tempo de agente: ${formatDuration(summary.durationMs + repairDuration)}`,
-      ...summary.failures.map((failure) => `${failure.id}: ${failure.note.split('\n')[0]}`),
+      `Itens: ${finalItems.filter((item) => item.state === 'done').length}/${finalItems.length} concluídos, ${finalItems.filter((item) => item.state === 'failed').length} falhas, ${finalItems.filter((item) => item.state === 'blocked').length} bloqueados · Custo: $${(totalTaskCost + repairCost + verificationCost).toFixed(2)} · Tempo de agente: ${formatDuration(totalTaskDuration + repairDuration + verificationDuration)}`,
+      ...waveFailures.map((failure) => `${failure.id}: ${failure.note.split('\n')[0]}`),
+      `Verificações: ${verificationSummary}`,
+      ...(repairWaves ? [`Levas de correção executadas: ${repairWaves}`] : []),
       ...(testRepairs.length
         ? [
             `Reparos de testes falhos: ${testRepairs.length - failedRepairs.length}/${testRepairs.length} aplicados.`,
@@ -540,7 +630,7 @@ export async function runDevStage(): Promise<void> {
         : []),
     ].join('\n'),
   )
-  process.exit(summary.ok ? 0 : 1)
+  process.exit(stageOk ? 0 : 1)
 }
 
 if (runsAsCommand(import.meta.url)) {

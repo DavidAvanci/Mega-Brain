@@ -104,3 +104,22 @@ test('opening diff runs Smart Diff against the GitHub default branch, reviews th
   expect(await restarted.handle('/diff', 'POST', query, { name: 'card' })).toMatchObject({ status: 'ready' })
   expect(calls.smartDiff).toHaveLength(2)
 })
+test('completed reviews are read from disk without keeping a stale document or regenerating', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mega-brain-smart-diff-cache-'))
+  const card = join(root, 'card')
+  mkdirSync(card)
+  const runner = { spawn: vi.fn(), execFile: vi.fn() } as unknown as ProcessRunner
+  const service = createWorkspaceService({ workspaceDir: root, executables: {} }, runner)
+  const query = new URLSearchParams({ name: 'card' })
+  await service.handle('/diff', 'POST', query, { name: 'card' })
+  const document = JSON.parse(readFileSync(join(card, 'diff.json'), 'utf8'))
+  document.generatedAt = '2026-10-09T00:00:00.000Z'
+  writeFileSync(join(card, 'diff.json'), JSON.stringify(document))
+  expect(await service.handle('/diff', 'GET', query, undefined)).toMatchObject({
+    status: 'ready',
+    result: { generatedAt: document.generatedAt },
+  })
+  expect(await service.handle('/diff', 'POST', query, { name: 'card' })).toMatchObject({ status: 'ready' })
+  expect(runner.spawn).not.toHaveBeenCalled()
+  expect(runner.execFile).not.toHaveBeenCalled()
+})

@@ -4,6 +4,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
 import { abortChat, fetchChat, sendChat } from '@/features/cards/api/card-detail-api'
+import { workspaceAction } from '@/features/cards/api/cards-api'
+import { isTauriDesktop } from '@/desktopBootstrap'
 import type { ChatAgentSettings, ChatEntry } from '../../../shared/contracts/chat'
 import { ChatTranscript } from './ChatTranscript'
 import { ChatComposer } from './ChatComposer'
@@ -153,6 +155,15 @@ export function ChatTab({ cardId }: { cardId: string }) {
       )}
       <div
         ref={scroller}
+        onClick={(event) => {
+          if (!isTauriDesktop() || !(event.target instanceof Element)) return
+          const anchor = event.target.closest<HTMLAnchorElement>('a[target="_blank"]')
+          if (!anchor) return
+          event.preventDefault()
+          void workspaceAction('/api/workspace/browser/open', 'Falha ao abrir o link no navegador', {
+            url: anchor.href,
+          }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+        }}
         onScroll={() => {
           const el = scroller.current
           if (el) followLatest.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
