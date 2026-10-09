@@ -183,6 +183,12 @@
           "markdownDescription": "Allows the WebView to read the authenticated loopback backend configuration."
         },
         {
+          "description": "Allows the WebView to list displays for the native activity island.",
+          "type": "string",
+          "const": "allow-list-island-monitors",
+          "markdownDescription": "Allows the WebView to list displays for the native activity island."
+        },
+        {
           "description": "Allows the WebView to list installed WSL distribution names during explicit setup.",
           "type": "string",
           "const": "allow-list-wsl-distributions",

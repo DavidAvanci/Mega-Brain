@@ -97,6 +97,12 @@ export function fetchDetail(name: string): Promise<CardDetail> {
   return requestJson(`/api/workspace/detail?name=${encodeURIComponent(name)}`, 'Falha ao ler os detalhes da task')
 }
 
+export function fetchCardDetailSection<T>(name: string, section: string, file?: string): Promise<T> {
+  const query = new URLSearchParams({ name, section })
+  if (file) query.set('file', file)
+  return requestJson(`/api/workspace/detail?${query}`, 'Falha ao ler os detalhes da task')
+}
+
 export function fetchDiff(name: string): Promise<DiffState> {
   return requestJson<DiffState>(`/api/workspace/diff?name=${encodeURIComponent(name)}`, 'Falha ao ler o diff da task')
 }

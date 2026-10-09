@@ -227,12 +227,13 @@ function normalize(value: string) {
     .toLocaleLowerCase('pt-BR')
 }
 
-export function searchSettings(query: string, platform: { desktop: boolean; macOS: boolean }) {
+export function searchSettings(query: string, platform: { desktop: boolean; macOS: boolean; codex?: boolean }) {
   const words = normalize(query).trim().split(/\s+/).filter(Boolean)
   if (!words.length) return []
   return ENTRIES.filter((entry) => {
     if (entry.platform === 'desktop' && !platform.desktop) return false
     if (entry.platform === 'macOS' && !platform.macOS) return false
+    if (entry.target === 'codex-profiles' && !platform.codex) return false
     const text = normalize(`${SETTINGS_TAB_LABELS[entry.tab]} ${entry.title} ${entry.description} ${entry.keywords}`)
     return words.every((word) => text.includes(word))
   })

@@ -129,9 +129,9 @@ test('Windows does not expose native island settings', async () => {
   )
 })
 
-test('Codex profiles remain configurable when Claude is the default provider', async () => {
+test('Codex profiles are hidden when Claude is the selected provider', async () => {
   await act(async () => root.render(<SettingsDialog initialTab="tools" onClose={() => {}} />))
-  expect(document.querySelector('section[aria-label="Perfis do Codex"]')).toBeTruthy()
+  expect(document.querySelector('section[aria-label="Perfis do Codex"]')).toBeNull()
 })
 
 function options(label: string) {
@@ -143,6 +143,7 @@ function options(label: string) {
 test('Codex selects current models and limits reasoning to the supported options', async () => {
   state.codex = true
   await act(async () => root.render(<SettingsDialog initialTab="models" onClose={() => {}} />))
+  expect(document.querySelector('section[aria-label="Perfis do Codex"]')).toBeTruthy()
   expect(document.querySelector('[role=status]')?.textContent).toContain('Pessoal')
   const planningModels = document.querySelector<HTMLButtonElement>('[aria-label="Modelo para Planejamento"]')!
   expect(planningModels.textContent).toContain('GPT-6.1 Sol')

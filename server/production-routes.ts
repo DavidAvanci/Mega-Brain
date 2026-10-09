@@ -176,6 +176,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['POST', '/api/workspace'],
     ['POST', '/api/workspace/settings'],
     ['POST', '/api/workspace/open'],
+    ['POST', '/api/workspace/browser/open'],
     ['POST', '/api/workspace/diff'],
     ['POST', '/api/workspace/terminal'],
     ['POST', '/api/workspace/prs/open'],

@@ -105,6 +105,31 @@ test('workspace service opens only the requested project PR', async () => {
   expect(calls).toHaveLength(2)
 })
 
+test('workspace service opens only valid web URLs from the chat', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mega-brain-chat-link-'))
+  const browser = join(root, 'browser-fixture')
+  mkdirSync(root, { recursive: true })
+  writeFileSync(browser, '')
+  const calls: Array<{ command: string; args: readonly string[] }> = []
+  const child = Object.assign(new EventEmitter(), { unref() {} }) as unknown as ProcessChild
+  const runner = {
+    spawn(command: string, args: readonly string[]) {
+      calls.push({ command, args })
+      return child
+    },
+  } as ProcessRunner
+  const service = createWorkspaceService({ workspaceDir: root, executables: { browser } }, runner)
+
+  await expect(
+    service.handle('/browser/open', 'POST', new URLSearchParams(), { url: 'https://example.test/docs' }),
+  ).resolves.toEqual({ ok: true })
+  expect(calls).toEqual([{ command: browser, args: ['https://example.test/docs'] }])
+  await expect(
+    service.handle('/browser/open', 'POST', new URLSearchParams(), { url: 'javascript:alert(1)' }),
+  ).rejects.toThrow('URL inválida')
+  expect(calls).toHaveLength(1)
+})
+
 test('workspace service opens a running dev environment in the configured browser', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mega-brain-dev-env-open-'))
   const card = join(root, 'card')

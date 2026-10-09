@@ -9,6 +9,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { RepositoryMentionTextarea } from '@/components/RepositoryMentionTextarea'
 import { cn } from '@/lib/utils'
 import { abortChat, fetchChat, sendChat } from '@/features/cards/api/card-detail-api'
+import { workspaceAction } from '@/features/cards/api/cards-api'
+import { isTauriDesktop } from '@/desktopBootstrap'
 import { Markdown } from '@/Markdown'
 import type { ChatAgentSettings, ChatEntry } from '../../../shared/contracts/chat'
 
@@ -16,12 +18,22 @@ function Entry({ entry }: { entry: ChatEntry }) {
   if (entry.tool) {
     return (
       <p className="shrink-0 truncate pl-3 font-mono text-[11px] text-muted-foreground" title={entry.tool}>
-        {entry.source ? `${entry.source} · ` : ''}{entry.tool}
+        {entry.source ? `${entry.source} · ` : ''}
+        {entry.tool}
       </p>
     )
   }
   if (entry.role === 'user') {
-    return <div className="ml-auto max-w-[80%] rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-wrap"><p>{entry.text}</p>{entry.queued && <p className="mt-1 text-[11px] text-muted-foreground">Pendente · será entregue na próxima chamada do agente</p>}</div>
+    return (
+      <div className="ml-auto max-w-[80%] rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-wrap">
+        <p>{entry.text}</p>
+        {entry.queued && (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Pendente · será entregue na próxima chamada do agente
+          </p>
+        )}
+      </div>
+    )
   }
   return (
     <div className="min-w-0">
@@ -81,16 +93,19 @@ export function ChatTab({ cardId }: { cardId: string }) {
 
   useEffect(() => {
     let cancelled = false
-    const refresh = () => fetchChat(cardId)
-      .then((data) => {
-        if (cancelled) return
-        setEntries(previous => JSON.stringify(previous) === JSON.stringify(data.entries) ? previous : data.entries)
-        setSession(data.sessionId)
-        setSettings(data.settings ?? null)
-        setExecutionRunning(Boolean(data.executionRunning))
-        setPendingMessages(data.pendingMessages ?? 0)
-      })
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)))
+    const refresh = () =>
+      fetchChat(cardId)
+        .then((data) => {
+          if (cancelled) return
+          setEntries((previous) =>
+            JSON.stringify(previous) === JSON.stringify(data.entries) ? previous : data.entries,
+          )
+          setSession(data.sessionId)
+          setSettings(data.settings ?? null)
+          setExecutionRunning(Boolean(data.executionRunning))
+          setPendingMessages(data.pendingMessages ?? 0)
+        })
+        .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)))
     if (streaming) return
     void refresh()
     const timer = setInterval(() => void refresh(), 1500)
@@ -121,7 +136,10 @@ export function ChatTab({ cardId }: { cardId: string }) {
         text,
         (event) => {
           if (event.type === 'settings') return setSettings(event.settings)
-          if (event.type === 'queued') { setPendingMessages(count => count + 1); return }
+          if (event.type === 'queued') {
+            setPendingMessages((count) => count + 1)
+            return
+          }
           if (event.type === 'tool') return append({ role: 'assistant', tool: event.tool })
           if (event.type === 'done') return event.error ? setError(event.error) : undefined
           setEntries((prev) => {
@@ -145,13 +163,36 @@ export function ChatTab({ cardId }: { cardId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {(executionRunning || pendingMessages > 0) && <p className="border-b px-5 py-2 text-[11px] text-muted-foreground" role="status">{executionRunning ? 'Execução em andamento · novas mensagens serão entregues na próxima chamada do agente.' : 'Execução encerrada · envie uma mensagem para continuar a conversa.'}{pendingMessages > 0 ? ` ${pendingMessages} mensagem(ns) pendente(s).` : ''}</p>}
+      {(executionRunning || pendingMessages > 0) && (
+        <p className="border-b px-5 py-2 text-[11px] text-muted-foreground" role="status">
+          {executionRunning
+            ? 'Execução em andamento · novas mensagens serão entregues na próxima chamada do agente.'
+            : 'Execução encerrada · envie uma mensagem para continuar a conversa.'}
+          {pendingMessages > 0 ? ` ${pendingMessages} mensagem(ns) pendente(s).` : ''}
+        </p>
+      )}
       {settings && (
         <p className="border-b px-5 py-2 text-[11px] text-muted-foreground" aria-label="Configuração do agente">
           {settings.model} · effort {settings.effort}
         </p>
       )}
-      <div ref={scroller} onScroll={() => { const el = scroller.current; if (el) followLatest.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80 }} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+      <div
+        ref={scroller}
+        onClick={(event) => {
+          if (!isTauriDesktop() || !(event.target instanceof Element)) return
+          const anchor = event.target.closest<HTMLAnchorElement>('a[target="_blank"]')
+          if (!anchor) return
+          event.preventDefault()
+          void workspaceAction('/api/workspace/browser/open', 'Falha ao abrir o link no navegador', {
+            url: anchor.href,
+          }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+        }}
+        onScroll={() => {
+          const el = scroller.current
+          if (el) followLatest.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+        }}
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4"
+      >
         {entries === null ? (
           <>
             <Skeleton className="ml-auto h-8 w-1/3" />
@@ -189,7 +230,13 @@ export function ChatTab({ cardId }: { cardId: string }) {
             e.preventDefault()
             send()
           }}
-          placeholder={executionRunning ? 'Adicione uma orientação à execução…' : session || entries?.length ? 'Peça um ajuste ao agente…' : 'Comece uma sessão nessa pasta…'}
+          placeholder={
+            executionRunning
+              ? 'Adicione uma orientação à execução…'
+              : session || entries?.length
+                ? 'Peça um ajuste ao agente…'
+                : 'Comece uma sessão nessa pasta…'
+          }
           className={cn('max-h-40 min-h-10 resize-none', streaming && 'opacity-60')}
           disabled={streaming}
         />

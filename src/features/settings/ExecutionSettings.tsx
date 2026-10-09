@@ -160,7 +160,7 @@ export function ExecutionSettings({
           })}
         </div>
       </section>
-      <CodexProfilesSettings />
+      {codex && <CodexProfilesSettings />}
     </div>
   )
 }

@@ -17,16 +17,32 @@ export function inspectCard(
   worktreesRoot: string,
   git: string | undefined,
   runner: ProcessRunner,
+  section?: string,
+  file?: string | null,
 ) {
   const stored = readCard(card.path, card.name)
+  if (section === 'file') {
+    if (!file || !CARD_FILES.includes(file as (typeof CARD_FILES)[number])) throw new Error('Arquivo de card inválido')
+    return { file, content: existsSync(join(card.path, file)) ? readFileSync(join(card.path, file), 'utf8') : null }
+  }
+  if (section === 'repos')
+    return {
+      repos: cardWorktreeRepos(card.path, worktreesRoot).map((repo) =>
+        worktreeRepoInfo(repo, git, runner, stored.worktrees?.[repo.name]),
+      ),
+    }
+  if (section === 'usage') {
+    const usage = readAgentUsageDetails(card.path)
+    return { usage: usage.usage, usageBreakdown: usage.breakdown }
+  }
   const usage = readAgentUsageDetails(card.path)
   return {
     usage: usage.usage,
     usageBreakdown: usage.breakdown,
     files: Object.fromEntries(
-      CARD_FILES.map((file) => [
-        file,
-        existsSync(join(card.path, file)) ? readFileSync(join(card.path, file), 'utf8') : null,
+      CARD_FILES.map((cardFile) => [
+        cardFile,
+        existsSync(join(card.path, cardFile)) ? readFileSync(join(card.path, cardFile), 'utf8') : null,
       ]),
     ),
     repos: cardWorktreeRepos(card.path, worktreesRoot).map((repo) =>

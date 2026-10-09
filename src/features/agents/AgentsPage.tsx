@@ -1,14 +1,11 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import {
   AiBrain01Icon,
   ArrowDown01Icon,
   ArrowRight01Icon,
-  ChatGptIcon,
-  ClaudeIcon,
   Clock01Icon,
   Task01Icon,
   RefreshIcon,
-  SparklesIcon,
   StopIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -25,7 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { Tip } from '@/Tip'
 import type { AgentSession, AgentStatus } from '../../../shared/domain/agents'
-import type { Card } from '../../../shared/domain/cards'
+import { STATUS_LABELS, type Card } from '../../../shared/domain/cards'
 import { isAgentSessionActive, refreshAgentSessions, stopAgentSession, useAgentSessions } from './model/agents-state'
 
 const STATUS_META: Record<AgentStatus, { label: string; dot: string }> = {
@@ -37,16 +34,9 @@ const STATUS_META: Record<AgentStatus, { label: string; dot: string }> = {
   morto: { label: 'Interrompida', dot: 'bg-muted-foreground' },
 }
 const PROVIDER_META = {
-  claude: { icon: ClaudeIcon, label: 'Claude', className: 'bg-orange-500/10 text-orange-600 dark:text-orange-400' },
-  codex: { icon: ChatGptIcon, label: 'Codex', className: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' },
+  claude: { label: 'Claude' },
+  codex: { label: 'Codex' },
 } as const
-const DATE_FORMAT = new Intl.DateTimeFormat('pt-BR', {
-  day: '2-digit',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-})
-
 function isActive(session: AgentSession): boolean {
   return isAgentSessionActive(session)
 }
@@ -63,7 +53,10 @@ function elapsed(startedAt: string): string {
 function displayModel(model: string): string {
   const value = model.trim()
   const isGpt = /^gpt-/i.test(value)
-  const normalized = value.replace(/^(claude|gpt)-/i, '').replace(/-(\d+)-(\d+)$/, ' $1.$2').replace(/-/g, ' ')
+  const normalized = value
+    .replace(/^(claude|gpt)-/i, '')
+    .replace(/-(\d+)-(\d+)$/, ' $1.$2')
+    .replace(/-/g, ' ')
   const formatted = normalized.replace(/\b\w+/g, (word) => word[0]?.toUpperCase() + word.slice(1))
   return isGpt ? `GPT ${formatted}` : formatted
 }
@@ -122,104 +115,61 @@ function StopAgentButton({ session }: { session: AgentSession }) {
   )
 }
 
-function AgentRow({
-  session,
-  card,
-  onOpenCard,
-  historical = false,
-}: {
-  session: AgentSession
-  card?: Card
-  onOpenCard: (id: string) => void
-  historical?: boolean
-}) {
+function AgentRow({ session, card, historical = false }: { session: AgentSession; card?: Card; historical?: boolean }) {
   const meta = STATUS_META[session.status]
   const provider = PROVIDER_META[session.provider]
   return (
     <article
       className={cn(
-        'grid gap-2 rounded-lg border bg-card p-3 shadow-xs sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
-        historical && '[content-visibility:auto] [contain-intrinsic-size:auto_112px]',
+        'flex min-h-32 min-w-0 flex-col gap-2 rounded-lg border bg-card p-3',
+        historical && '[content-visibility:auto] [contain-intrinsic-size:auto_128px]',
       )}
     >
-      <div className="flex min-w-0 gap-2.5">
-        <div
-          className={cn('mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md', provider.className)}
-          title={provider.label}
-        >
-          <HugeiconsIcon icon={provider.icon} strokeWidth={1.8} className="size-4" aria-label={provider.label} />
-        </div>
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="max-w-full truncate font-sans text-sm font-semibold">{session.name ?? session.title}</h3>
-            <span className="text-xs text-muted-foreground">{provider.label}</span>
-            {session.provider === 'codex' && session.codexProfileName && (
-              <span
-                className="inline-flex max-w-48 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px]"
-                aria-label={`Perfil: ${session.codexProfileName}`}
-              >
-                <span
-                  aria-hidden="true"
-                  className="size-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: session.codexProfileColor }}
-                />
-                <span className="truncate">{session.codexProfileName}</span>
-              </span>
-            )}
-            <span className="text-xs text-muted-foreground">{DATE_FORMAT.format(new Date(session.updatedAt))}</span>
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className={cn('size-2 rounded-full', meta.dot, isActive(session) && 'animate-pulse')} />
-              {meta.label}
-            </span>
-            {session.model || session.effort ? (
-              <span className="inline-flex items-center rounded-full border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                {session.model ? displayModel(session.model) : null}
-                {session.model && session.effort ? <span className="mx-1.5 size-1 rounded-full bg-current" /> : null}
-                {session.effort ? session.effort[0]?.toUpperCase() + session.effort.slice(1) : null}
-              </span>
-            ) : null}
-          </div>
-          {session.name && session.name !== session.title ? (
-            <p className="mt-1 truncate text-xs text-muted-foreground">{session.title}</p>
-          ) : null}
-          {card ? (
-            <button
-              type="button"
-              className={cn(
-                'flex max-w-full min-w-0 items-center gap-1.5 text-left text-xs text-primary hover:underline dark:text-chart-2',
-                session.name ? 'mt-1.5' : 'mt-2',
-              )}
-              title={`Abrir ${card.id}: ${card.title}`}
-              onClick={() => onOpenCard(card.id)}
-            >
-              <HugeiconsIcon icon={Task01Icon} strokeWidth={1.8} className="size-3.5 shrink-0" />
-              <span className="truncate">
-                <span className="font-mono font-medium">{card.id}</span> · {card.title}
-              </span>
-            </button>
-          ) : (
-            <div
-              className={cn(
-                'flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground',
-                session.name ? 'mt-1.5' : 'mt-2',
-              )}
-            >
-              <HugeiconsIcon icon={Task01Icon} strokeWidth={1.8} className="size-3.5 shrink-0" />
-              <span className="truncate font-mono" title={session.cwd}>
-                {session.cwd || 'Diretório não identificado'}
-              </span>
-            </div>
-          )}
-          {session.activity ? <p className="mt-1 truncate text-xs text-muted-foreground">{session.activity}</p> : null}
-        </div>
-      </div>
-      <div className="flex flex-col items-start gap-1 text-xs whitespace-nowrap text-muted-foreground sm:items-end">
-        <span className="inline-flex items-center gap-1.5">
-          <HugeiconsIcon icon={Clock01Icon} strokeWidth={1.8} className="size-3.5" />
-          {elapsed(session.startedAt)}
-        </span>
-        {session.pid ? <span className="font-mono opacity-70">PID {session.pid}</span> : null}
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className={cn('size-2 shrink-0 rounded-full', meta.dot, isActive(session) && 'animate-pulse')} />
+        <h3 className="min-w-0 flex-1 truncate font-sans text-xs font-semibold" title={session.name ?? session.title}>
+          {session.name ?? session.title}
+        </h3>
         {isActive(session) && session.pid ? <StopAgentButton session={session} /> : null}
+      </div>
+      {session.name && session.name !== session.title ? (
+        <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">{session.title}</p>
+      ) : session.activity ? (
+        <p className="line-clamp-3 text-[11px] leading-snug text-muted-foreground">{session.activity}</p>
+      ) : !card ? (
+        <span className="flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground" title={session.cwd}>
+          <HugeiconsIcon icon={Task01Icon} strokeWidth={1.8} className="size-3 shrink-0" />
+          <span className="truncate font-mono">{session.cwd || 'Diretório não identificado'}</span>
+        </span>
+      ) : null}
+      <div className="mt-auto flex min-w-0 flex-col gap-1">
+        <span className="flex items-center gap-1 text-[10px] text-muted-foreground" title={meta.label}>
+          <HugeiconsIcon icon={Clock01Icon} strokeWidth={1.8} className="size-3 shrink-0" />
+          <span className="truncate">
+            {meta.label} · {elapsed(session.startedAt)}
+          </span>
+        </span>
+        {session.provider === 'codex' && session.codexProfileName ? (
+          <span
+            className="inline-flex max-w-full items-center gap-1.5 truncate text-[10px] text-muted-foreground"
+            aria-label={`Perfil: ${session.codexProfileName}`}
+          >
+            <span
+              aria-hidden="true"
+              className="size-1.5 shrink-0 rounded-full"
+              style={{ backgroundColor: session.codexProfileColor }}
+            />
+            <span className="truncate">{session.codexProfileName}</span>
+          </span>
+        ) : null}
+        <span
+          className="truncate text-[10px] text-muted-foreground"
+          title={session.model ? displayModel(session.model) : provider.label}
+        >
+          {provider.label}
+          {session.model ? ` · ${displayModel(session.model)}` : ''}
+          {session.effort ? ` · ${session.effort[0]?.toUpperCase()}${session.effort.slice(1)}` : ''}
+        </span>
       </div>
     </article>
   )
@@ -262,7 +212,7 @@ function AgentGroups({
   historical?: boolean
 }) {
   return (
-    <div className="space-y-3">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       {groups.map(([cardId, group]) => {
         const card = cardId ? cardsById.get(cardId) : undefined
         return (
@@ -291,26 +241,10 @@ function AgentGroup({
   historical: boolean
 }) {
   const [expanded, setExpanded] = useState(true)
-  const [maxHeight, setMaxHeight] = useState<number>()
-  const listRef = useRef<HTMLDivElement>(null)
   const listId = useId()
 
-  useLayoutEffect(() => {
-    if (!expanded || group.length <= 3 || !listRef.current) return
-    const rows = Array.from(listRef.current.children).slice(0, 3) as HTMLElement[]
-    const updateHeight = () => {
-      const first = rows[0]
-      const third = rows[2]
-      setMaxHeight(third.offsetTop + third.offsetHeight - first.offsetTop)
-    }
-    const observer = new ResizeObserver(updateHeight)
-    rows.forEach((row) => observer.observe(row))
-    updateHeight()
-    return () => observer.disconnect()
-  }, [expanded, group])
-
   return (
-    <div className="rounded-xl border bg-muted/20 p-3">
+    <div className="min-w-0 rounded-xl border bg-card p-3">
       <div className={cn('flex flex-wrap items-center justify-between gap-2 px-1', expanded && 'mb-3')}>
         <div className="flex min-w-0 items-center gap-2">
           <button
@@ -336,23 +270,25 @@ function AgentGroup({
             <h3 className="font-sans font-semibold">Sem card</h3>
           )}
         </div>
-        <span className="text-xs text-muted-foreground">
-          {group.length} {group.length === 1 ? 'agente' : 'agentes'}
-        </span>
+        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+          {card ? <span className="hidden max-w-28 truncate sm:inline">{STATUS_LABELS[card.status]}</span> : null}
+          <span>
+            {group.length} {group.length === 1 ? 'agente' : 'agentes'}
+          </span>
+        </div>
       </div>
       <div
         id={listId}
-        ref={listRef}
         hidden={!expanded}
-        className="relative space-y-2 overflow-y-auto"
-        style={group.length > 3 ? { maxHeight: maxHeight ?? 352 } : undefined}
+        className={cn('grid grid-cols-2 gap-2 lg:grid-cols-4', group.length > 8 && 'max-h-96 overflow-y-auto pr-1')}
+        tabIndex={group.length > 8 ? 0 : undefined}
+        aria-label={`Agentes de ${card?.title ?? 'sessões sem card'}`}
       >
         {group.map((session) => (
           <AgentRow
             key={`${session.codexProfileId ?? session.provider}:${session.id}`}
             session={session}
             card={card}
-            onOpenCard={onOpenCard}
             historical={historical}
           />
         ))}
@@ -395,15 +331,37 @@ export function AgentsPage({ cards, onOpenCard }: { cards: Card[]; onOpenCard: (
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6" aria-label="Página Agentes">
-      <div className="mx-auto max-w-5xl">
-        <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="mb-1 flex items-center gap-2 text-primary">
-              <HugeiconsIcon icon={SparklesIcon} strokeWidth={1.8} className="size-4" />
-              <span className="text-xs font-semibold tracking-wider uppercase">Monitor local</span>
-            </div>
+      <div className="mx-auto max-w-none">
+        <header className="mb-6 flex flex-wrap items-end gap-x-6 gap-y-4 border-b pb-4">
+          <div className="min-w-48 flex-1">
             <h2 className="font-sans text-2xl font-semibold tracking-tight">Agentes</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Sessões do Claude e Codex detectadas nesta máquina.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Monitor local · Sessões do Claude e Codex detectadas nesta máquina.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2" aria-label="Resumo das sessões">
+            {[
+              { label: 'Ativos', value: active.length, dot: 'bg-primary' },
+              {
+                label: 'Rodando',
+                value: active.filter((session) => session.status === 'rodando').length,
+                dot: 'bg-emerald-500',
+              },
+              {
+                label: 'Aguardando',
+                value: active.filter((session) => session.status === 'aguardando').length,
+                dot: 'bg-amber-500',
+              },
+              { label: 'Recentes', value: recent.length, dot: 'bg-muted-foreground/60' },
+            ].map((item) => (
+              <div key={item.label} className="flex flex-col gap-0.5">
+                <span className="text-lg font-semibold tabular-nums">{item.value}</span>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className={cn('size-1.5 rounded-full', item.dot)} />
+                  {item.label}
+                </span>
+              </div>
+            ))}
           </div>
           <div className="flex items-center gap-2">
             {profileOptions.length > 1 && (

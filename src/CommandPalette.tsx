@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
   BookOpen01Icon,
   CommandIcon,
@@ -42,6 +42,25 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const resultsRef = useRef<HTMLDivElement>(null)
+
+  const navigateResults = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    const buttons = Array.from(resultsRef.current?.querySelectorAll<HTMLButtonElement>('[data-palette-item]') ?? [])
+    if (buttons.length === 0) return
+    const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement)
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      buttons[currentIndex < 0 ? 0 : (currentIndex + 1) % buttons.length].focus()
+    } else if (currentIndex >= 0) {
+      event.preventDefault()
+      if (currentIndex === 0) {
+        document.querySelector<HTMLInputElement>('[data-palette-search]')?.focus()
+      } else {
+        buttons[currentIndex - 1].focus()
+      }
+    }
+  }
 
   useEffect(() => {
     const openPalette = (event: KeyboardEvent) => {
@@ -121,14 +140,17 @@ export function CommandPalette({
             />
             <Input
               autoFocus
+              data-palette-search
+              aria-label="Buscar cards e comandos"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={navigateResults}
               placeholder="Buscar cards ou comandos…"
               className="h-12 rounded-none border-0 bg-transparent pr-4 pl-12 font-sans shadow-none focus-visible:ring-0"
             />
           </div>
 
-          <div className="max-h-[min(24rem,60dvh)] overflow-y-auto p-2">
+          <div ref={resultsRef} onKeyDown={navigateResults} className="max-h-[min(24rem,60dvh)] overflow-y-auto p-2">
             {visibleActions.length > 0 && (
               <section aria-labelledby="palette-actions">
                 <h2 id="palette-actions" className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
@@ -187,6 +209,7 @@ function PaletteItem({
   return (
     <button
       type="button"
+      data-palette-item
       className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left font-sans text-sm hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
       onClick={onClick}
     >

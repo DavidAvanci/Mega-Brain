@@ -16,7 +16,13 @@ import { createSmartDiffReview } from './smart-diff-review'
 import type { AgentSession } from '../../shared/domain/agents'
 import type { CodexModelCatalog } from '../../shared/domain/codex-models'
 import { completeWorkspaceConfig, type WorkspaceConfigInput } from './workspace-config'
-import { openAgentTerminal, openDevEnvironment, openDevEnvironmentAgent, openPullRequests } from './card-actions'
+import {
+  openAgentTerminal,
+  openDevEnvironment,
+  openDevEnvironmentAgent,
+  openExternalUrl,
+  openPullRequests,
+} from './card-actions'
 import { updateCard } from './card-update'
 import { availableWorkspaceEditors, readWorkspaceSettings, writeWorkspaceSettings } from './workspace-settings'
 
@@ -67,8 +73,12 @@ export function createWorkspaceService(
       mkdirSync(root, { recursive: true })
       if (method === 'GET') {
         if (path === '/settings/editors') return availableWorkspaceEditors(config)
-        if (path === '/settings') return readWorkspaceSettings(config, root,
-          config.preferences.llmProvider === 'chatgpt' ? await codexModels?.() : undefined)
+        if (path === '/settings')
+          return readWorkspaceSettings(
+            config,
+            root,
+            config.preferences.llmProvider === 'chatgpt' ? await codexModels?.() : undefined,
+          )
         if (path === '/')
           return listBoardCards(
             root,
@@ -80,7 +90,15 @@ export function createWorkspaceService(
             diffReview.isRunning,
           )
         const card = folder(query.get('name'))
-        if (path === '/detail') return inspectCard(card, resolve(config.worktreesDir), config.executables.git, runner)
+        if (path === '/detail')
+          return inspectCard(
+            card,
+            resolve(config.worktreesDir),
+            config.executables.git,
+            runner,
+            query.get('section') ?? undefined,
+            query.get('file'),
+          )
         if (path === '/diff') return diffReview.read(card.path)
         if (path === '/diff/standard') return inspectCardDiff(card.path, config.executables.git, runner)
         return listBoardCards(
@@ -96,7 +114,8 @@ export function createWorkspaceService(
       if (method !== 'POST') throw new Error('Método não suportado')
       const data = (body ?? {}) as Record<string, unknown>
       if (path === '/settings') {
-        const provider = (data.general as { llmProvider?: unknown } | undefined)?.llmProvider ?? config.preferences.llmProvider
+        const provider =
+          (data.general as { llmProvider?: unknown } | undefined)?.llmProvider ?? config.preferences.llmProvider
         const result = writeWorkspaceSettings(config, data, provider === 'chatgpt' ? await codexModels?.() : undefined)
         root = result.root
         assertTestWorkspace(root)
@@ -104,6 +123,10 @@ export function createWorkspaceService(
         paths = createWorkspacePathResolver(root)
         folder = (value: unknown) => paths.resolveCardFolder(value)
         return result.settings
+      }
+      if (path === '/browser/open') {
+        await openExternalUrl(data.url, config, runner)
+        return { ok: true }
       }
       if (path === '/open') {
         const card = folder(data.name)

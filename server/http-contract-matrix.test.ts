@@ -105,6 +105,7 @@ function fixtures(fail = false) {
           ['POST /api/workspace', 'POST', '/', '', { title: 'Card' }],
           ['POST /api/workspace/settings', 'POST', '/settings', '', { stages: {} }],
           ['POST /api/workspace/open', 'POST', '/open', '', { name: 'card' }],
+          ['POST /api/workspace/browser/open', 'POST', '/browser/open', '', { url: 'https://example.test/docs' }],
           ['POST /api/workspace/terminal', 'POST', '/terminal', '', { name: 'card' }],
           ['POST /api/workspace/prs/open', 'POST', '/prs/open', '', { name: 'card', env: 'staging' }],
           ['POST /api/workspace/dev-env', 'POST', '/dev-env', '', { name: 'card', frontend: 'web' }],

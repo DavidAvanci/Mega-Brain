@@ -8,8 +8,11 @@ const mocks = vi.hoisted(() => ({
   fetchChat: vi.fn(),
   sendChat: vi.fn(),
   abortChat: vi.fn(),
+  workspaceAction: vi.fn(),
 }))
 vi.mock('@/features/cards/api/card-detail-api', () => mocks)
+vi.mock('@/features/cards/api/cards-api', () => ({ workspaceAction: mocks.workspaceAction }))
+vi.mock('@/desktopBootstrap', () => ({ isTauriDesktop: () => true }))
 vi.mock('@/features/repositories/useRepositoryMentions', () => ({
   useRepositoryMentions: () => ({
     repositories: [{ id: 'repo', alias: 'api', displayName: 'API' }],
@@ -17,7 +20,18 @@ vi.mock('@/features/repositories/useRepositoryMentions', () => ({
     error: null,
   }),
 }))
-vi.mock('@/Markdown', () => ({ Markdown: ({ text }: { text: string }) => <p>{text}</p> }))
+vi.mock('@/Markdown', () => ({
+  Markdown: ({ text }: { text: string }) => {
+    const url = text.match(/https?:\/\/\S+/)?.[0]
+    return url ? (
+      <a href={url} target="_blank">
+        Abrir link
+      </a>
+    ) : (
+      <p>{text}</p>
+    )
+  },
+}))
 
 let root: Root
 let host: HTMLDivElement
@@ -87,9 +101,34 @@ test('restores actual DOM focus after sending with Enter', async () => {
   expect(document.activeElement).toBe(input())
 })
 
+test('opens assistant links in the desktop browser', async () => {
+  mocks.fetchChat.mockResolvedValueOnce({
+    entries: [{ role: 'assistant', text: 'https://example.test/docs' }],
+    sessionId: 'session',
+  })
+  await act(async () => root.render(<ChatTab cardId="card-2" />))
+  const link = host.querySelector<HTMLAnchorElement>('a[target="_blank"]')!
+  await act(async () => link.click())
+  expect(mocks.workspaceAction).toHaveBeenCalledWith(
+    '/api/workspace/browser/open',
+    'Falha ao abrir o link no navegador',
+    { url: 'https://example.test/docs' },
+  )
+})
+
 test('mostra execução e mensagens pendentes, mantendo o composer disponível', async () => {
-  mocks.fetchChat.mockResolvedValue({ sessionId: null, executionRunning: true, pendingMessages: 1, entries: [{ role: 'assistant', text: 'Implementando API', source: 'BE1' }, { role: 'user', text: 'Inclua documentação', queued: true }] })
-  await act(async () => { root.render(<ChatTab cardId="running-card" />) })
+  mocks.fetchChat.mockResolvedValue({
+    sessionId: null,
+    executionRunning: true,
+    pendingMessages: 1,
+    entries: [
+      { role: 'assistant', text: 'Implementando API', source: 'BE1' },
+      { role: 'user', text: 'Inclua documentação', queued: true },
+    ],
+  })
+  await act(async () => {
+    root.render(<ChatTab cardId="running-card" />)
+  })
   expect(host.textContent).toContain('Implementando API')
   expect(host.textContent).toContain('BE1')
   expect(host.textContent).toContain('Pendente')

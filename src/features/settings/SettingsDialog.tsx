@@ -1,10 +1,18 @@
-import { ActivityIslandSettings, type ActivityIslandSettingsHandle } from './ActivityIslandSettings'
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties } from 'react'
+import type { ActivityIslandSettingsHandle } from './ActivityIslandSettings'
 import { DirectorySettings } from './DirectorySettings'
-import { ExecutionSettings } from './ExecutionSettings'
-import { IdeSettings } from './IdeSettings'
-import { JiraSettings } from './JiraSettings'
-import { TerminalSettings } from './TerminalSettings'
-import { TriageSettings } from './TriageSettings'
+const ActivityIslandSettings = lazy(() =>
+  import('./ActivityIslandSettings').then((module) => ({ default: module.ActivityIslandSettings })),
+)
+const ExecutionSettings = lazy(() =>
+  import('./ExecutionSettings').then((module) => ({ default: module.ExecutionSettings })),
+)
+const IdeSettings = lazy(() => import('./IdeSettings').then((module) => ({ default: module.IdeSettings })))
+const JiraSettings = lazy(() => import('./JiraSettings').then((module) => ({ default: module.JiraSettings })))
+const TerminalSettings = lazy(() =>
+  import('./TerminalSettings').then((module) => ({ default: module.TerminalSettings })),
+)
+const TriageSettings = lazy(() => import('./TriageSettings').then((module) => ({ default: module.TriageSettings })))
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
   PaintBrush01Icon,
@@ -15,7 +23,6 @@ import {
   FileEditIcon,
   Layers01Icon,
 } from '@hugeicons/core-free-icons'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -53,6 +60,15 @@ type ThemeChoice = {
   fontFamily?: string
   radius?: string
   cornerShape?: string
+}
+
+function SettingsSectionLoading() {
+  return (
+    <div className="space-y-3" aria-label="Carregando configurações" aria-busy="true">
+      <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+      <div className="h-16 animate-pulse rounded-lg bg-muted" />
+    </div>
+  )
 }
 
 const THEME_CATEGORIES: {
@@ -253,6 +269,7 @@ export function SettingsDialog({
   const {
     settings,
     editorDiscovery,
+    editorsLoaded,
     autostartEnabled,
     autostartLoaded,
     error,
@@ -266,11 +283,16 @@ export function SettingsDialog({
     updatePrompts,
     save,
     close,
-  } = useSettingsDialog(desktop, onClose)
+  } = useSettingsDialog(desktop, onClose, tab as SettingsTab)
 
   const busy = saving || savingIsland
+  const settingsReady = settings !== null
   const searching = Boolean(query.trim())
-  const results = searchSettings(query, { desktop, macOS: isMacOSDesktop() })
+  const results = searchSettings(query, {
+    desktop,
+    macOS: isMacOSDesktop(),
+    codex: settings?.general.llmProvider === 'chatgpt',
+  })
   const changeQuery = (value: string) => {
     setQuery(value)
     setSearchTarget(null)
@@ -335,193 +357,195 @@ export function SettingsDialog({
           <DialogDescription>Personalize o aplicativo, as integrações e seu ambiente de execução.</DialogDescription>
         </DialogHeader>
         {error && <p className="mx-5 mb-3 rounded-md bg-destructive/10 p-2 text-xs text-destructive">{error}</p>}
-        {!settings ? (
-          <p className="border-t px-5 py-10 text-sm text-muted-foreground">Carregando configurações…</p>
-        ) : (
-          <div className="min-h-0 flex-1">
-            <Tabs
-              value={tab}
-              onValueChange={(value) => {
-                setTab(String(value))
-                setSearchTarget(null)
-              }}
-              orientation="vertical"
-              className="h-full min-h-0 flex-1 flex-col gap-0 overflow-clip border-t sm:flex-row"
+        <div className="h-full min-h-0 flex-1">
+          <Tabs
+            value={tab}
+            onValueChange={(value) => {
+              setTab(String(value))
+              setSearchTarget(null)
+            }}
+            orientation="vertical"
+            className="h-full min-h-0 flex-1 flex-col gap-0 overflow-clip border-t sm:flex-row"
+          >
+            <aside
+              aria-label="Navegação de configurações"
+              className="flex max-h-[45%] min-h-0 min-w-0 w-full shrink-0 flex-col gap-2 overflow-x-hidden overflow-y-clip border-b bg-muted/25 p-2 sm:max-h-none sm:w-48 sm:border-e sm:border-b-0"
             >
-              <aside
-                aria-label="Navegação de configurações"
-                className="flex max-h-[45%] min-h-0 w-full shrink-0 flex-col gap-2 overflow-clip border-b bg-muted/25 p-2 sm:max-h-none sm:w-48 sm:border-e sm:border-b-0"
-              >
-                <SettingsSearchInput
+              <SettingsSearchInput
+                inputRef={searchInput}
+                query={query}
+                onChange={changeQuery}
+                onSelectFirst={() => results[0] && selectResult(results[0])}
+                onFocusResults={() => searchResults.current?.querySelector<HTMLButtonElement>('button')?.focus()}
+                disabled={busy}
+              />
+              {searching && (
+                <SettingsSearchResults
+                  results={results}
+                  categories={SETTINGS_TABS}
+                  onSelect={selectResult}
                   inputRef={searchInput}
-                  query={query}
-                  onChange={changeQuery}
-                  onSelectFirst={() => results[0] && selectResult(results[0])}
-                  onFocusResults={() => searchResults.current?.querySelector<HTMLButtonElement>('button')?.focus()}
+                  containerRef={searchResults}
                   disabled={busy}
                 />
-                {searching && (
-                  <SettingsSearchResults
-                    results={results}
-                    categories={SETTINGS_TABS}
-                    onSelect={selectResult}
-                    inputRef={searchInput}
-                    containerRef={searchResults}
+              )}
+              <TabsList
+                aria-label="Categorias de configurações"
+                className={`grid h-auto min-h-0 min-w-0 w-full grid-cols-2 justify-start gap-1 overflow-x-hidden overflow-y-auto rounded-none bg-transparent p-0 sm:flex sm:flex-col ${searching ? 'hidden sm:hidden' : ''}`}
+              >
+                {SETTINGS_TABS.filter((item) => item.value !== 'island' || isMacOSDesktop()).map((item) => (
+                  <TabsTrigger
+                    key={item.value}
+                    value={item.value}
+                    className="h-9 min-w-0 justify-start px-2 text-xs group-data-vertical/tabs:after:right-0"
                     disabled={busy}
-                  />
-                )}
-                <TabsList
-                  aria-label="Categorias de configurações"
-                  className={`grid h-auto min-h-0 w-full grid-cols-2 justify-start gap-1 overflow-y-auto rounded-none bg-transparent p-0 sm:flex sm:flex-col ${searching ? 'hidden sm:hidden' : ''}`}
-                >
-                  {SETTINGS_TABS.filter((item) => item.value !== 'island' || isMacOSDesktop()).map((item) => (
-                    <TabsTrigger
-                      key={item.value}
-                      value={item.value}
-                      className="h-9 min-w-0 justify-start px-2 text-xs"
-                      disabled={busy}
-                    >
-                      <HugeiconsIcon icon={item.icon} strokeWidth={2} />
-                      <span className="whitespace-normal text-start">{item.label}</span>
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </aside>
+                  >
+                    <HugeiconsIcon icon={item.icon} strokeWidth={2} />
+                    <span className="whitespace-normal text-start">{item.label}</span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </aside>
 
-              <TabsContent value="general" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
-                <div className="grid gap-5">
-                  <section className="grid gap-2">
+            <TabsContent value="general" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+              <div className="grid gap-5">
+                <section className="grid gap-2">
+                  <div>
+                    <h3 className="text-sm font-medium">Aparência</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Tema compartilhado entre web e desktop. Personalize cada aspecto ou aplique um preset.
+                    </p>
+                  </div>
+                  <section className="grid gap-2" aria-label="Modo de cores" data-settings-section="mode">
                     <div>
-                      <h3 className="text-sm font-medium">Aparência</h3>
-                      <p className="text-xs text-muted-foreground">
-                        Tema compartilhado entre web e desktop. Personalize cada aspecto ou aplique um preset.
+                      <h4 className="text-xs font-semibold">Modo</h4>
+                      <p className="text-[10px] text-muted-foreground">
+                        Use a preferência do sistema ou escolha claro/escuro.
                       </p>
                     </div>
-                    <section className="grid gap-2" aria-label="Modo de cores" data-settings-section="mode">
-                      <div>
-                        <h4 className="text-xs font-semibold">Modo</h4>
-                        <p className="text-[10px] text-muted-foreground">
-                          Use a preferência do sistema ou escolha claro/escuro.
-                        </p>
-                      </div>
-                      <div
-                        className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/50 p-1"
-                        role="radiogroup"
-                        aria-label="Modo de cores"
-                      >
-                        {(
-                          [
-                            ['system', 'Sistema'],
-                            ['light', 'Claro'],
-                            ['dark', 'Escuro'],
-                          ] as const
-                        ).map(([value, label]) => {
-                          const selected = theme.mode === value
-                          return (
-                            <button
-                              key={value}
-                              type="button"
-                              role="radio"
-                              aria-checked={selected}
-                              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                              onClick={() => setColorMode(value)}
-                            >
-                              {label}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </section>
-                    <div className="grid gap-4" aria-label="Categorias de tema">
-                      {THEME_CATEGORIES.map((category) => (
-                        <section
-                          key={category.title}
-                          className="grid gap-2"
-                          aria-label={category.title}
-                          data-settings-section={category.key}
-                        >
-                          <div>
-                            <h4 className="text-xs font-semibold">{category.title}</h4>
-                            <p className="text-[10px] text-muted-foreground">{category.description}</p>
-                          </div>
-                          <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={category.title}>
-                            {category.options.map((option) => {
-                              const selected = theme[category.key] === option.value
-                              return (
-                                <button
-                                  key={option.value}
-                                  type="button"
-                                  aria-pressed={selected}
-                                  className={`grid grid-cols-[auto_1fr] items-center gap-3 rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'border-primary bg-primary/8 ring-1 ring-primary/25' : 'border-border hover:bg-muted/60'}`}
-                                  onClick={() => {
-                                    if (category.key === 'palette') setPalette(option.value as ThemeSettings['palette'])
-                                    else if (category.key === 'typography') {
-                                      setTypography(option.value as ThemeSettings['typography'])
-                                    } else if (category.key === 'shape')
-                                      setShape(option.value as ThemeSettings['shape'])
-                                    else setThemePreset(option.value as Exclude<ThemeSettings['preset'], null>)
-                                  }}
-                                >
-                                  {option.colors ? (
-                                    <span
-                                      className="grid size-10 grid-cols-2 overflow-hidden rounded-md border border-black/10 shadow-sm"
-                                      aria-hidden="true"
-                                    >
-                                      {(colorMode === 'dark'
-                                        ? (option.darkColors ?? option.colors)
-                                        : option.colors
-                                      ).map((color) => (
-                                        <span key={color} style={{ backgroundColor: color }} />
-                                      ))}
-                                    </span>
-                                  ) : category.key === 'typography' ? (
-                                    <span
-                                      className="grid size-10 place-items-center rounded-md border bg-muted text-lg font-semibold"
-                                      style={{ fontFamily: option.fontFamily }}
-                                      aria-hidden="true"
-                                    >
-                                      Aa
-                                    </span>
-                                  ) : (
-                                    <span
-                                      className="grid size-10 place-items-center rounded-md border bg-muted"
-                                      aria-hidden="true"
-                                    >
-                                      <span
-                                        className="size-7 border-2 border-primary bg-primary/15"
-                                        style={
-                                          {
-                                            borderRadius: option.radius,
-                                            cornerShape: option.cornerShape,
-                                          } as CSSProperties
-                                        }
-                                      />
-                                    </span>
-                                  )}
-                                  <span className="min-w-0">
-                                    <span className="block text-xs font-semibold">{option.label}</span>
-                                    <span className="block truncate text-[10px] text-muted-foreground">
-                                      {option.description}
-                                    </span>
-                                  </span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </section>
-                      ))}
+                    <div
+                      className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/50 p-1"
+                      role="radiogroup"
+                      aria-label="Modo de cores"
+                    >
+                      {(
+                        [
+                          ['system', 'Sistema'],
+                          ['light', 'Claro'],
+                          ['dark', 'Escuro'],
+                        ] as const
+                      ).map(([value, label]) => {
+                        const selected = theme.mode === value
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                            onClick={() => setColorMode(value)}
+                          >
+                            {label}
+                          </button>
+                        )
+                      })}
                     </div>
                   </section>
+                  <div className="grid gap-4" aria-label="Categorias de tema">
+                    {THEME_CATEGORIES.map((category) => (
+                      <section
+                        key={category.title}
+                        className="grid gap-2"
+                        aria-label={category.title}
+                        data-settings-section={category.key}
+                      >
+                        <div>
+                          <h4 className="text-xs font-semibold">{category.title}</h4>
+                          <p className="text-[10px] text-muted-foreground">{category.description}</p>
+                        </div>
+                        <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={category.title}>
+                          {category.options.map((option) => {
+                            const selected = theme[category.key] === option.value
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                aria-pressed={selected}
+                                className={`grid grid-cols-[auto_1fr] items-center gap-3 rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'border-primary bg-primary/8 ring-1 ring-primary/25' : 'border-border hover:bg-muted/60'}`}
+                                onClick={() => {
+                                  if (category.key === 'palette') setPalette(option.value as ThemeSettings['palette'])
+                                  else if (category.key === 'typography') {
+                                    setTypography(option.value as ThemeSettings['typography'])
+                                  } else if (category.key === 'shape') setShape(option.value as ThemeSettings['shape'])
+                                  else setThemePreset(option.value as Exclude<ThemeSettings['preset'], null>)
+                                }}
+                              >
+                                {option.colors ? (
+                                  <span
+                                    className="grid size-10 grid-cols-2 overflow-hidden rounded-md border border-black/10 shadow-sm"
+                                    aria-hidden="true"
+                                  >
+                                    {(colorMode === 'dark' ? (option.darkColors ?? option.colors) : option.colors).map(
+                                      (color) => (
+                                        <span key={color} style={{ backgroundColor: color }} />
+                                      ),
+                                    )}
+                                  </span>
+                                ) : category.key === 'typography' ? (
+                                  <span
+                                    className="grid size-10 place-items-center rounded-md border bg-muted text-lg font-semibold"
+                                    style={{ fontFamily: option.fontFamily }}
+                                    aria-hidden="true"
+                                  >
+                                    Aa
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="grid size-10 place-items-center rounded-md border bg-muted"
+                                    aria-hidden="true"
+                                  >
+                                    <span
+                                      className="size-7 border-2 border-primary bg-primary/15"
+                                      style={
+                                        {
+                                          borderRadius: option.radius,
+                                          cornerShape: option.cornerShape,
+                                        } as CSSProperties
+                                      }
+                                    />
+                                  </span>
+                                )}
+                                <span className="min-w-0">
+                                  <span className="block text-xs font-semibold">{option.label}</span>
+                                  <span className="block truncate text-[10px] text-muted-foreground">
+                                    {option.description}
+                                  </span>
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                </section>
 
-                  {desktop && (
-                    <section className="grid gap-2" data-settings-section="startup">
-                      <div>
-                        <h3 className="text-sm font-medium">Inicialização</h3>
-                        <p className="text-xs text-muted-foreground">
-                          Controle quando o aplicativo deve ser aberto ao entrar no{' '}
-                          {isMacOSDesktop() ? 'macOS' : 'Windows'}.
-                        </p>
-                      </div>
+                {desktop && (
+                  <section className="grid gap-2" data-settings-section="startup">
+                    <div>
+                      <h3 className="text-sm font-medium">Inicialização</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Controle quando o aplicativo deve ser aberto ao entrar no{' '}
+                        {isMacOSDesktop() ? 'macOS' : 'Windows'}.
+                      </p>
+                    </div>
+                    {!settingsReady || !autostartLoaded ? (
+                      <div
+                        className="h-14 animate-pulse rounded-lg bg-muted"
+                        aria-label="Carregando inicialização"
+                        aria-busy="true"
+                      />
+                    ) : (
                       <button
                         type="button"
                         role="switch"
@@ -545,63 +569,103 @@ export function SettingsDialog({
                           />
                         </span>
                       </button>
-                    </section>
-                  )}
-
-                  <DirectorySettings value={settings.general} onChange={updateGeneral} disabled={busy} />
-
-                  <section className="grid gap-2" data-settings-section="flows">
-                    <div>
-                      <h3 className="text-sm font-medium">Perfis de fluxo</h3>
-                      <p className="text-xs text-muted-foreground">
-                        Cada perfil aumenta gradualmente as etapas e os artefatos gerados.
-                      </p>
-                    </div>
-                    <div className="divide-y overflow-hidden rounded-lg border">
-                      {FLOW_SUMMARIES.map((profile) => (
-                        <div key={profile.title} className="grid gap-0.5 px-3 py-2.5 sm:grid-cols-[70px_1fr] sm:gap-3">
-                          <div className="text-xs font-semibold">{profile.title}</div>
-                          <div>
-                            <p className="text-xs text-foreground/85">{profile.path}</p>
-                            <p className="text-[10px] text-muted-foreground">{profile.artifacts}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    )}
                   </section>
-                </div>
-              </TabsContent>
+                )}
 
-              <TabsContent value="jira" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
-                <JiraSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
-              </TabsContent>
-              <TabsContent value="models" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
-                <ExecutionSettings
-                  settings={settings}
-                  onGeneralChange={updateGeneral}
-                  onStageChange={updateStage}
-                  disabled={busy}
-                  catalog={codexCatalog}
-                  loading={codexModelsLoading}
-                  onRefresh={refreshModels}
-                />
-              </TabsContent>
-              <TabsContent value="ides" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
-                <IdeSettings
-                  value={settings.general}
-                  onChange={updateGeneral}
-                  disabled={busy}
-                  initialEditors={editorDiscovery}
-                />
-              </TabsContent>
-              <TabsContent value="terminal" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
-                <TerminalSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
-              </TabsContent>
-              <TabsContent value="integrations" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
-                <TriageSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
-              </TabsContent>
+                {settings ? (
+                  <DirectorySettings value={settings.general} onChange={updateGeneral} disabled={busy} />
+                ) : (
+                  <section className="grid gap-3" aria-label="Carregando diretórios" aria-busy="true">
+                    <div className="h-4 w-28 animate-pulse rounded bg-muted" />
+                    <div className="h-10 animate-pulse rounded-md bg-muted" />
+                    <div className="h-10 animate-pulse rounded-md bg-muted" />
+                  </section>
+                )}
 
-              <TabsContent value="prompts" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+                <section className="grid gap-2" data-settings-section="flows">
+                  <div>
+                    <h3 className="text-sm font-medium">Perfis de fluxo</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Cada perfil aumenta gradualmente as etapas e os artefatos gerados.
+                    </p>
+                  </div>
+                  <div className="divide-y overflow-hidden rounded-lg border">
+                    {FLOW_SUMMARIES.map((profile) => (
+                      <div key={profile.title} className="grid gap-0.5 px-3 py-2.5 sm:grid-cols-[70px_1fr] sm:gap-3">
+                        <div className="text-xs font-semibold">{profile.title}</div>
+                        <div>
+                          <p className="text-xs text-foreground/85">{profile.path}</p>
+                          <p className="text-[10px] text-muted-foreground">{profile.artifacts}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="jira" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+              {settings ? (
+                <Suspense fallback={<SettingsSectionLoading />}>
+                  <JiraSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
+                </Suspense>
+              ) : (
+                <SettingsSectionLoading />
+              )}
+            </TabsContent>
+            <TabsContent value="models" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+              {settings ? (
+                <Suspense fallback={<SettingsSectionLoading />}>
+                  <ExecutionSettings
+                    settings={settings}
+                    onGeneralChange={updateGeneral}
+                    onStageChange={updateStage}
+                    disabled={busy}
+                    catalog={codexCatalog}
+                    loading={codexModelsLoading}
+                    onRefresh={refreshModels}
+                  />
+                </Suspense>
+              ) : (
+                <SettingsSectionLoading />
+              )}
+            </TabsContent>
+            <TabsContent value="ides" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+              {settings && editorsLoaded ? (
+                <Suspense fallback={<SettingsSectionLoading />}>
+                  <IdeSettings
+                    value={settings.general}
+                    onChange={updateGeneral}
+                    disabled={busy}
+                    initialEditors={editorDiscovery}
+                  />
+                </Suspense>
+              ) : (
+                <SettingsSectionLoading />
+              )}
+            </TabsContent>
+            <TabsContent value="terminal" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+              {settings ? (
+                <Suspense fallback={<SettingsSectionLoading />}>
+                  <TerminalSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
+                </Suspense>
+              ) : (
+                <SettingsSectionLoading />
+              )}
+            </TabsContent>
+            <TabsContent value="integrations" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+              {settings ? (
+                <Suspense fallback={<SettingsSectionLoading />}>
+                  <TriageSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
+                </Suspense>
+              ) : (
+                <SettingsSectionLoading />
+              )}
+            </TabsContent>
+
+            <TabsContent value="prompts" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+              {settings ? (
                 <PromptsSettings
                   value={settings.prompts}
                   onChange={updatePrompts}
@@ -612,15 +676,19 @@ export function SettingsDialog({
                   }}
                   disabled={busy}
                 />
-              </TabsContent>
-              {isMacOSDesktop() && (
-                <TabsContent value="island" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
-                  <ActivityIslandSettings ref={islandSettings} onLoadedChange={setIslandLoaded} />
-                </TabsContent>
+              ) : (
+                <SettingsSectionLoading />
               )}
-            </Tabs>
-          </div>
-        )}
+            </TabsContent>
+            {isMacOSDesktop() && (
+              <TabsContent value="island" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+                <Suspense fallback={<SettingsSectionLoading />}>
+                  <ActivityIslandSettings ref={islandSettings} onLoadedChange={setIslandLoaded} />
+                </Suspense>
+              </TabsContent>
+            )}
+          </Tabs>
+        </div>
         <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none px-5 py-3">
           <Button variant="outline" onClick={close} disabled={busy}>
             {tab === 'island' ? 'Fechar' : 'Cancelar'}
@@ -628,7 +696,7 @@ export function SettingsDialog({
           <Button
             onClick={() => void saveSettings()}
             disabled={
-              !settings ||
+              !settingsReady ||
               busy ||
               (tab === 'island' && !islandLoaded) ||
               (settings.general.llmProvider === 'chatgpt' && codexModelsLoading)

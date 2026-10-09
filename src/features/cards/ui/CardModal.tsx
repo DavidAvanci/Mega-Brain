@@ -17,6 +17,7 @@ import {
   Tick02Icon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogClose,
@@ -94,6 +95,21 @@ const PR_STATE: Record<PrState, { label: string; className: string }> = {
   closed: { label: 'fechado', className: 'text-muted-foreground' },
 }
 
+const CHAT_WIDTH_STORAGE_KEY = 'mega-brain:card-modal-chat-width-ratio'
+const DEFAULT_CHAT_WIDTH_RATIO = 0.32
+const MIN_CHAT_WIDTH_RATIO = 0.2
+const MAX_CHAT_WIDTH_RATIO = 0.65
+
+function storedChatWidthRatio(): number {
+  try {
+    const value = Number(localStorage.getItem(CHAT_WIDTH_STORAGE_KEY))
+    if (Number.isFinite(value) && value >= MIN_CHAT_WIDTH_RATIO && value <= MAX_CHAT_WIDTH_RATIO) return value
+  } catch {
+    return DEFAULT_CHAT_WIDTH_RATIO
+  }
+  return DEFAULT_CHAT_WIDTH_RATIO
+}
+
 function CopyId({ id }: { id: string }) {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -149,8 +165,8 @@ function FlowSelect({ card }: { card: Card }) {
   )
 }
 
-function TabCounter({ counts }: { counts: TaskCounts }) {
-  if (!counts.total) return null
+function TabCounter({ counts }: { counts?: TaskCounts }) {
+  if (!counts?.total) return null
   const complete = counts.done === counts.total
   return (
     <span className="inline-flex items-center gap-1 text-[10px] tabular-nums">
@@ -559,25 +575,33 @@ export function CardModal({
   onExpandedChange: (expanded: boolean) => void
   container: HTMLElement
 }) {
-  const { files, repos, usage, usageBreakdown, error } = useCardDetail(card.id)
-  const agents = activeAgents(card)
   const [activeTab, setActiveTab] = useState(
     initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description'),
   )
+  const { files, repos, usage, usageBreakdown, error } = useCardDetail(card.id, activeTab, true)
+  const agents = activeAgents(card)
   const [editingDescription, setEditingDescription] = useState(false)
   const [descriptionDraft, setDescriptionDraft] = useState(card.description)
   const [descriptionText, setDescriptionText] = useState(card.description)
   const [savingDescription, setSavingDescription] = useState(false)
   const [descriptionError, setDescriptionError] = useState<string | null>(null)
-  const [chatWidth, setChatWidth] = useState(360)
+  const [chatWidthRatio, setChatWidthRatio] = useState(storedChatWidthRatio)
   const resizingDivider = useRef(false)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_WIDTH_STORAGE_KEY, String(chatWidthRatio))
+    } catch {
+      // Local storage may be unavailable in restricted browser contexts.
+    }
+  }, [chatWidthRatio])
 
   const resizeChat = (event: PointerEvent<HTMLDivElement>) => {
     if (!resizingDivider.current) return
     const bounds = event.currentTarget.parentElement?.getBoundingClientRect()
     if (!bounds) return
-    const width = bounds.right - event.clientX
-    setChatWidth(Math.max(260, Math.min(width, bounds.width - 400)))
+    const ratio = (bounds.right - event.clientX) / bounds.width
+    setChatWidthRatio(Math.max(MIN_CHAT_WIDTH_RATIO, Math.min(ratio, MAX_CHAT_WIDTH_RATIO)))
   }
 
   const saveDescription = async () => {
@@ -617,7 +641,8 @@ export function CardModal({
         overlayClassName={expanded ? 'hidden' : undefined}
         role={expanded ? 'main' : 'dialog'}
         className={cn(
-          'flex h-[92dvh] max-h-[960px] w-[calc(100%-2rem)] max-w-[1280px] flex-col gap-0 overflow-hidden p-0 shadow-2xl sm:max-w-[1280px]',
+          'flex h-[92dvh] max-h-[880px] w-[calc(100%-2rem)] max-w-[80dvw] flex-col gap-0 overflow-hidden p-0 shadow-2xl sm:max-w-[80dvw]',
+          !expanded && 'sm:h-[88dvh]',
           expanded && 'relative top-auto left-auto z-auto h-full max-h-none w-full max-w-none translate-x-0 translate-y-0 rounded-none bg-background shadow-none ring-0 sm:max-w-none data-open:animate-none',
         )}
       >
@@ -652,7 +677,7 @@ export function CardModal({
         </div>
         <div
           className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,3fr)_minmax(260px,2fr)] lg:grid-cols-[minmax(0,1fr)_8px_var(--chat-width)] lg:grid-rows-1"
-          style={{ '--chat-width': `${chatWidth}px` } as CSSProperties}
+          style={{ '--chat-width': `clamp(260px, ${chatWidthRatio * 100}%, 780px)` } as CSSProperties}
         >
           <div className="flex min-h-0 min-w-0 flex-col">
             <DialogHeader className={cn('gap-2.5 border-b px-5 pt-4 pb-3', !expanded && 'pr-24 lg:pr-12')}>
@@ -664,8 +689,7 @@ export function CardModal({
                 <span className="tabular-nums">criado {relativeTime(card.createdAt)}</span>
               </div>
               <DialogTitle className="text-lg leading-snug">{card.title}</DialogTitle>
-              {usage && (
-                <details className="group w-full text-xs">
+              <details className="group w-full text-xs">
                   <summary
                     className="flex cursor-pointer list-none items-center gap-1.5 whitespace-nowrap text-muted-foreground select-none [&::-webkit-details-marker]:hidden"
                     aria-label="Uso acumulado dos agentes"
@@ -677,18 +701,20 @@ export function CardModal({
                     />
                     <span>Gastos dos agentes:</span>
                     <strong className="font-medium tabular-nums text-foreground">
-                      {formatAgentTime(usage.durationMs)} •{' '}
-                      {usage.runs > 0 && usage.unpricedRuns === usage.runs
+                      {usage ? `${formatAgentTime(usage.durationMs)} • ` : 'Carregar uso'}
+                      {usage && (usage.runs > 0 && usage.unpricedRuns === usage.runs
                         ? 'indisponível'
-                        : `$${usage.costUsd.toFixed(usage.costUsd > 0 && usage.costUsd < 0.01 ? 4 : 2)}${usage.unpricedRuns ? ' (parcial)' : ''}`}
+                        : `$${usage.costUsd.toFixed(usage.costUsd > 0 && usage.costUsd < 0.01 ? 4 : 2)}${usage.unpricedRuns ? ' (parcial)' : ''}`)}
                     </strong>
-                    {usage.unpricedRuns > 0 && (
+                    {usage && usage.unpricedRuns > 0 && (
                       <span title={`${usage.unpricedRuns} execução(ões) sem custo informado pela CLI`}>
                         <Spinner className="size-3" aria-label="Custo parcial dos agentes" />
                       </span>
                     )}
                   </summary>
-                  {usageBreakdown.length > 0 && (
+                  {!usage ? (
+                    <div className="mt-1.5"><LoadingLines /></div>
+                  ) : usageBreakdown.length > 0 && (
                     <div className="mt-1.5 rounded-md border bg-muted/20 px-2 py-1.5">
                       <p className="mt-1 text-[11px] text-muted-foreground">
                         Valores em USD reportados pelo provedor; custos ausentes não são estimados.
@@ -713,7 +739,6 @@ export function CardModal({
                     </div>
                   )}
                 </details>
-              )}
               {agents.map((agent, index) => (
                 <AgentStatusRow key={`${agent.stage ?? 'autonomo'}-${index}`} agent={agent} cardId={card.id} />
               ))}
@@ -726,16 +751,18 @@ export function CardModal({
                   Descrição
                 </TabsTrigger>
                 {FILE_TABS.map((tab) => {
-                  const content = files?.[tab.file]
+                  const content = files[tab.file]
                   return (
                     <TabsTrigger
                       key={tab.file}
                       value={tab.file}
-                      disabled={files !== null && !content}
+                      disabled={Object.hasOwn(files, tab.file) && !content}
                       className="flex-none px-2.5"
                     >
                       {tab.label}
-                      {tab.checklist && content && <TabCounter counts={countTasks(content)} />}
+                      {tab.file === 'TASK-CHECKLIST.md' || tab.file === 'TEST-CHECKLIST.md' ? (
+                        <TabCounter counts={card.taskCounts?.[tab.file] ?? (content ? countTasks(content) : undefined)} />
+                      ) : null}
                     </TabsTrigger>
                   )
                 })}
@@ -743,7 +770,12 @@ export function CardModal({
                   Diff
                 </TabsTrigger>
                 <TabsTrigger value="repos" className="flex-none px-2.5">
-                  Repos{repos?.length ? ` (${repos.length})` : ''}
+                  Repos
+                  {(card.repoCount ?? repos?.length ?? 0) > 0 && (
+                    <Badge variant="secondary" className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none tabular-nums">
+                      {card.repoCount ?? repos?.length}
+                    </Badge>
+                  )}
                 </TabsTrigger>
                 {card.prs && (
                   <TabsTrigger value="links" className="flex-none px-2.5">
@@ -784,12 +816,12 @@ export function CardModal({
                 <CardKnowledgeAttachments card={card} />
               </TabsContent>
               {FILE_TABS.map((tab) => {
-                const content = files?.[tab.file]
+                const content = files[tab.file]
                 return (
                   <TabsContent key={tab.file} value={tab.file} className="overflow-y-auto px-5 py-4">
                     {content ? (
                       <Markdown text={content} outline={tab.outline} />
-                    ) : files ? (
+                    ) : Object.hasOwn(files, tab.file) ? (
                       <Placeholder>Sem {tab.file} na pasta.</Placeholder>
                     ) : (
                       <LoadingLines />
@@ -798,9 +830,11 @@ export function CardModal({
                 )
               })}
               <TabsContent value="diff" className="min-h-0 overflow-hidden">
-                <Suspense fallback={<LoadingLines />}>
-                  <DiffTab cardId={card.id} />
-                </Suspense>
+                {activeTab === 'diff' && (
+                  <Suspense fallback={<LoadingLines />}>
+                    <DiffTab cardId={card.id} />
+                  </Suspense>
+                )}
               </TabsContent>
               <TabsContent value="repos" className="overflow-y-auto px-5 py-4">
                 {repos ? <ReposList repos={repos} /> : <LoadingLines />}
@@ -816,9 +850,10 @@ export function CardModal({
             role="separator"
             aria-label="Redimensionar painel do chat"
             aria-orientation="vertical"
-            aria-valuemin={260}
-            aria-valuemax={780}
-            aria-valuenow={chatWidth}
+            aria-valuemin={Math.round(MIN_CHAT_WIDTH_RATIO * 100)}
+            aria-valuemax={Math.round(MAX_CHAT_WIDTH_RATIO * 100)}
+            aria-valuenow={Math.round(chatWidthRatio * 100)}
+            aria-valuetext={`${Math.round(chatWidthRatio * 100)}% da largura do modal`}
             tabIndex={0}
             className="group hidden cursor-col-resize touch-none items-center justify-center lg:flex"
             onPointerDown={(event) => {
@@ -832,8 +867,14 @@ export function CardModal({
             }}
             onPointerCancel={() => { resizingDivider.current = false }}
             onKeyDown={(event) => {
-              if (event.key === 'ArrowLeft') setChatWidth((width) => Math.min(width + 24, 780))
-              if (event.key === 'ArrowRight') setChatWidth((width) => Math.max(width - 24, 260))
+              if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                event.preventDefault()
+                const bounds = event.currentTarget.parentElement?.getBoundingClientRect()
+                if (!bounds?.width) return
+                const step = 24 / bounds.width
+                const direction = event.key === 'ArrowLeft' ? 1 : -1
+                setChatWidthRatio((ratio) => Math.max(MIN_CHAT_WIDTH_RATIO, Math.min(ratio + direction * step, MAX_CHAT_WIDTH_RATIO)))
+              }
             }}
           >
             <span className="h-full w-px bg-border transition-colors group-hover:bg-primary group-focus-visible:bg-primary" />

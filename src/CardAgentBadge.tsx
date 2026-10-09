@@ -8,7 +8,6 @@ import {
   CodeIcon,
   FlaskConicalIcon,
   GitPullRequestIcon,
-  ServerIcon,
 } from '@hugeicons/core-free-icons'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -33,7 +32,7 @@ const KINDS: Record<string, { name: string; icon: IconSvgElement }> = {
   'task-planning': { name: 'plano', icon: BlueprintIcon },
   'run-task-checklist': { name: 'dev', icon: CodeIcon },
   'run-test-checklist': { name: 'testes', icon: FlaskConicalIcon },
-  'stage-task': { name: 'staging', icon: ServerIcon },
+  'stage-task': { name: 'staging', icon: GitPullRequestIcon },
   'master-pr-task': { name: 'master', icon: GitPullRequestIcon },
 }
 
