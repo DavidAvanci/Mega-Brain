@@ -240,7 +240,7 @@ export function CodexProfilesSettings({ compact = false, island }: { compact?: b
   )
 
   return (
-    <section className="grid gap-3" aria-label="Perfis do Codex">
+    <section className="grid gap-3" aria-label="Perfis do Codex" data-settings-section="codex-profiles">
       <div>
         <h3 className="text-sm font-medium">Perfis do Codex</h3>
         <p className="text-xs text-muted-foreground">Identifique suas contas e acompanhe as sessões de cada perfil.</p>

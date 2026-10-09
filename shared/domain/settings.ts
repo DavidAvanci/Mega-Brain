@@ -32,6 +32,10 @@ export interface GeneralSettings {
   jevCredentialSource: 'environment' | 'saved' | 'none'
   editor: EditorPreference
   editorCommand: string
+  /** Empty or omitted selects the terminal for the backend's operating system. */
+  terminalCommand?: string
+  /** Empty or omitted runs the agent directly; otherwise loads a POSIX login shell. */
+  shellCommand?: string
   workspaceDir: string
   worktreesDir: string
   llmProvider: LlmProvider

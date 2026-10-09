@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, createRef, type RefObject } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { ActivityIslandSettings } from './ActivityIslandSettings'
+import { ActivityIslandSettings, type ActivityIslandSettingsHandle } from './ActivityIslandSettings'
 import { DEFAULT_ISLAND_DISPLAY, type IslandDisplaySettings } from '../../../shared/domain/activity-island'
 
 const mocks = vi.hoisted(() => ({ requestJson: vi.fn(), invoke: vi.fn() }))
 vi.mock('@/shared/api/request-json', () => ({ requestJson: mocks.requestJson }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
+let island: RefObject<ActivityIslandSettingsHandle | null>
 let root: Root
 let host: HTMLDivElement
 let server: IslandDisplaySettings
@@ -54,23 +55,25 @@ beforeEach(async () => {
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
+  island = createRef<ActivityIslandSettingsHandle>()
   server = { ...DEFAULT_ISLAND_DISPLAY }
   mocks.requestJson.mockReset()
   mocks.invoke.mockReset()
   mocks.requestJson.mockImplementation(async (path: string, _message: string, options?: RequestOptions) => {
-    if (path === '/api/codex/profiles') return {
-      profiles: [
-        { id: 'personal', name: 'Pessoal', home: '/Users/test/.codex', color: '#64B8FF' },
-        { id: 'work', name: 'Trabalho', home: '/Users/test/.codex-work', color: '#73D99A' },
-      ],
-      activeId: 'personal',
-      discovered: [],
-    }
+    if (path === '/api/codex/profiles')
+      return {
+        profiles: [
+          { id: 'personal', name: 'Pessoal', home: '/Users/test/.codex', color: '#64B8FF' },
+          { id: 'work', name: 'Trabalho', home: '/Users/test/.codex-work', color: '#73D99A' },
+        ],
+        activeId: 'personal',
+        discovered: [],
+      }
     if (options?.method === 'PATCH') server = { ...server, ...options.body }
     return { ...server }
   })
   mocks.invoke.mockResolvedValue([])
-  await act(async () => root.render(<ActivityIslandSettings />))
+  await act(async () => root.render(<ActivityIslandSettings ref={island} />))
 })
 afterEach(async () => {
   await act(async () => root.unmount())
@@ -198,7 +201,7 @@ test('a missing monitor command does not prevent settings from loading', async (
   await act(async () => root.unmount())
   root = createRoot(host)
   mocks.invoke.mockRejectedValueOnce(new Error('No monitor command'))
-  await act(async () => root.render(<ActivityIslandSettings />))
+  await act(async () => root.render(<ActivityIslandSettings ref={island} />))
   expect(host.querySelector('fieldset')?.disabled).toBe(false)
 })
 
@@ -234,4 +237,63 @@ test('externally updated profile visibility is synchronized without creating a s
   expect(host.querySelector<HTMLInputElement>('input[aria-label="Mostrar Pessoal na ilha"]')?.checked).toBe(false)
   expect(checkbox('Mostrar identificação do perfil na ilha').checked).toBe(false)
   expect(requests()).toHaveLength(0)
+})
+
+test('explicit save flushes the last edit immediately instead of waiting for debounce', async () => {
+  await act(async () => checkbox('Ativar ilha dinâmica').click())
+  expect(requests()).toHaveLength(0)
+  let saved = false
+  await act(async () => {
+    saved = await island.current!.save()
+  })
+  expect(saved).toBe(true)
+  expect(requests()).toHaveLength(1)
+  expect(server.enabled).toBe(false)
+  await tick()
+  expect(requests()).toHaveLength(1)
+})
+
+test('explicit save waits for an active request and drains newer changes without duplicating it', async () => {
+  const first = deferred<IslandDisplaySettings>()
+  mocks.requestJson.mockImplementationOnce(() => first.promise)
+  await act(async () => checkbox('Ativar ilha dinâmica').click())
+  await tick()
+  await act(async () => checkbox('Sons dos agentes e tarefas').click())
+  let completed = false
+  let saving!: Promise<boolean>
+  await act(async () => {
+    saving = island.current!.save().then((success) => {
+      completed = true
+      return success
+    })
+  })
+  expect(completed).toBe(false)
+  expect(requests()).toHaveLength(1)
+  server.enabled = false
+  await act(async () => {
+    first.resolve({ ...server })
+    await saving
+  })
+  expect(await saving).toBe(true)
+  expect(completed).toBe(true)
+  expect(requests()).toHaveLength(2)
+  expect(requests()[1][2].body).toEqual({ taskSounds: false })
+  expect(server.taskSounds).toBe(false)
+})
+
+test('explicit save reports failure and retries the preserved preferences', async () => {
+  await act(async () => checkbox('Ativar ilha dinâmica').click())
+  mocks.requestJson.mockRejectedValueOnce(new Error('Sem conexão'))
+  let success = true
+  await act(async () => {
+    success = await island.current!.save()
+  })
+  expect(success).toBe(false)
+  expect(host.querySelector('[role=alert]')?.textContent).toBe('Sem conexão')
+  await act(async () => {
+    success = await island.current!.save()
+  })
+  expect(success).toBe(true)
+  expect(server.enabled).toBe(false)
+  expect(requests()).toHaveLength(2)
 })

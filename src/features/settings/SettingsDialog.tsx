@@ -1,8 +1,21 @@
-import { ActivityIslandSettings } from './ActivityIslandSettings'
-import { CodexProfilesSettings } from './CodexProfilesSettings'
+import { ActivityIslandSettings, type ActivityIslandSettingsHandle } from './ActivityIslandSettings'
+import { DirectorySettings } from './DirectorySettings'
+import { ExecutionSettings } from './ExecutionSettings'
+import { IdeSettings } from './IdeSettings'
+import { JiraSettings } from './JiraSettings'
+import { TerminalSettings } from './TerminalSettings'
+import { TriageSettings } from './TriageSettings'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { PaintBrush01Icon, ToolsIcon, Refresh01Icon } from '@hugeicons/core-free-icons'
-import { useState, type CSSProperties } from 'react'
+import {
+  PaintBrush01Icon,
+  CodeIcon,
+  CpuIcon,
+  CommandLineIcon,
+  Link01Icon,
+  FileEditIcon,
+  Layers01Icon,
+} from '@hugeicons/core-free-icons'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,7 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { BoardSettings, Effort, PromptSettings } from '../../../shared/domain/settings'
+import type { PromptSettings } from '../../../shared/domain/settings'
 import {
   setColorMode,
   setPalette,
@@ -24,26 +37,12 @@ import {
   useThemeSettings,
   type ThemeSettings,
 } from '@/theme'
-import { GeneralSettingsForm } from '@/GeneralSettingsForm'
 import { isMacOSDesktop, isTauriDesktop } from '@/desktopBootstrap'
 import { useSettingsDialog } from './useSettingsDialog'
-import { Tip } from '@/Tip'
-import { codexModelFor, EFFORT_DETAILS, FALLBACK_CODEX_CATALOG, supportedEfforts } from '../../../shared/domain/codex-models'
-
-const CLAUDE_MODELS = [
-  { value: 'fable', label: 'Fable' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'haiku', label: 'Haiku' },
-]
-
-const PROMPT_FIELDS: { key: keyof PromptSettings; title: string; help: string }[] = [
-  { key: 'taskPlanning', title: 'Planejamento', help: 'Instruções usadas ao criar o plano e os checklists da task.' },
-  { key: 'taskItem', title: 'Execução de tarefas', help: 'Instruções usadas para implementar cada item do checklist.' },
-  { key: 'testItem', title: 'Execução de testes', help: 'Instruções usadas para executar cada cenário de teste.' },
-  { key: 'testEnvironment', title: 'Ambiente de testes', help: 'Instruções do agente aberto para preparar o ambiente local.' },
-  { key: 'smartDiffReview', title: 'Revisão Smart Diff', help: 'Instruções usadas ao gerar uma revisão Smart Diff.' },
-]
+import { FALLBACK_CODEX_CATALOG } from '../../../shared/domain/codex-models'
+import { SettingsSearchInput, SettingsSearchResults } from './SettingsSearch'
+import { searchSettings, SETTINGS_TAB_LABELS, type SettingsSearchEntry, type SettingsTab } from './settings-search'
+import { PROMPT_FIELDS, PromptsSettings } from './PromptsSettings'
 
 type ThemeChoice = {
   value: string
@@ -200,12 +199,6 @@ const THEME_CATEGORIES: {
   },
 ]
 
-const STAGES: { key: keyof BoardSettings; title: string; description: string }[] = [
-  { key: 'task-planning', title: 'Planejamento', description: 'Criação do plano e checklists.' },
-  { key: 'run-task-checklist', title: 'Desenvolvimento', description: 'Execução dos itens de desenvolvimento.' },
-  { key: 'run-test-checklist', title: 'Testes automáticos', description: 'Execução dos cenários de teste.' },
-]
-
 const FLOW_SUMMARIES = [
   {
     title: 'Simples',
@@ -224,105 +217,36 @@ const FLOW_SUMMARIES = [
   },
 ]
 
-function ModelRadioGroup({
-  value,
-  options,
-  disabled,
-  onChange,
-  label,
-}: {
-  value: string
-  options: { value: string; label: string; description?: string }[]
-  disabled?: boolean
-  onChange: (value: string) => void
-  label: string
-}) {
-  const visibleOptions = options.some((option) => option.value === value)
-    ? options
-    : [{ value, label: value }, ...options]
-
-  return (
-    <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={label}>
-      {visibleOptions.map((option) => {
-        const selected = option.value === value
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            title={option.description ?? option.label}
-            disabled={disabled}
-            onClick={() => onChange(option.value)}
-            className={`inline-flex min-h-10 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 ${selected ? 'border-primary/40 bg-primary/10 text-foreground' : 'border-border/70 bg-background/50 text-muted-foreground hover:bg-muted hover:text-foreground'}`}
-          >
-            <span
-              className={`grid size-3 place-items-center rounded-full border ${selected ? 'border-primary' : 'border-muted-foreground/50'}`}
-              aria-hidden="true"
-            >
-              {selected ? <span className="size-1.5 rounded-full bg-primary" /> : null}
-            </span>
-            {option.label}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-function EffortScale({
-  value,
-  disabled,
-  onChange,
-  label,
-  options,
-}: {
-  value: Effort
-  disabled?: boolean
-  onChange: (value: Effort) => void
-  label: string
-  options: Effort[]
-}) {
-  const selectedIndex = options.indexOf(value)
-  return (
-    <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={label}>
-      {options.map((effort, index) => {
-        const selected = effort === value
-        return (
-          <button
-            key={effort}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            title={EFFORT_DETAILS[effort].description}
-            disabled={disabled}
-            onClick={() => onChange(effort)}
-            className={`group grid min-h-10 min-w-10 gap-1 rounded-md px-1 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 ${selected ? 'bg-primary/8' : 'hover:bg-muted/70'}`}
-          >
-            <span
-              className={`h-1.5 rounded-full transition-colors ${index <= selectedIndex ? 'bg-primary' : 'bg-muted'}`}
-              aria-hidden="true"
-            />
-            <span
-              className={`text-[9px] leading-none ${selected ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
-            >
-              {EFFORT_DETAILS[effort].label}
-            </span>
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+const SETTINGS_TABS = [
+  { value: 'general', label: SETTINGS_TAB_LABELS.general, icon: PaintBrush01Icon },
+  { value: 'jira', label: SETTINGS_TAB_LABELS.jira, icon: Link01Icon },
+  { value: 'models', label: SETTINGS_TAB_LABELS.models, icon: CpuIcon },
+  { value: 'ides', label: SETTINGS_TAB_LABELS.ides, icon: CodeIcon },
+  { value: 'terminal', label: SETTINGS_TAB_LABELS.terminal, icon: CommandLineIcon },
+  { value: 'integrations', label: SETTINGS_TAB_LABELS.integrations, icon: Link01Icon },
+  { value: 'prompts', label: SETTINGS_TAB_LABELS.prompts, icon: FileEditIcon },
+  { value: 'island', label: SETTINGS_TAB_LABELS.island, icon: Layers01Icon },
+] as const
 
 export function SettingsDialog({
   onClose,
   initialTab = 'general',
 }: {
   onClose: () => void
-  initialTab?: 'general' | 'tools' | 'island'
+  initialTab?: SettingsTab | 'tools'
 }) {
-  const [tab, setTab] = useState<string>(initialTab)
+  const [tab, setTab] = useState<string>(
+    initialTab === 'tools' ? 'models' : initialTab === 'island' && !isMacOSDesktop() ? 'general' : initialTab,
+  )
+  const islandSettings = useRef<ActivityIslandSettingsHandle>(null)
+  const dialog = useRef<HTMLDivElement>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
+  const searchResults = useRef<HTMLDivElement>(null)
+  const [query, setQuery] = useState('')
+  const [searchTarget, setSearchTarget] = useState<SettingsSearchEntry | null>(null)
+  const [promptTab, setPromptTab] = useState<keyof PromptSettings>('taskPlanning')
+  const [savingIsland, setSavingIsland] = useState(false)
+  const [islandLoaded, setIslandLoaded] = useState(false)
   const theme = useThemeSettings()
   const colorMode = useTheme()
   const desktop = isTauriDesktop()
@@ -344,357 +268,374 @@ export function SettingsDialog({
     close,
   } = useSettingsDialog(desktop, onClose)
 
+  const busy = saving || savingIsland
+  const searching = Boolean(query.trim())
+  const results = searchSettings(query, { desktop, macOS: isMacOSDesktop() })
+  const changeQuery = (value: string) => {
+    setQuery(value)
+    setSearchTarget(null)
+  }
+  const selectResult = (entry: SettingsSearchEntry) => {
+    if (busy) return
+    if (entry.tab === 'prompts') {
+      const field = PROMPT_FIELDS.find((field) => `prompt-${field.key}` === entry.target)
+      if (field) setPromptTab(field.key)
+    }
+    setTab(entry.tab)
+    setQuery('')
+    setSearchTarget(entry)
+  }
+
+  useEffect(() => {
+    if (!searchTarget || searching) return
+    const target = dialog.current?.querySelector<HTMLElement>(`[data-settings-section="${searchTarget.target}"]`)
+    if (!target) return
+    if (target instanceof HTMLDetailsElement) target.open = true
+    target.tabIndex = -1
+    target.scrollIntoView?.({ block: 'start' })
+    target.focus({ preventScroll: true })
+  }, [searchTarget, searching])
+
+  const saveSettings = async () => {
+    if (busy) return
+    if (tab === 'island') {
+      setSavingIsland(true)
+      try {
+        if (!(await islandSettings.current?.save())) return
+        await save()
+      } finally {
+        setSavingIsland(false)
+      }
+      return
+    }
+    await save()
+  }
+
   return (
-    <Dialog open onOpenChange={(open) => !open && close()}>
-      <DialogContent className="max-h-[90vh] gap-0 overflow-hidden p-0 sm:max-w-3xl" showCloseButton={!saving}>
-        <DialogHeader className="px-5 py-4">
+    <Dialog
+      open
+      onOpenChange={(open, details) => {
+        if (open) return
+        if (query && details.reason === 'escape-key') {
+          details.cancel()
+          changeQuery('')
+          searchInput.current?.focus()
+          return
+        }
+        if (!busy) close()
+      }}
+    >
+      <DialogContent
+        ref={dialog}
+        className="flex h-[48rem] max-h-[90dvh] w-[56rem] max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-clip p-0 sm:max-w-[calc(100vw-2rem)]"
+        showCloseButton={!busy}
+      >
+        <DialogHeader className="shrink-0 px-5 py-4">
           <DialogTitle>Configurações</DialogTitle>
-          <DialogDescription>Personalize a aparência e os agentes do Mega Brain.</DialogDescription>
+          <DialogDescription>Personalize o aplicativo, as integrações e seu ambiente de execução.</DialogDescription>
         </DialogHeader>
         {error && <p className="mx-5 mb-3 rounded-md bg-destructive/10 p-2 text-xs text-destructive">{error}</p>}
         {!settings ? (
           <p className="border-t px-5 py-10 text-sm text-muted-foreground">Carregando configurações…</p>
         ) : (
-          <Tabs
-            value={tab}
-            onValueChange={(value) => setTab(String(value))}
-            orientation="vertical"
-            className="min-h-0 flex-1 gap-0 border-t"
-          >
-            <TabsList
-              variant="line"
-              className="w-36 shrink-0 justify-start gap-1 rounded-none border-r bg-muted/25 p-2"
+          <div className="min-h-0 flex-1">
+            <Tabs
+              value={tab}
+              onValueChange={(value) => {
+                setTab(String(value))
+                setSearchTarget(null)
+              }}
+              orientation="vertical"
+              className="h-full min-h-0 flex-1 flex-col gap-0 overflow-clip border-t sm:flex-row"
             >
-              <TabsTrigger value="general" className="h-9 min-w-0 px-2 text-xs">
-                <HugeiconsIcon icon={PaintBrush01Icon} strokeWidth={2} /> Geral
-              </TabsTrigger>
-              <TabsTrigger value="tools" className="h-9 min-w-0 px-2 text-xs">
-                <HugeiconsIcon icon={ToolsIcon} strokeWidth={2} /> Ferramentas
-              </TabsTrigger>
-              <TabsTrigger value="prompts" className="h-9 min-w-0 px-2 text-xs">
-                <HugeiconsIcon icon={ToolsIcon} strokeWidth={2} /> Prompts
-              </TabsTrigger>
-              {isMacOSDesktop() && (
-                <TabsTrigger value="island" className="h-9 min-w-0 px-2 text-xs">
-                  <HugeiconsIcon icon={ToolsIcon} strokeWidth={2} /> Ilha Dinâmica
-                </TabsTrigger>
-              )}
-            </TabsList>
-
-            <TabsContent value="general" className="max-h-[65vh] overflow-y-auto p-4 sm:p-5">
-              <div className="grid gap-5">
-                <section className="grid gap-2">
-                  <div>
-                    <h3 className="text-sm font-medium">Aparência</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Tema compartilhado entre web e desktop. Personalize cada aspecto ou aplique um preset.
-                    </p>
-                  </div>
-                  <section className="grid gap-2" aria-label="Modo de cores">
-                    <div>
-                      <h4 className="text-xs font-semibold">Modo</h4>
-                      <p className="text-[10px] text-muted-foreground">
-                        Use a preferência do sistema ou escolha claro/escuro.
-                      </p>
-                    </div>
-                    <div
-                      className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/50 p-1"
-                      role="radiogroup"
-                      aria-label="Modo de cores"
+              <aside
+                aria-label="Navegação de configurações"
+                className="flex max-h-[45%] min-h-0 w-full shrink-0 flex-col gap-2 overflow-clip border-b bg-muted/25 p-2 sm:max-h-none sm:w-48 sm:border-e sm:border-b-0"
+              >
+                <SettingsSearchInput
+                  inputRef={searchInput}
+                  query={query}
+                  onChange={changeQuery}
+                  onSelectFirst={() => results[0] && selectResult(results[0])}
+                  onFocusResults={() => searchResults.current?.querySelector<HTMLButtonElement>('button')?.focus()}
+                  disabled={busy}
+                />
+                {searching && (
+                  <SettingsSearchResults
+                    results={results}
+                    categories={SETTINGS_TABS}
+                    onSelect={selectResult}
+                    inputRef={searchInput}
+                    containerRef={searchResults}
+                    disabled={busy}
+                  />
+                )}
+                <TabsList
+                  aria-label="Categorias de configurações"
+                  className={`grid h-auto min-h-0 w-full grid-cols-2 justify-start gap-1 overflow-y-auto rounded-none bg-transparent p-0 sm:flex sm:flex-col ${searching ? 'hidden sm:hidden' : ''}`}
+                >
+                  {SETTINGS_TABS.filter((item) => item.value !== 'island' || isMacOSDesktop()).map((item) => (
+                    <TabsTrigger
+                      key={item.value}
+                      value={item.value}
+                      className="h-9 min-w-0 justify-start px-2 text-xs"
+                      disabled={busy}
                     >
-                      {(
-                        [
-                          ['system', 'Sistema'],
-                          ['light', 'Claro'],
-                          ['dark', 'Escuro'],
-                        ] as const
-                      ).map(([value, label]) => {
-                        const selected = theme.mode === value
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
-                            className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                            onClick={() => setColorMode(value)}
-                          >
-                            {label}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </section>
-                  <div className="grid gap-4" aria-label="Categorias de tema">
-                    {THEME_CATEGORIES.map((category) => (
-                      <section key={category.title} className="grid gap-2" aria-label={category.title}>
-                        <div>
-                          <h4 className="text-xs font-semibold">{category.title}</h4>
-                          <p className="text-[10px] text-muted-foreground">{category.description}</p>
-                        </div>
-                        <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={category.title}>
-                          {category.options.map((option) => {
-                            const selected = theme[category.key] === option.value
-                            return (
-                              <button
-                                key={option.value}
-                                type="button"
-                                aria-pressed={selected}
-                                className={`grid grid-cols-[auto_1fr] items-center gap-3 rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'border-primary bg-primary/8 ring-1 ring-primary/25' : 'border-border hover:bg-muted/60'}`}
-                                onClick={() => {
-                                  if (category.key === 'palette') setPalette(option.value as ThemeSettings['palette'])
-                                  else if (category.key === 'typography') {
-                                    setTypography(option.value as ThemeSettings['typography'])
-                                  } else if (category.key === 'shape') setShape(option.value as ThemeSettings['shape'])
-                                  else setThemePreset(option.value as Exclude<ThemeSettings['preset'], null>)
-                                }}
-                              >
-                                {option.colors ? (
-                                  <span
-                                    className="grid size-10 grid-cols-2 overflow-hidden rounded-md border border-black/10 shadow-sm"
-                                    aria-hidden="true"
-                                  >
-                                    {(colorMode === 'dark' ? (option.darkColors ?? option.colors) : option.colors).map(
-                                      (color) => (
-                                        <span key={color} style={{ backgroundColor: color }} />
-                                      ),
-                                    )}
-                                  </span>
-                                ) : category.key === 'typography' ? (
-                                  <span
-                                    className="grid size-10 place-items-center rounded-md border bg-muted text-lg font-semibold"
-                                    style={{ fontFamily: option.fontFamily }}
-                                    aria-hidden="true"
-                                  >
-                                    Aa
-                                  </span>
-                                ) : (
-                                  <span
-                                    className="grid size-10 place-items-center rounded-md border bg-muted"
-                                    aria-hidden="true"
-                                  >
-                                    <span
-                                      className="size-7 border-2 border-primary bg-primary/15"
-                                      style={
-                                        {
-                                          borderRadius: option.radius,
-                                          cornerShape: option.cornerShape,
-                                        } as CSSProperties
-                                      }
-                                    />
-                                  </span>
-                                )}
-                                <span className="min-w-0">
-                                  <span className="block text-xs font-semibold">{option.label}</span>
-                                  <span className="block truncate text-[10px] text-muted-foreground">
-                                    {option.description}
-                                  </span>
-                                </span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                </section>
+                      <HugeiconsIcon icon={item.icon} strokeWidth={2} />
+                      <span className="whitespace-normal text-start">{item.label}</span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </aside>
 
-                {desktop && (
+              <TabsContent value="general" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+                <div className="grid gap-5">
                   <section className="grid gap-2">
                     <div>
-                      <h3 className="text-sm font-medium">Inicialização</h3>
+                      <h3 className="text-sm font-medium">Aparência</h3>
                       <p className="text-xs text-muted-foreground">
-                        Controle quando o aplicativo deve ser aberto ao entrar no{' '}
-                        {isMacOSDesktop() ? 'macOS' : 'Windows'}.
+                        Tema compartilhado entre web e desktop. Personalize cada aspecto ou aplique um preset.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={autostartEnabled}
-                      disabled={saving || !autostartLoaded}
-                      onClick={() => setAutostartEnabled((enabled) => !enabled)}
-                      className="flex items-center justify-between gap-4 rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50"
-                    >
-                      <span>
-                        <span className="block text-xs font-medium">Abrir ao iniciar o computador</span>
-                        <span className="block text-[11px] text-muted-foreground">
-                          Inicia o Mega Brain automaticamente após entrar na sua conta do sistema.
-                        </span>
-                      </span>
-                      <span
-                        className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${autostartEnabled ? 'bg-primary' : 'bg-muted-foreground/35'}`}
-                        aria-hidden="true"
-                      >
-                        <span
-                          className={`size-4 rounded-full bg-background shadow-sm transition-transform ${autostartEnabled ? 'translate-x-4' : 'translate-x-0'}`}
-                        />
-                      </span>
-                    </button>
-                  </section>
-                )}
-
-                <section className="grid gap-2">
-                  <div>
-                    <h3 className="text-sm font-medium">Perfis de fluxo</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Cada perfil aumenta gradualmente as etapas e os artefatos gerados.
-                    </p>
-                  </div>
-                  <div className="divide-y overflow-hidden rounded-lg border">
-                    {FLOW_SUMMARIES.map((profile) => (
-                      <div key={profile.title} className="grid gap-0.5 px-3 py-2.5 sm:grid-cols-[70px_1fr] sm:gap-3">
-                        <div className="text-xs font-semibold">{profile.title}</div>
-                        <div>
-                          <p className="text-xs text-foreground/85">{profile.path}</p>
-                          <p className="text-[10px] text-muted-foreground">{profile.artifacts}</p>
-                        </div>
+                    <section className="grid gap-2" aria-label="Modo de cores" data-settings-section="mode">
+                      <div>
+                        <h4 className="text-xs font-semibold">Modo</h4>
+                        <p className="text-[10px] text-muted-foreground">
+                          Use a preferência do sistema ou escolha claro/escuro.
+                        </p>
                       </div>
-                    ))}
-                  </div>
-                </section>
-              </div>
-            </TabsContent>
+                      <div
+                        className="grid grid-cols-3 gap-1 rounded-lg border bg-muted/50 p-1"
+                        role="radiogroup"
+                        aria-label="Modo de cores"
+                      >
+                        {(
+                          [
+                            ['system', 'Sistema'],
+                            ['light', 'Claro'],
+                            ['dark', 'Escuro'],
+                          ] as const
+                        ).map(([value, label]) => {
+                          const selected = theme.mode === value
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              role="radio"
+                              aria-checked={selected}
+                              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                              onClick={() => setColorMode(value)}
+                            >
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </section>
+                    <div className="grid gap-4" aria-label="Categorias de tema">
+                      {THEME_CATEGORIES.map((category) => (
+                        <section
+                          key={category.title}
+                          className="grid gap-2"
+                          aria-label={category.title}
+                          data-settings-section={category.key}
+                        >
+                          <div>
+                            <h4 className="text-xs font-semibold">{category.title}</h4>
+                            <p className="text-[10px] text-muted-foreground">{category.description}</p>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={category.title}>
+                            {category.options.map((option) => {
+                              const selected = theme[category.key] === option.value
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  aria-pressed={selected}
+                                  className={`grid grid-cols-[auto_1fr] items-center gap-3 rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'border-primary bg-primary/8 ring-1 ring-primary/25' : 'border-border hover:bg-muted/60'}`}
+                                  onClick={() => {
+                                    if (category.key === 'palette') setPalette(option.value as ThemeSettings['palette'])
+                                    else if (category.key === 'typography') {
+                                      setTypography(option.value as ThemeSettings['typography'])
+                                    } else if (category.key === 'shape')
+                                      setShape(option.value as ThemeSettings['shape'])
+                                    else setThemePreset(option.value as Exclude<ThemeSettings['preset'], null>)
+                                  }}
+                                >
+                                  {option.colors ? (
+                                    <span
+                                      className="grid size-10 grid-cols-2 overflow-hidden rounded-md border border-black/10 shadow-sm"
+                                      aria-hidden="true"
+                                    >
+                                      {(colorMode === 'dark'
+                                        ? (option.darkColors ?? option.colors)
+                                        : option.colors
+                                      ).map((color) => (
+                                        <span key={color} style={{ backgroundColor: color }} />
+                                      ))}
+                                    </span>
+                                  ) : category.key === 'typography' ? (
+                                    <span
+                                      className="grid size-10 place-items-center rounded-md border bg-muted text-lg font-semibold"
+                                      style={{ fontFamily: option.fontFamily }}
+                                      aria-hidden="true"
+                                    >
+                                      Aa
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="grid size-10 place-items-center rounded-md border bg-muted"
+                                      aria-hidden="true"
+                                    >
+                                      <span
+                                        className="size-7 border-2 border-primary bg-primary/15"
+                                        style={
+                                          {
+                                            borderRadius: option.radius,
+                                            cornerShape: option.cornerShape,
+                                          } as CSSProperties
+                                        }
+                                      />
+                                    </span>
+                                  )}
+                                  <span className="min-w-0">
+                                    <span className="block text-xs font-semibold">{option.label}</span>
+                                    <span className="block truncate text-[10px] text-muted-foreground">
+                                      {option.description}
+                                    </span>
+                                  </span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  </section>
 
-            <TabsContent value="tools" className="max-h-[65vh] overflow-y-auto p-4 sm:p-5">
-              <div className="grid gap-5">
-                <GeneralSettingsForm
+                  {desktop && (
+                    <section className="grid gap-2" data-settings-section="startup">
+                      <div>
+                        <h3 className="text-sm font-medium">Inicialização</h3>
+                        <p className="text-xs text-muted-foreground">
+                          Controle quando o aplicativo deve ser aberto ao entrar no{' '}
+                          {isMacOSDesktop() ? 'macOS' : 'Windows'}.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={autostartEnabled}
+                        disabled={saving || !autostartLoaded}
+                        onClick={() => setAutostartEnabled((enabled) => !enabled)}
+                        className="flex items-center justify-between gap-4 rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        <span>
+                          <span className="block text-xs font-medium">Abrir ao iniciar o computador</span>
+                          <span className="block text-[11px] text-muted-foreground">
+                            Inicia o Mega Brain automaticamente após entrar na sua conta do sistema.
+                          </span>
+                        </span>
+                        <span
+                          className={`flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${autostartEnabled ? 'bg-primary' : 'bg-muted-foreground/35'}`}
+                          aria-hidden="true"
+                        >
+                          <span
+                            className={`size-4 rounded-full bg-background shadow-sm transition-transform ${autostartEnabled ? 'translate-x-4' : 'translate-x-0'}`}
+                          />
+                        </span>
+                      </button>
+                    </section>
+                  )}
+
+                  <DirectorySettings value={settings.general} onChange={updateGeneral} disabled={busy} />
+
+                  <section className="grid gap-2" data-settings-section="flows">
+                    <div>
+                      <h3 className="text-sm font-medium">Perfis de fluxo</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Cada perfil aumenta gradualmente as etapas e os artefatos gerados.
+                      </p>
+                    </div>
+                    <div className="divide-y overflow-hidden rounded-lg border">
+                      {FLOW_SUMMARIES.map((profile) => (
+                        <div key={profile.title} className="grid gap-0.5 px-3 py-2.5 sm:grid-cols-[70px_1fr] sm:gap-3">
+                          <div className="text-xs font-semibold">{profile.title}</div>
+                          <div>
+                            <p className="text-xs text-foreground/85">{profile.path}</p>
+                            <p className="text-[10px] text-muted-foreground">{profile.artifacts}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="jira" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+                <JiraSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
+              </TabsContent>
+              <TabsContent value="models" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+                <ExecutionSettings
+                  settings={settings}
+                  onGeneralChange={updateGeneral}
+                  onStageChange={updateStage}
+                  disabled={busy}
+                  catalog={codexCatalog}
+                  loading={codexModelsLoading}
+                  onRefresh={refreshModels}
+                />
+              </TabsContent>
+              <TabsContent value="ides" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+                <IdeSettings
                   value={settings.general}
                   onChange={updateGeneral}
-                  disabled={saving}
+                  disabled={busy}
                   initialEditors={editorDiscovery}
                 />
-                <CodexProfilesSettings />
-                <section className="grid gap-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                    <h3 className="text-sm font-medium">Agentes por etapa</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Modelo e intensidade de raciocínio usados em cada parte do fluxo.
-                    </p>
-                    </div>
-                    {settings.general.llmProvider === 'chatgpt' && (
-                      <Tip label="Atualizar modelos do Codex">
-                        <Button variant="ghost" size="icon" className="size-10 shrink-0" aria-label="Atualizar modelos do Codex" onClick={refreshModels} disabled={codexModelsLoading || saving}>
-                          <HugeiconsIcon icon={Refresh01Icon} size={16} />
-                        </Button>
-                      </Tip>
-                    )}
-                  </div>
-                  {settings.general.llmProvider === 'chatgpt' && (
-                    <p className="text-xs text-muted-foreground" role="status">
-                      {codexModelsLoading ? 'Consultando modelos do Codex…' : codexCatalog.source === 'codex'
-                        ? `Modelos e efforts informados pelo Codex${codexCatalog.profileName ? ` · ${codexCatalog.profileName}` : ''}.`
-                        : 'Catálogo de referência: não foi possível consultar o Codex. A disponibilidade depende da conta e da versão instalada.'}
-                    </p>
-                  )}
-                  <div className="divide-y overflow-hidden rounded-lg border">
-                    {STAGES.map(({ key, title, description }) => (
-                      <fieldset key={key} className="grid gap-2.5 p-3">
-                        <legend className="sr-only">{title}</legend>
-                        <div className="flex items-baseline justify-between gap-3">
-                          <div className="text-xs font-semibold">{title}</div>
-                          <p className="text-[10px] text-muted-foreground">{description}</p>
-                        </div>
-                        <div className="grid gap-3">
-                          <div className="grid gap-1">
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                              Modelo
-                            </span>
-                            <ModelRadioGroup
-                              label={`Modelo para ${title}`}
-                              value={settings.stages[key].model}
-                              onChange={(model) => updateStage(key, 'model', model)}
-                              disabled={saving || (settings.general.llmProvider === 'chatgpt' && codexModelsLoading)}
-                              options={settings.general.llmProvider === 'chatgpt' ? [
-                                { value: 'default', label: 'Automático', description: 'Usa o modelo padrão configurado no Codex para este perfil.' },
-                                ...codexCatalog.models.map((model) => ({ value: model.id, label: model.label, description: model.description })),
-                              ] : CLAUDE_MODELS}
-                            />
-                            {settings.general.llmProvider === 'chatgpt' && (
-                              <p className="text-xs leading-relaxed text-muted-foreground">
-                                {settings.stages[key].model === 'default' ? 'Usa o modelo padrão configurado no Codex para este perfil.'
-                                  : codexModelFor(settings.stages[key].model, codexCatalog)?.description
-                                    ?? 'Modelo salvo fora do catálogo atual. Verifique se ele está disponível neste perfil.'}
-                              </p>
-                            )}
-                          </div>
-                          <div className="grid gap-1">
-                            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                              Effort
-                            </span>
-                            <EffortScale
-                              label={`Effort para ${title}`}
-                              value={settings.stages[key].effort}
-                              options={supportedEfforts(settings.general.llmProvider, settings.stages[key].model, codexCatalog)}
-                              onChange={(effort) => updateStage(key, 'effort', effort)}
-                              disabled={saving || (settings.general.llmProvider === 'chatgpt' && codexModelsLoading)}
-                            />
-                            <p className="text-xs leading-relaxed text-muted-foreground">
-                              {supportedEfforts(settings.general.llmProvider, settings.stages[key].model, codexCatalog).includes(settings.stages[key].effort)
-                                ? EFFORT_DETAILS[settings.stages[key].effort].description
-                                : 'O effort salvo não é suportado pelo modelo. Selecione uma das opções disponíveis.'}
-                            </p>
-                          </div>
-                        </div>
-                      </fieldset>
-                    ))}
-                  </div>
-                </section>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="prompts" className="max-h-[65vh] overflow-y-auto p-4 sm:p-5">
-              <div className="grid gap-5">
-                <p className="text-xs text-muted-foreground">
-                  Prompts enviados em cada etapa do Mega Brain, salvos aqui e compartilhados entre Claude e Codex.
-                </p>
-                {PROMPT_FIELDS.map(({ key, title, help }) => (
-                  <details key={key} className="group rounded-lg border">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
-                      <span>
-                        <span className="block text-sm font-medium">{title}</span>
-                        <span className="block text-xs text-muted-foreground">{help}</span>
-                      </span>
-                      <span className="text-sm text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true">
-                       ⌄
-                      </span>
-                    </summary>
-                    <div className="grid gap-2 border-t p-3">
-                      <textarea
-                        aria-label={`Prompt: ${title}`}
-                        className="min-h-36 w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-xs leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                        value={settings.prompts?.[key] ?? ''}
-                        maxLength={50000}
-                        onChange={(event) =>
-                          updatePrompts({ ...settings.prompts, [key]: event.currentTarget.value })
-                        }
-                        disabled={saving}
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        {settings.prompts?.[key]?.length ?? 0}/50000 caracteres
-                      </p>
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </TabsContent>
-            {isMacOSDesktop() && (
-              <TabsContent value="island" className="max-h-[65vh] overflow-y-auto p-4 sm:p-5">
-                <ActivityIslandSettings />
               </TabsContent>
-            )}
-          </Tabs>
+              <TabsContent value="terminal" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+                <TerminalSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
+              </TabsContent>
+              <TabsContent value="integrations" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+                <TriageSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
+              </TabsContent>
+
+              <TabsContent value="prompts" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+                <PromptsSettings
+                  value={settings.prompts}
+                  onChange={updatePrompts}
+                  tab={promptTab}
+                  onTabChange={(next) => {
+                    setPromptTab(next)
+                    setSearchTarget(null)
+                  }}
+                  disabled={busy}
+                />
+              </TabsContent>
+              {isMacOSDesktop() && (
+                <TabsContent value="island" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+                  <ActivityIslandSettings ref={islandSettings} onLoadedChange={setIslandLoaded} />
+                </TabsContent>
+              )}
+            </Tabs>
+          </div>
         )}
-        <DialogFooter className="mx-0 mb-0 rounded-none px-5 py-3">
-          <Button variant="outline" onClick={close} disabled={saving}>
+        <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none px-5 py-3">
+          <Button variant="outline" onClick={close} disabled={busy}>
             {tab === 'island' ? 'Fechar' : 'Cancelar'}
           </Button>
-          {tab !== 'island' && (
-            <Button onClick={save} disabled={!settings || saving || (settings.general.llmProvider === 'chatgpt' && codexModelsLoading)}>
-              {saving ? 'Salvando…' : 'Salvar configurações'}
-            </Button>
-          )}
+          <Button
+            onClick={() => void saveSettings()}
+            disabled={
+              !settings ||
+              busy ||
+              (tab === 'island' && !islandLoaded) ||
+              (settings.general.llmProvider === 'chatgpt' && codexModelsLoading)
+            }
+          >
+            {busy ? 'Salvando…' : 'Salvar configurações'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

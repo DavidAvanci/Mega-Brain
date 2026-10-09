@@ -114,11 +114,11 @@ export function createWorkspaceService(
       const { name, path: cardPath } = card
       if (path === '/diff') return diffReview.start(cardPath, data.regenerate === true)
       if (path === '/terminal') {
-        openAgentTerminal(cardPath, config, runner)
+        await openAgentTerminal(cardPath, config, runner)
         return { ok: true }
       }
       if (path === '/prs/open') {
-        openPullRequests(cardPath, name, data.env, data.project, config, runner)
+        await openPullRequests(cardPath, name, data.env, data.project, config, runner)
         return { ok: true }
       }
       if (path === '/dev-env/stop') {
@@ -126,11 +126,11 @@ export function createWorkspaceService(
         return { ok: true }
       }
       if (path === '/dev-env/open') {
-        openDevEnvironment(cardPath, data.repo, config, runner)
+        await openDevEnvironment(cardPath, data.repo, config, runner)
         return { ok: true }
       }
       if (path === '/dev-env/agent') {
-        openDevEnvironmentAgent(cardPath, config, runner)
+        await openDevEnvironmentAgent(cardPath, config, runner)
         return { ok: true }
       }
       if (path === '/stage/pause') {

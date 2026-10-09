@@ -1,8 +1,9 @@
 import { invoke } from '@tauri-apps/api/core'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Refresh01Icon } from '@hugeicons/core-free-icons'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
 import { Button } from '@/components/ui/button'
+import { AppSelect } from '@/components/ui/select'
 import { Tip } from '@/Tip'
 import { requestJson } from '@/shared/api/request-json'
 import { DEFAULT_ISLAND_DISPLAY, type IslandDisplaySettings } from '../../../shared/domain/activity-island'
@@ -13,6 +14,8 @@ type DisplayPatch = Partial<IslandDisplaySettings>
 type PreviewState = 'running' | 'thinking' | 'waiting' | 'success' | 'error'
 const SETTINGS_PATH = '/api/activity-island/settings'
 const SAVE_DELAY = 150
+
+export type ActivityIslandSettingsHandle = { save: () => Promise<boolean> }
 const STATES = [
   ['running', 'Executando', 'runningColor'],
   ['thinking', 'Pensando', 'thinkingColor'],
@@ -39,6 +42,7 @@ function useIslandSettings() {
   const current = useRef(display)
   const pending = useRef<DisplayPatch>({})
   const inFlight = useRef<DisplayPatch | null>(null)
+  const activeSave = useRef<Promise<void> | null>(null)
   const blocked = useRef(false)
   const generation = useRef(0)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -55,38 +59,45 @@ function useIslandSettings() {
       void flushRef.current()
     }, SAVE_DELAY)
   }, [])
-  const flush = useCallback(async () => {
-    if (inFlight.current || blocked.current || !Object.keys(pending.current).length) return
-    const patch = pending.current
-    pending.current = {}
-    inFlight.current = patch
-    generation.current += 1
-    if (mounted.current) {
-      setStatus('saving')
-      setError('')
-    }
-    try {
-      const settings = await requestJson<IslandDisplaySettings>(SETTINGS_PATH, 'Falha ao salvar a ilha', {
-        method: 'PATCH',
-        body: patch,
-      })
-      mergeServer(settings, pending.current)
-      if (mounted.current && !Object.keys(pending.current).length) setStatus('saved')
-    } catch (cause: unknown) {
-      pending.current = { ...patch, ...pending.current }
-      blocked.current = true
-      if (mounted.current) {
-        setError(cause instanceof Error ? cause.message : String(cause))
-        setStatus('ready')
-      }
-    } finally {
-      inFlight.current = null
+  const flush = useCallback((): Promise<void> => {
+    if (activeSave.current) return activeSave.current
+    if (blocked.current || !Object.keys(pending.current).length) return Promise.resolve()
+    const persist = async () => {
+      const patch = pending.current
+      pending.current = {}
+      inFlight.current = patch
       generation.current += 1
-      if (Object.keys(pending.current).length && !blocked.current) {
-        if (mounted.current) schedule()
-        else void flushRef.current()
+      if (mounted.current) {
+        setStatus('saving')
+        setError('')
+      }
+      try {
+        const settings = await requestJson<IslandDisplaySettings>(SETTINGS_PATH, 'Falha ao salvar a ilha', {
+          method: 'PATCH',
+          body: patch,
+        })
+        mergeServer(settings, pending.current)
+        if (mounted.current && !Object.keys(pending.current).length) setStatus('saved')
+      } catch (cause: unknown) {
+        pending.current = { ...patch, ...pending.current }
+        blocked.current = true
+        if (mounted.current) {
+          setError(cause instanceof Error ? cause.message : String(cause))
+          setStatus('ready')
+        }
+      } finally {
+        inFlight.current = null
+        activeSave.current = null
+        generation.current += 1
+        if (Object.keys(pending.current).length && !blocked.current) {
+          if (mounted.current) schedule()
+          else void flushRef.current()
+        }
       }
     }
+    const request = persist()
+    activeSave.current = request
+    return request
   }, [mergeServer, schedule])
   useEffect(() => {
     flushRef.current = flush
@@ -168,7 +179,20 @@ function useIslandSettings() {
     blocked.current = false
     void flushRef.current()
   }
-  return { display, monitors, loaded, status, error, update, retry }
+  const save = async () => {
+    if (!loaded) return false
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    blocked.current = false
+    // Await the active PATCH and drain newer edits before allowing the dialog to close.
+    do {
+      await flushRef.current()
+    } while (!blocked.current && (inFlight.current || Object.keys(pending.current).length))
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    return !blocked.current
+  }
+  return { display, monitors, loaded, status, error, update, retry, save }
 }
 
 function PetPreview({
@@ -318,10 +342,21 @@ function IslandPreview({ display }: { display: IslandDisplaySettings }) {
   )
 }
 
-export function ActivityIslandSettings() {
-  const { display, monitors, loaded, status, error, update, retry } = useIslandSettings()
+export function ActivityIslandSettings({
+  ref,
+  onLoadedChange,
+}: {
+  ref?: Ref<ActivityIslandSettingsHandle>
+  onLoadedChange?: (loaded: boolean) => void
+}) {
+  const { display, monitors, loaded, status, error, update, retry, save } = useIslandSettings()
+  useImperativeHandle(ref, () => ({ save }))
+  useEffect(() => {
+    onLoadedChange?.(loaded)
+    return () => onLoadedChange?.(false)
+  }, [loaded, onLoadedChange])
   return (
-    <section className="grid gap-4" aria-label="Ilha dinâmica">
+    <section className="grid gap-4" aria-label="Ilha dinâmica" data-settings-section="island">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-medium">Ilha dinâmica</h3>
@@ -373,25 +408,28 @@ export function ActivityIslandSettings() {
             onChange={(taskSounds) => update({ taskSounds })}
           />
         </div>
-        <label className="grid gap-1 text-xs">
-          Tela
-          <select
-            className="rounded-md border bg-background p-2"
+        <div className="grid gap-2">
+          <label htmlFor="island-monitor" className="text-xs">
+            Tela
+          </label>
+          <AppSelect
+            id="island-monitor"
+            ariaLabel="Tela da ilha"
             value={display.monitorId}
-            onChange={(event) => update({ monitorId: event.target.value })}
-          >
-            <option value="">Tela principal</option>
-            {display.monitorId && !monitors.some((monitor) => monitor.id === display.monitorId) && (
-              <option value={display.monitorId}>Tela desconectada (usando a principal)</option>
-            )}
-            {monitors.map((monitor) => (
-              <option key={monitor.id} value={monitor.id}>
-                {monitor.label}
-                {monitor.primary ? ' · principal' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+            disabled={!loaded}
+            onValueChange={(monitorId) => update({ monitorId })}
+            options={[
+              { value: '', label: 'Tela principal' },
+              ...(display.monitorId && !monitors.some((monitor) => monitor.id === display.monitorId)
+                ? [{ value: display.monitorId, label: 'Tela desconectada (usando a principal)' }]
+                : []),
+              ...monitors.map((monitor) => ({
+                value: monitor.id,
+                label: `${monitor.label}${monitor.primary ? ' · principal' : ''}`,
+              })),
+            ]}
+          />
+        </div>
         <div className="flex gap-2" role="group" aria-label="Estilo da ilha">
           {(['clean', 'detailed'] as const).map((style) => (
             <Button
@@ -406,22 +444,29 @@ export function ActivityIslandSettings() {
             </Button>
           ))}
         </div>
-        <section className="grid gap-3 border-t pt-3" aria-label="Personalização do mascote">
+        <section
+          className="grid gap-3 border-t pt-3"
+          aria-label="Personalização do mascote"
+          data-settings-section="island-pet"
+        >
           <h4 className="text-xs font-medium">Mascote</h4>
-          <label className="grid gap-1 text-xs">
-            Aparência
-            <select
-              className="rounded-md border bg-background p-2"
+          <div className="grid gap-2">
+            <label htmlFor="island-pet" className="text-xs">
+              Aparência
+            </label>
+            <AppSelect<IslandDisplaySettings['petAppearance']>
+              id="island-pet"
+              ariaLabel="Aparência do mascote"
               value={display.petAppearance}
-              onChange={(event) =>
-                update({ petAppearance: event.target.value as IslandDisplaySettings['petAppearance'] })
-              }
-            >
-              <option value="auto">De acordo com o agente</option>
-              <option value="codex">Codex</option>
-              <option value="claude">Claude</option>
-            </select>
-          </label>
+              disabled={!loaded}
+              onValueChange={(petAppearance) => update({ petAppearance })}
+              options={[
+                { value: 'auto', label: 'De acordo com o agente' },
+                { value: 'codex', label: 'Codex' },
+                { value: 'claude', label: 'Claude' },
+              ]}
+            />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Range
               label="Tamanho do mascote"
@@ -459,7 +504,11 @@ export function ActivityIslandSettings() {
             ))}
           </div>
         </section>
-        <section className="grid gap-2 border-t pt-3" aria-label="Comportamento da ilha">
+        <section
+          className="grid gap-2 border-t pt-3"
+          aria-label="Comportamento da ilha"
+          data-settings-section="island-behavior"
+        >
           <h4 className="text-xs font-medium">Interação</h4>
           <Toggle
             label="Abrir perguntas automaticamente"
@@ -488,7 +537,7 @@ export function ActivityIslandSettings() {
             }}
           />
         </div>
-        <details className="border-t pt-3">
+        <details className="border-t pt-3" data-settings-section="island-dimensions">
           <summary className="cursor-pointer text-xs font-medium">Dimensões e texto</summary>
           <div className="mt-3 grid grid-cols-2 gap-3">
             {RANGES.map(([key, label, min, max]) => (

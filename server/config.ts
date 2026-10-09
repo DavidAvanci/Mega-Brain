@@ -51,6 +51,8 @@ export interface MegaBrainConfig {
     settingsFile: string
     editor: EditorPreference
     editorCommand: string
+    terminalCommand?: string
+    shellCommand?: string
     llmProvider: LlmProvider
     onboardingCompleted: boolean
     prompts?: PromptSettings
@@ -174,6 +176,8 @@ export function loadMegaBrainConfig(options: LoadMegaBrainConfigOptions = {}): M
       settingsFile,
       editor,
       editorCommand: typeof saved.editorCommand === 'string' ? saved.editorCommand.trim() : '',
+      terminalCommand: savedString(saved.terminalCommand) ?? '',
+      shellCommand: savedString(saved.shellCommand) ?? '',
       llmProvider,
       onboardingCompleted: saved.onboardingCompleted === true,
       prompts: Object.fromEntries(

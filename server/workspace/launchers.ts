@@ -1,11 +1,18 @@
 import type { ProcessRunner } from '../process'
-import { resolveOptionalExecutable, wslDesktopCandidates } from '../platform'
+import { resolveOptionalExecutable, desktopCandidates } from '../platform'
+import { openMacApplication, openMacTerminal } from '../platform/macos'
 import { stderrJsonlLogger, type StructuredLogger } from '../logger'
+import { terminalCommand } from './terminal-command'
 
 export type LauncherLogger = Pick<StructuredLogger, 'event'>
 
 interface BrowserLaunchOptions {
   newWindow?: boolean
+  logger?: LauncherLogger
+}
+
+interface TerminalLaunchOptions {
+  shell?: string
   logger?: LauncherLogger
 }
 
@@ -18,10 +25,21 @@ export function openBrowser(
   browser: string | undefined,
   runner: ProcessRunner,
   options: BrowserLaunchOptions = {},
-): void {
+): void | Promise<void> {
+  if (process.platform === 'darwin' && (!browser || browser.endsWith('.app') || browser === '/usr/bin/open')) {
+    const application = browser?.endsWith('.app')
+      ? resolveOptionalExecutable({ configured: browser, candidates: [], label: 'Navegador' })
+      : undefined
+    return openMacApplication(application ? ['-a', application, ...urls] : urls, runner, 'o navegador').catch(
+      (error) => {
+        reportLaunchFailure(options.logger, 'browser')
+        throw error
+      },
+    )
+  }
   const command = resolveOptionalExecutable({
     configured: browser,
-    candidates: wslDesktopCandidates('browser'),
+    candidates: desktopCandidates('browser'),
     label: 'Chrome ou outro navegador',
   })
   const args = options.newWindow ? ['--new-window', ...urls] : urls
@@ -30,22 +48,35 @@ export function openBrowser(
   child.unref()
 }
 
-export function openTerminal(
+export async function openTerminal(
   cwd: string,
   args: string[],
   terminal: string | undefined,
   runner: ProcessRunner,
-  logger?: LauncherLogger,
-): void {
+  options: TerminalLaunchOptions = {},
+): Promise<void> {
+  const commandArgs = terminalCommand(args, options.shell)
+  if (process.platform === 'darwin') {
+    try {
+      if (await openMacTerminal(cwd, commandArgs, terminal, runner)) return
+    } catch (error) {
+      reportLaunchFailure(options.logger, 'terminal')
+      throw error
+    }
+  }
+  const wsl = process.platform === 'linux' ? process.env.WSL_DISTRO_NAME : undefined
   const command = resolveOptionalExecutable({
     configured: terminal,
-    candidates: wslDesktopCandidates('terminal'),
-    label: 'Windows Terminal',
+    candidates: desktopCandidates('terminal'),
+    label: wsl || process.platform === 'win32' ? 'Windows Terminal' : 'Terminal',
   })
-  const child = process.env.WSL_DISTRO_NAME
-    ? runner.spawn(command, ['wsl.exe', '--cd', cwd, '--', ...args], { detached: true, stdio: 'ignore' })
-    : runner.spawn(command, ['-e', ...args], { cwd, detached: true, stdio: 'ignore' })
-  child.on('error', () => reportLaunchFailure(logger, 'terminal'))
+  const child = wsl
+    ? runner.spawn(command, ['wsl.exe', '-d', wsl, '--cd', cwd, '--', ...commandArgs], {
+        detached: true,
+        stdio: 'ignore',
+      })
+    : runner.spawn(command, ['-e', ...commandArgs], { cwd, detached: true, stdio: 'ignore' })
+  child.on('error', () => reportLaunchFailure(options.logger, 'terminal'))
   child.unref()
 }
 

@@ -82,6 +82,12 @@ npm run tauri:dev
 
 O comando inicia o Vite e o backend local e abre a janela Tauri. Para gerar o aplicativo e o instalador DMG, execute `npm run tauri:build`. O runtime Node.js é incluído no pacote; cada build usa a arquitetura da máquina que o gerou.
 
+Os botões **Rodar com agente** e **Abrir terminal** usam o Terminal do macOS por padrão. Em **Configurações → Shell e terminal**, selecione **Automático**, **Terminal do macOS** ou **iTerm2**. Também são aceitos os caminhos absolutos de `Terminal.app` e `iTerm.app`, inclusive o executável dentro do aplicativo. Um terminal personalizado deve aceitar `-e` seguido do comando e seus argumentos. No Windows/WSL, a seleção automática continua usando o Windows Terminal e abre a distribuição do backend. O shell opcional aceita Zsh, Bash ou outro executável compatível com POSIX e `-lc`; ele carrega o ambiente de login antes de executar o agente.
+
+A variável `MEGA_BRAIN_TERMINAL_BIN`, quando definida no ambiente do backend, tem prioridade sobre a preferência salva. Os comandos abrem na pasta do card, com o PATH do backend disponível. No Mac, o lançamento usa um arquivo `.command` privado, removido ao iniciar; arquivos não executados são removidos após cinco minutos ou ao encerrar o backend. Não é necessário conceder permissão de automação para controlar o terminal.
+
+Os links dos ambientes locais e dos pull requests usam o navegador padrão do macOS. Para escolher outro navegador, `MEGA_BRAIN_BROWSER_BIN` aceita o caminho de um aplicativo `.app` ou de um executável; aplicativos `.app` seguem as preferências de janelas e abas do navegador.
+
 O build macOS gera o DMG sem automatizar o Finder, evitando que permissões de automação ou a sessão gráfica interrompam o empacotamento. A imagem mantém o aplicativo e o link para Applications, com o layout padrão do Finder. Para usar o posicionamento visual do Tauri, execute `TAURI_BUNDLER_DMG_IGNORE_CI=true npm run tauri:build` em uma sessão gráfica com permissão para controlar o Finder.
 
 Para trabalhar apenas na interface web durante o desenvolvimento:
