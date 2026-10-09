@@ -28,6 +28,7 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void, activeT
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const loadedTabs = useRef(new Set<SettingsTab>())
+  const initialAutostartEnabled = useRef<boolean | null>(desktop ? null : false)
 
   useEffect(() => {
     let cancelled = false
@@ -56,7 +57,10 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void, activeT
         .finally(() => setEditorsLoaded(true))
     } else if (activeTab === 'general' && desktop) {
       void getDesktopAutostartEnabled()
-        .then(setAutostartEnabled)
+        .then((enabled) => {
+          initialAutostartEnabled.current = enabled
+          setAutostartEnabled(enabled)
+        })
         .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
         .finally(() => setAutostartLoaded(true))
     }
@@ -90,10 +94,13 @@ export function useSettingsDialog(desktop: boolean, onClose: () => void, activeT
     setSaving(true)
     setError(null)
     try {
+      const updateAutostart =
+        desktop && initialAutostartEnabled.current !== null && autostartEnabled !== initialAutostartEnabled.current
       await Promise.all([
         saveMegaBrainSettings(settings),
-        desktop ? setDesktopAutostartEnabled(autostartEnabled) : Promise.resolve(),
+        updateAutostart ? setDesktopAutostartEnabled(autostartEnabled) : Promise.resolve(),
       ])
+      if (updateAutostart) initialAutostartEnabled.current = autostartEnabled
       window.dispatchEvent(new Event('megabrain-settings-changed'))
       await refresh()
       close()
