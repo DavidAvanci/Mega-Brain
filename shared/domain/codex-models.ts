@@ -108,13 +108,14 @@ export function compatibleEffort(
 export function defaultStageSettings(provider: LlmProvider, catalog = FALLBACK_CODEX_CATALOG): BoardSettings {
   if (provider === 'claude')
     return {
-      'task-planning': { model: 'fable', effort: 'high' },
-      'run-task-checklist': { model: 'fable', effort: 'low' },
+      'task-planning': { model: 'fable', effort: 'high', fastMode: false },
+      'run-task-checklist': { model: 'fable', effort: 'low', fastMode: false },
     }
   const sol = catalog.models.some((entry) => entry.id === 'gpt-6.1-sol') ? 'gpt-6.1-sol' : 'default'
   const stage = (model: string, effort: Effort) => ({
     model,
     effort: compatibleEffort(provider, model, effort, catalog),
+    fastMode: false,
   })
   return {
     'task-planning': stage(sol, 'high'),

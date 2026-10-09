@@ -30,6 +30,7 @@ export function settingsForStage(path: string, stage: Stage, provider: LlmProvid
     readStageSettings(dirname(path), provider)[stage.name] ?? {
       model: stage.model ?? 'fable',
       effort: stage.effort ?? 'low',
+      fastMode: false,
     }
   )
 }
@@ -44,6 +45,7 @@ export function stageAgentCommand(
   claude?: string,
   codex?: string,
   settingsFile?: string,
+  fastMode = false,
 ): [string, string[]] {
   if (stage.script) return stageScriptCommand(path, stage)
 
@@ -81,6 +83,7 @@ export function stageAgentCommand(
     claudeBin(claude),
     [
       '-p',
+      ...(fastMode ? ['--settings', JSON.stringify({ fastMode: true })] : []),
       prompt,
       '--name',
       sessionName,
@@ -136,6 +139,7 @@ export function runStageAgent(
     claude,
     codex,
     settingsFile,
+    settings.fastMode,
   )
   const stageMessages = taskMessageContext(path)
   const profileEnvironment = provider === 'chatgpt' && settingsFile ? codexProfileEnvironment(settingsFile) : {}
@@ -158,6 +162,7 @@ export function runStageAgent(
     MEGA_BRAIN_CARD_ID: basename(path),
     MEGA_BRAIN_CARD_PATH: path,
     MEGA_BRAIN_CLAUDE_BIN: claudeBin(claude),
+    MEGA_BRAIN_CLAUDE_FAST_MODE: settings.fastMode ? '1' : '0',
     MEGA_BRAIN_CODEX_BIN: codex ?? process.env.MEGA_BRAIN_CODEX_BIN,
     MEGA_BRAIN_STAGE_RUN_ID: randomUUID(),
     ...resume?.record.resume?.environment,

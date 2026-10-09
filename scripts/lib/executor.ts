@@ -186,8 +186,11 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
     }
     const messages = cardPath ? taskMessageContext(cardPath) : undefined
     const prompt = `${options.prompt}${process.env.MEGA_BRAIN_KNOWLEDGE_CONTEXT ?? ''}${messages?.prompt ?? ''}`
+    const fastModeArgs =
+      process.env.MEGA_BRAIN_CLAUDE_FAST_MODE === '1' ? ['--settings', JSON.stringify({ fastMode: true })] : []
     const claudeArgs = [
       '-p',
+      ...fastModeArgs,
       prompt,
       ...(sessionName ? ['--name', sessionName] : []),
       '--model',

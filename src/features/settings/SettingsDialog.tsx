@@ -97,6 +97,13 @@ const THEME_CATEGORIES: {
         darkColors: ['#181719', '#222023', '#ff6872', '#f5f1f2'],
       },
       {
+        value: 'minecraft',
+        label: 'Minecraft',
+        description: 'Blocos, tons de grama e tipografia técnica.',
+        colors: ['#e8efdd', '#dce7cf', '#4b7d32', '#8c6b3d'],
+        darkColors: ['#1d271d', '#283629', '#91c45e', '#c2995d'],
+      },
+      {
         value: 'ocean',
         label: 'Oceano',
         description: 'Azuis frios e ciano.',
@@ -148,6 +155,12 @@ const THEME_CATEGORIES: {
         description: 'JetBrains Mono com mais espaçamento.',
         fontFamily: "'JetBrains Mono Variable', monospace",
       },
+      {
+        value: 'minecraft',
+        label: 'Minecraft',
+        description: 'Pixelify Sans, pixelada com leitura mais suave.',
+        fontFamily: "'Pixelify Sans Variable', monospace",
+      },
     ],
   },
   {
@@ -190,6 +203,13 @@ const THEME_CATEGORIES: {
         radius: '0.3rem',
         cornerShape: 'superellipse(4)',
       },
+      {
+        value: 'minecraft',
+        label: 'Minecraft',
+        description: 'Blocos quadrados com borda em camadas.',
+        radius: '0',
+        cornerShape: 'round',
+      },
     ],
   },
   {
@@ -210,6 +230,13 @@ const THEME_CATEGORIES: {
         description: 'Aparência original do Mega Brain.',
         colors: ['#ffffff', '#f1f1f1', '#29707a', '#222222'],
         darkColors: ['#171717', '#292929', '#29707a', '#eeeeee'],
+      },
+      {
+        value: 'minecraft',
+        label: 'Minecraft',
+        description: 'Visual pixelado com paleta de grama, terra e pedra.',
+        colors: ['#e8efdd', '#dce7cf', '#4b7d32', '#8c6b3d'],
+        darkColors: ['#1d271d', '#283629', '#91c45e', '#c2995d'],
       },
     ],
   },
