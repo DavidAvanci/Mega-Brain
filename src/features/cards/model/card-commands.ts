@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { BoundedCache } from '../../../../shared/lib/bounded-cache'
 import { reportDesktopApiFailure } from '../../../desktopConnection'
 import type { Card, FlowLevel, Status } from '../../../../shared/domain/cards'
 import {
@@ -23,7 +24,7 @@ const AGENT_STATUSES: ReadonlySet<Status> = new Set([
   'staging',
   'aguardando-deploy',
 ])
-const userInitiatedStatusChanges = new Map<string, { status: Status; expiresAt: number }>()
+const userInitiatedStatusChanges = new BoundedCache<string, { status: Status; expiresAt: number }>(1000)
 const pendingMoves = new Map<string, Pick<Card, 'status' | 'agents'>>()
 let refreshVersion = 0
 let jiraStatuses: Record<string, string> = {}
@@ -56,6 +57,7 @@ async function migrateLegacy(folders: Awaited<ReturnType<typeof listWorkspace>>)
 }
 
 export async function refresh(): Promise<void> {
+  userInitiatedStatusChanges.prune((change) => change.expiresAt < Date.now())
   const version = ++refreshVersion
   try {
     const folders = await listWorkspace()
@@ -106,6 +108,7 @@ export async function updateCardDescription(name: string, description: string): 
 }
 
 export function moveCard(id: string, status: Status): void {
+  userInitiatedStatusChanges.prune((change) => change.expiresAt < Date.now())
   ++refreshVersion
   userInitiatedStatusChanges.set(id, { status, expiresAt: Date.now() + USER_ACTION_WINDOW_MS })
   const cards = cardsState().cards.map((card) => {

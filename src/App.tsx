@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { BoardMinimap } from './features/board/BoardMinimap'
 import { moveCard, refresh, useCards } from './features/cards/model/card-commands'
-import { fetchDetectedEditors, fetchMegaBrainSettings } from './features/cards/api/card-detail-api'
+import { useStartupOnboarding } from './features/settings/useStartupOnboarding'
 import { CardBody } from './features/cards/ui/CardView'
 import { CoffeeButton } from './CoffeeButton'
 import { CommandPalette } from './CommandPalette'
@@ -27,7 +27,6 @@ import { usePanScroll } from './usePanScroll'
 import { cn } from '@/lib/utils'
 import { STATUS_GROUPS } from './statusMeta'
 import { STATUS_LABELS, type Card, type Status } from '../shared/domain/cards'
-import type { EditorDiscovery, MegaBrainSettings } from '../shared/domain/settings'
 import { isTauriDesktop } from './desktopBootstrap'
 import { DesktopWindowControls, invokeDesktopWindowCommand } from './DesktopWindowControls'
 import { BrainIcon } from './BrainIcon'
@@ -43,7 +42,9 @@ const OnboardingDialog = lazy(() =>
   import('./OnboardingDialog').then((module) => ({ default: module.OnboardingDialog })),
 )
 const AgentsPage = lazy(() => import('./features/agents/AgentsPage').then((module) => ({ default: module.AgentsPage })))
-const RepositoriesPage = lazy(() => import('./features/repositories/RepositoriesPage').then((module) => ({ default: module.RepositoriesPage })))
+const RepositoriesPage = lazy(() =>
+  import('./features/repositories/RepositoriesPage').then((module) => ({ default: module.RepositoriesPage })),
+)
 
 export default function App() {
   const { cards, error, loaded } = useCards()
@@ -57,7 +58,7 @@ export default function App() {
   const [dragId, setDragId] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [deployPrsOpen, setDeployPrsOpen] = useState(false)
-  const [onboarding, setOnboarding] = useState<{ settings: MegaBrainSettings; editors: EditorDiscovery } | null>(null)
+  const { onboarding, completeOnboarding } = useStartupOnboarding()
   const [newCardOpen, setNewCardOpen] = useState(false)
   const [windowControlError, setWindowControlError] = useState<string | null>(null)
   const [page, setPage] = useState<AppPage>('kanban')
@@ -73,24 +74,6 @@ export default function App() {
     }
     window.addEventListener('popstate', syncFromUrl)
     return () => window.removeEventListener('popstate', syncFromUrl)
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    void Promise.all([
-      fetchMegaBrainSettings(),
-      fetchDetectedEditors().catch(() => ({ editors: [], scope: 'máquina do backend' }) satisfies EditorDiscovery),
-    ])
-      .then(([settings, editors]) => {
-        const tourNotCompleted = window.localStorage.getItem('mega-brain-onboarding-tour-v1') !== 'done'
-        if (active && (!settings.general.onboardingCompleted || tourNotCompleted)) {
-          setOnboarding({ settings, editors })
-        }
-      })
-      .catch(() => {})
-    return () => {
-      active = false
-    }
   }, [])
 
   const openCardDetail = useCallback((id: string, tab?: string) => {
@@ -264,7 +247,7 @@ export default function App() {
             <OnboardingDialog
               initial={onboarding.settings}
               editors={onboarding.editors}
-              onComplete={() => setOnboarding(null)}
+              onComplete={completeOnboarding}
             />
           )}
         </Suspense>

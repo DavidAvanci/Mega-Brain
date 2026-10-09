@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { BoundedCache } from '../../../../shared/lib/bounded-cache'
 import { DiffFile, DiffModeEnum, DiffView, highlighter } from '@git-diff-view/react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -111,7 +112,7 @@ function prepareReview(document: CardDiffDocument | null, collapsedSections: Rea
 const diffFiles = new WeakMap<FileDiff, DiffFile>()
 
 // Sobrevive ao fechar/reabrir o modal; seen limita o auto-colapso a arquivos novos
-const collapseState = new Map<string, { collapsed: Set<string>; seen: Set<string> }>()
+const collapseState = new BoundedCache<string, { collapsed: Set<string>; seen: Set<string> }>(100)
 
 function getDiffFile(file: FileDiff, theme: Theme): DiffFile {
   const cached = diffFiles.get(file)
@@ -331,16 +332,20 @@ export function DiffTab({ cardId }: { cardId: string }) {
           setDocument(state.result)
           const saved = collapseState.get(cardId) ?? { collapsed: new Set<string>(), seen: new Set<string>() }
           const next = new Set(saved.collapsed)
+          const currentKeys = new Set<string>()
           for (const repo of state.result.repositories)
             for (const section of repo.review.sections)
               for (const entry of section.files)
                 for (const file of parsedFiles(entry)) {
                   const key = rowKey(repo.name, file)
+                  currentKeys.add(key)
                   if (!saved.seen.has(key)) {
                     saved.seen.add(key)
                     if (autoCollapse(file)) next.add(key)
                   }
                 }
+          for (const key of next) if (!currentKeys.has(key)) next.delete(key)
+          saved.seen = currentKeys
           saved.collapsed = next
           collapseState.set(cardId, saved)
           setCollapsed(next)

@@ -354,8 +354,7 @@ impl BackendSupervisor {
         let (stderr_tx, stderr_rx) = mpsc::sync_channel(1);
         if let Some(stderr) = child.stderr.take() {
             std::thread::spawn(move || {
-                let mut detail = String::new();
-                let _ = BufReader::new(stderr).read_to_string(&mut detail);
+                let detail = crate::stderr_tail::read_stderr_tail(stderr);
                 let _ = stderr_tx.send(detail);
             });
         }

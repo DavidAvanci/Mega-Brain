@@ -4,6 +4,7 @@ use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Position, RunEve
 
 mod supervisor;
 mod runtime_contract;
+mod stderr_tail;
 pub use supervisor::{BackendSupervisor, SupervisorState, SupervisorTransitionError};
 
 const MAIN_WINDOW_LABEL: &str = "main";
