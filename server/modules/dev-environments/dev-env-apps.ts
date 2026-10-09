@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { runScriptCommand, type Command } from '../../../scripts/lib/packageManager'
 import { activeRepositories, activeRepositoryPath } from '../../repositories/catalog'
@@ -15,11 +15,57 @@ export type RegisteredApp = {
   preferred: number
   envFile?: string
   flavor?: 'vite' | 'next' | 'cra'
+  services?: { name: string; port: number }[]
 }
 
-// The platform is a monorepo. Starting its root dev script would also start
-// unrelated services, including the scheduler; this environment uses the API.
-const PLATFORM_API = { directory: 'apps/external-api', port: 3000 }
+const PLATFORM_APIS = [
+  { name: 'external-api', port: 3100 },
+  { name: 'operation-api', port: 3300 },
+  { name: 'auth-api', port: 3400 },
+  { name: 'manager-api', port: 3500 },
+]
+
+function platformServices(root: string, canonical: string): { name: string; port: number }[] {
+  return PLATFORM_APIS.filter((service) => existsSync(join(root, 'apps', service.name, 'package.json'))).map(
+    (service) => {
+      let port = service.port
+      for (const directory of [canonical, root]) {
+        const path = join(directory, 'apps', service.name, '.env')
+        if (!existsSync(path)) continue
+        const configured = Number(parseEnvironmentVariables(readFileSync(path, 'utf8')).PORT)
+        if (Number.isInteger(configured) && configured > 0 && configured <= 65535) port = configured
+      }
+      return { name: service.name, port }
+    },
+  )
+}
+
+// Each API reads its own local configuration. Never share PORT across Turbo's
+// children, or they will all try to listen on the external API's port.
+export function prepareRegisteredApp(app: RegisteredApp, port: number): void {
+  if (!app.services) return
+  for (const service of app.services) {
+    const directory = join(app.root, 'apps', service.name)
+    for (const file of ['.env', '.env.local']) {
+      const target = join(directory, file)
+      const source = join(app.canonical, 'apps', service.name, file)
+      if (!existsSync(target) && existsSync(source)) {
+        writeFileSync(target, readFileSync(source), { mode: 0o600, flag: 'wx' })
+      }
+    }
+    if (service.name !== 'external-api') continue
+    const target = join(directory, '.env')
+    const text = existsSync(target) ? readFileSync(target, 'utf8') : ''
+    const next = /^\s*(?:export\s+)?PORT\s*=.*$/m.test(text)
+      ? text.replace(/^\s*(?:export\s+)?PORT\s*=.*$/m, `PORT=${port}`)
+      : `${text.trimEnd()}\nPORT=${port}\n`
+    if (next !== text) {
+      // A linked .env must become task-local before changing its port.
+      if (existsSync(target) && lstatSync(target).isSymbolicLink()) unlinkSync(target)
+      writeFileSync(target, next, { mode: 0o600 })
+    }
+  }
+}
 
 function registeredScriptCommand(root: string, script: string, extra: string[] = []): Command {
   const command = runScriptCommand(root, script, extra)
@@ -30,8 +76,7 @@ export function registeredDevApp(repo: string, root: string, catalogFile: string
   const repository = activeRepositories(catalogFile).find((item) => item.alias === repo)
   if (!repository?.environments.local.enabled) return `${repo}: habilite o ambiente local em Repositórios.`
   const canonical = activeRepositoryPath(repo, catalogFile)
-  const preset = repo === 'takeat-platform' ? PLATFORM_API : undefined
-  const dir = preset ? join(root, preset.directory) : root
+  const dir = root
   const packageFile = join(dir, 'package.json')
   if (!existsSync(packageFile)) return `${repo}: nenhum package.json encontrado para iniciar o ambiente local.`
   const pkg: { scripts?: Record<string, unknown> } = JSON.parse(readFileSync(packageFile, 'utf8'))
@@ -40,6 +85,10 @@ export function registeredDevApp(repo: string, root: string, catalogFile: string
   const scriptCommand = pkg.scripts?.[script]
   if (typeof scriptCommand !== 'string' || !scriptCommand.trim()) {
     return `${repo}: configure um script existente do package.json no ambiente local em Repositórios.`
+  }
+  const services = repo === 'takeat-platform' && script === 'dev' ? platformServices(root, canonical) : undefined
+  if (services && !services.some((service) => service.name === 'external-api')) {
+    return `${repo}: apps/external-api não encontrado no monorepo.`
   }
   const flavor = /\bnext\s+dev\b/.test(scriptCommand)
     ? 'next'
@@ -52,7 +101,7 @@ export function registeredDevApp(repo: string, root: string, catalogFile: string
     /(?:--port|-p)(?:=|\s+)(\d+)\b/.exec(scriptCommand)?.[1] ?? /\bPORT=(\d+)\b/.exec(scriptCommand)?.[1]
   const preferred =
     settings.port ??
-    preset?.port ??
+    services?.find((service) => service.name === 'external-api')?.port ??
     (scriptPort ? Number(scriptPort) : flavor === 'vite' ? 5173 : flavor ? 3000 : undefined)
   if (!Number.isInteger(preferred) || !preferred || preferred < 1 || preferred > 65535) {
     return `${repo}: configure a porta do ambiente local em Repositórios para confirmar quando o app estiver pronto.`
@@ -66,9 +115,14 @@ export function registeredDevApp(repo: string, root: string, catalogFile: string
     preferred,
     envFile: settings.envFile,
     kind: flavor ? 'frontend' : 'backend',
+    services,
     // Resolve the package manager at the repository root, including when the
     // selected app is a workspace package without its own lockfile.
-    command: registeredScriptCommand(root, script),
+    command: registeredScriptCommand(
+      root,
+      script,
+      services?.map((service) => `--filter=${service.name}`),
+    ),
   }
 }
 

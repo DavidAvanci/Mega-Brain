@@ -3,6 +3,7 @@ use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Position, RunEvent, Size, WebviewWindow, WindowEvent};
 
 mod activity_island;
+mod chat_export;
 mod supervisor;
 mod runtime_contract;
 pub use supervisor::{BackendSupervisor, SupervisorState, SupervisorTransitionError};
@@ -326,6 +327,7 @@ pub fn run() {
             set_wsl_workspace_dir,
             normalize_wsl_directory,
             open_diagnostics_folder,
+            chat_export::export_chat_markdown,
             minimize_main_window,
             toggle_maximize_main_window,
             close_main_window

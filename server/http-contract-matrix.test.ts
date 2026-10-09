@@ -109,6 +109,8 @@ function fixtures(fail = false) {
           ['POST /api/workspace/prs/open', 'POST', '/prs/open', '', { name: 'card', env: 'staging' }],
           ['POST /api/workspace/dev-env', 'POST', '/dev-env', '', { name: 'card', frontend: 'web' }],
           ['POST /api/workspace/dev-env/preview', 'POST', '/dev-env/preview', '', { name: 'card' }],
+          ['GET /api/workspace/dev-env', 'GET', '/dev-env', 'name=card', undefined],
+          ['POST /api/workspace/dev-env/logs', 'POST', '/dev-env/logs', '', { name: 'card', file: 'api.log' }],
           ['POST /api/workspace/dev-env/stop', 'POST', '/dev-env/stop', '', { name: 'card' }],
           ['POST /api/workspace/dev-env/open', 'POST', '/dev-env/open', '', { name: 'card', repo: 'web' }],
           ['POST /api/workspace/dev-env/agent', 'POST', '/dev-env/agent', '', { name: 'card' }],
@@ -150,15 +152,15 @@ function fixtures(fail = false) {
 
 test('contract matrix: every JSON route forwards its exact method/path/query/body and returns the JSON envelope', async () => {
   const { routes, calls } = fixtures()
-  expect(routes).toHaveLength(26)
+  expect(routes).toHaveLength(28)
   for (const route of routes) {
     const response = await route.handler(request(route))
     expect(response, route.label).toMatchObject({ status: 200, headers: { 'Content-Type': 'application/json' } })
   }
   const workspaceCalls = calls.filter((call) => call.area === 'workspace')
-  expect(workspaceCalls).toHaveLength(18)
+  expect(workspaceCalls).toHaveLength(20)
   expect(workspaceCalls.map(({ args }) => [args[0], args[1], args[2], args[3]])).toEqual(
-    routes.slice(0, 18).map((route) => [route.path, route.method, route.query ?? '', route.body]),
+    routes.slice(0, 20).map((route) => [route.path, route.method, route.query ?? '', route.body]),
   )
 })
 
