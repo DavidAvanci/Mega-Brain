@@ -656,7 +656,7 @@ export function CardModal({
           </DialogClose>
         </div>
         <div
-          className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,3fr)_minmax(260px,2fr)] lg:grid-cols-[minmax(0,1fr)_8px_var(--chat-width)] lg:grid-rows-1"
+          className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(380px,3fr)_minmax(480px,2fr)] overflow-y-auto lg:grid-cols-[minmax(0,1fr)_8px_var(--chat-width)] lg:grid-rows-1 lg:overflow-hidden"
           style={{ '--chat-width': `${chatWidth}px` } as CSSProperties}
         >
           <div className="flex min-h-0 min-w-0 flex-col">

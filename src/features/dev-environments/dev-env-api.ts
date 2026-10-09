@@ -1,6 +1,6 @@
 import type { DevEnvLogs, DevEnvPreview, DevEnvStartOptions } from '../../../shared/domain/dev-environments'
 import type { DevEnvInfo } from '../../../shared/domain/agents'
-import type { ChatEvent } from '../../../shared/contracts/chat'
+import type { ChatEvent, ChatModelSelection } from '../../../shared/contracts/chat'
 import type { ChatHistory } from '@/features/cards/api/card-detail-api'
 import { apiClient } from '@/shared/api/api-client'
 import { requestJson } from '@/shared/api/request-json'
@@ -25,11 +25,12 @@ export const sendDevEnvAgent = (
   text: string,
   onEvent: (event: ChatEvent) => void,
   configuration?: DevEnvStartOptions,
+  selection?: ChatModelSelection,
 ) =>
   apiClient().sse('/api/dev-env-agent/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, text, configuration }),
+    body: JSON.stringify({ name, text, configuration, selection }),
     onEvent: (event) => onEvent(event as ChatEvent),
   })
 

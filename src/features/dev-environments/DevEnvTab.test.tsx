@@ -135,12 +135,18 @@ test('configuração inicia pelo agente no terminal e renderiza comandos e saíd
   await act(async () => button('Configurar ambiente').click())
   expect(api.send).not.toHaveBeenCalled()
   await act(async () => button('Iniciar com agente').click())
-  expect(api.send).toHaveBeenCalledWith('MB-1', expect.stringContaining('Prepare e inicie'), expect.any(Function), {
-    docker: false,
-    projects: [{ repo: 'api-garcom-digital', port: 4100 }],
-  })
+  expect(api.send).toHaveBeenCalledWith(
+    'MB-1',
+    expect.stringContaining('Prepare e inicie'),
+    expect.any(Function),
+    {
+      docker: false,
+      projects: [{ repo: 'api-garcom-digital', port: 4100 }],
+    },
+    { provider: 'claude', model: 'default' },
+  )
   expect(api.start).not.toHaveBeenCalled()
-  expect(host.querySelector('[role="log"]')?.textContent).toContain('$ npm run dev')
+  expect(host.querySelector('[role="log"]')?.textContent).toContain('npm run dev')
   expect(host.querySelector('[role="log"]')?.textContent).toContain('Listening on 4100')
 })
 

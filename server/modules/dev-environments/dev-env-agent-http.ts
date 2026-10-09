@@ -35,7 +35,7 @@ export const devEnvAgentSendHttp =
       },
       stream(emit) {
         try {
-          service.send(name, String(body.text ?? ''), emit, body.configuration)
+          service.send(name, String(body.text ?? ''), emit, body.configuration, body.selection)
         } catch (error) {
           emit({ type: 'done', error: error instanceof Error ? error.message : String(error) })
         }

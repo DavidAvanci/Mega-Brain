@@ -37,3 +37,8 @@ commands.allow = ["minimize_main_window", "toggle_maximize_main_window", "close_
 identifier = "allow-list-island-monitors"
 description = "Allows the WebView to list displays for the native activity island."
 commands.allow = ["list_island_monitors"]
+
+[[permission]]
+identifier = "allow-export-chat-markdown"
+description = "Allows exporting chat Markdown only to a file chosen in the native Save dialog."
+commands.allow = ["export_chat_markdown"]

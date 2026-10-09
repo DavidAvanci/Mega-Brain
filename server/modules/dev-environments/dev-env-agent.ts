@@ -12,6 +12,7 @@ import { previewDevEnv, readDevEnv, saveDevEnvConfiguration } from './dev-env'
 import { readDevEnvLogs, redactDevEnvOutput } from './dev-env-logs'
 import { assertTestWorkspace } from '../../test-safety'
 import { devEnvCapability } from './dev-env-capability'
+import { parseChatModelSelection } from '../../chat/model-selection'
 
 // Plain Node works in both the checkout and the packaged desktop runtime.
 export const DEV_ENV_AGENT_ADAPTER = `
@@ -42,7 +43,7 @@ try {
 `
 
 export type DevEnvAgentService = Pick<ChatService, 'history' | 'abort' | 'shutdown'> & {
-  send(name: string, text: string, emit: (event: ChatEvent) => void, configuration?: unknown): void
+  send(name: string, text: string, emit: (event: ChatEvent) => void, configuration?: unknown, selection?: unknown): void
 }
 
 export function createDevEnvAgentService(
@@ -100,7 +101,8 @@ export function createDevEnvAgentService(
     history: chat.history,
     abort: chat.abort,
     shutdown: chat.shutdown,
-    send(name, text, emit, configuration) {
+    send(name, text, emit, configuration, selection) {
+      const model = parseChatModelSelection(selection)
       const options: DevEnvStartOptions | undefined = parseDevEnvOptions(configuration)
       if (options) {
         assertTestWorkspace(resolve(config.workspaceDir))
@@ -111,7 +113,7 @@ export function createDevEnvAgentService(
           )
         saveDevEnvConfiguration(path, options, runner, config.preferences.settingsFile)
       }
-      chat.send(name, redactDevEnvOutput(text), emit)
+      chat.send(name, redactDevEnvOutput(text), emit, undefined, model)
     },
   }
 }

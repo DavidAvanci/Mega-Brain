@@ -119,16 +119,17 @@ test('SSE encaminha configuração, comandos e saída, e cancelamento interrompe
     shutdown: async () => {},
   })
   const configuration = { docker: false, projects: [{ repo: 'api', port: 4100 }] }
+  const selection = { provider: 'chatgpt', model: 'gpt-fixture' }
   const response = await handler({
     method: 'POST',
     path: '/api/dev-env-agent/send',
     headers: {},
     query: new URLSearchParams(),
-    body: { name: 'MB-1', text: 'Inicie', configuration },
+    body: { name: 'MB-1', text: 'Inicie', configuration, selection },
   })
   const events: ChatEvent[] = []
   response.stream((event) => events.push(event))
-  expect(send).toHaveBeenCalledWith('MB-1', 'Inicie', expect.any(Function), configuration)
+  expect(send).toHaveBeenCalledWith('MB-1', 'Inicie', expect.any(Function), configuration, selection)
   expect(events).toEqual([{ type: 'tool', tool: 'npm run dev' }, { type: 'output', text: 'ready' }, { type: 'done' }])
   response.cancel?.()
   expect(abort).toHaveBeenCalledWith('MB-1')

@@ -19,3 +19,6 @@ export type ChatEvent =
   | { type: 'settings'; settings: ChatAgentSettings }
   | { type: 'queued' }
   | { type: 'done'; error?: string }
+import type { LlmProvider } from '../domain/settings'
+
+export type ChatModelSelection = { provider: LlmProvider; model: string }

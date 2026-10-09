@@ -18,7 +18,8 @@ import { agentCwds } from '../agent-process'
 import { readAgent } from '../workspace/stage-agent-status'
 import { codexProfileEnvironment } from '../codex-profiles/service'
 import { createWorkspacePathResolver } from '../workspace/path'
-import type { ChatAgentSettings, ChatEntry, ChatEvent } from '../../shared/contracts/chat'
+import type { ChatAgentSettings, ChatEntry, ChatEvent, ChatModelSelection } from '../../shared/contracts/chat'
+import { parseChatModelSelection, readChatModelSelection, saveChatModelSelection } from './model-selection'
 import { loadMegaBrainConfig, type MegaBrainConfig } from '../config'
 import { nodeProcessRunner, type ProcessChild, type ProcessOwner, type ProcessRunner } from '../process'
 import { assertTestWorkspace } from '../test-safety'
@@ -199,7 +200,7 @@ function busyReason(path: string, running: Map<string, ProcessChild>): string | 
   return undefined
 }
 
-function chatArgs(text: string, session: string | undefined): string[] {
+function chatArgs(text: string, session: string | undefined, model = 'default'): string[] {
   return [
     '-p',
     text,
@@ -213,6 +214,7 @@ function chatArgs(text: string, session: string | undefined): string[] {
     '{"mcpServers":{}}',
     '--permission-mode',
     'bypassPermissions',
+    ...(model === 'default' ? [] : ['--model', model]),
   ]
 }
 
@@ -228,6 +230,7 @@ function streamChat(
   owner?: ProcessOwner,
   environment?: NodeJS.ProcessEnv,
   terminal = false,
+  model = 'default',
 ): void {
   const usageId = startAgentUsage(path, new Date(), {
     label: terminal ? 'dev-environment' : 'chat',
@@ -236,7 +239,7 @@ function streamChat(
   let costUsd: number | undefined
   const child = runner.spawn(
     claudeBin(executable),
-    chatArgs(text, terminal ? undefined : resolveSession(path, projectsRoot)),
+    chatArgs(text, terminal ? undefined : resolveSession(path, projectsRoot), model),
     {
       cwd: path,
       detached: terminal && process.platform !== 'win32',
@@ -292,9 +295,16 @@ function streamCodexChat(
   owner?: ProcessOwner,
   environment?: NodeJS.ProcessEnv,
   terminal = false,
+  model = 'default',
 ): void {
   const usageId = startAgentUsage(path, new Date(), { label: terminal ? 'dev-environment' : 'chat', provider: 'codex' })
-  const args = ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', text]
+  const args = [
+    'exec',
+    '--json',
+    '--dangerously-bypass-approvals-and-sandbox',
+    ...(model === 'default' ? [] : ['--model', model]),
+    text,
+  ]
   const child = runner.spawn(codexBin(executable), args, {
     cwd: path,
     detached: terminal && process.platform !== 'win32',
@@ -358,10 +368,11 @@ export interface ChatService {
     sessionId: string | null
     entries: ChatEntry[]
     settings?: ChatAgentSettings | null
+    selection?: ChatModelSelection
     executionRunning?: boolean
     pendingMessages?: number
   }>
-  send(name: string, text: string, emit: (event: ChatEvent) => void, refs?: KnowledgeRef[]): void
+  send(name: string, text: string, emit: (event: ChatEvent) => void, refs?: KnowledgeRef[], selection?: unknown): void
   abort(name: string): boolean
   shutdown?(): Promise<void>
 }
@@ -393,12 +404,14 @@ export function createChatService(
   return {
     async history(name) {
       const path = folderPath(name)
+      const selection = readChatModelSelection(conversationPath(path), config.preferences?.llmProvider)
       if (terminal)
         return {
           sessionId: null,
           entries: taskConversation(conversationPath(path)),
           executionRunning: running.has(path),
           pendingMessages: 0,
+          selection,
         }
       const projectsRoot = config.directories.claudeProjects
       const saved = taskConversation(path)
@@ -411,18 +424,22 @@ export function createChatService(
           : []
       })
       const legacy =
-        config.preferences?.llmProvider === 'chatgpt' ? { entries: [], settings: null } : transcript(path, projectsRoot)
+        selection.provider === 'chatgpt' ? { entries: [], settings: null } : transcript(path, projectsRoot)
       return {
         sessionId: resolveSession(path, projectsRoot) ?? null,
         settings: legacy.settings,
+        selection,
         entries: [...stages, ...(saved.length ? saved : legacy.entries)].slice(-500),
         executionRunning: readAgent(path)?.status === 'rodando',
         pendingMessages: pendingTaskMessages(path).length,
       }
     },
-    send(name, text, emit, refs) {
+    send(name, text, emit, refs, requestedSelection) {
       if (closing) throw new Error('O serviço de chat está encerrando.')
       const path = folderPath(name)
+      const selection =
+        parseChatModelSelection(requestedSelection) ??
+        readChatModelSelection(conversationPath(path), config.preferences?.llmProvider)
       const message = String(text ?? '').trim()
       if (!message) throw new Error('Mensagem vazia')
       if (message.length > 12_000) throw new Error('A mensagem deve ter no máximo 12000 caracteres')
@@ -445,7 +462,8 @@ export function createChatService(
         )
       const conversation = conversationPath(path)
       if (terminal) mkdirSync(conversation, { recursive: true, mode: 0o700 })
-      if (!terminal && !taskConversation(path).length && config.preferences?.llmProvider !== 'chatgpt')
+      saveChatModelSelection(conversation, selection)
+      if (!terminal && !taskConversation(path).length && selection.provider !== 'chatgpt')
         for (const entry of transcript(path, config.directories.claudeProjects).entries) appendConversation(path, entry)
       const previous = taskConversation(conversation)
         .slice(-30)
@@ -463,7 +481,7 @@ export function createChatService(
         config.preferences?.settingsFile,
       )
       const profileEnvironment =
-        config.preferences?.llmProvider === 'chatgpt'
+        selection.provider === 'chatgpt'
           ? codexProfileEnvironment(
               config.preferences?.settingsFile ??
                 join(config.directories.home, '.config', 'mega-brain', 'settings.json'),
@@ -475,7 +493,7 @@ export function createChatService(
         ...profileEnvironment,
         ...knowledgeAgentEnvironment(config.preferences?.settingsFile, {
           kind: 'agent',
-          name: config.preferences?.llmProvider === 'chatgpt' ? 'Codex' : 'Claude',
+          name: selection.provider === 'chatgpt' ? 'Codex' : 'Claude',
           taskId: String(name),
           sessionId: randomUUID(),
         }),
@@ -512,7 +530,7 @@ export function createChatService(
         }
         emit(event)
       }
-      if (config.preferences?.llmProvider === 'chatgpt')
+      if (selection.provider === 'chatgpt')
         streamCodexChat(
           path,
           prompt,
@@ -524,6 +542,7 @@ export function createChatService(
           owner,
           environment,
           terminal,
+          selection.model,
         )
       else
         streamChat(
@@ -538,6 +557,7 @@ export function createChatService(
           owner,
           environment,
           terminal,
+          selection.model,
         )
       options.busyPaths?.add(path)
       running.get(path)?.once('close', () => options.busyPaths?.delete(path))

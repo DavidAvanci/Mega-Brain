@@ -1,6 +1,6 @@
 import { ChildProcess, type SpawnOptions } from 'node:child_process'
 import { PassThrough } from 'node:stream'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
@@ -152,4 +152,60 @@ test('texto parcial de Claude não expõe credenciais divididas entre eventos', 
       true,
     ),
   ).toBeNull()
+})
+
+test('modelo e provedor são aplicados à CLI, persistidos por conversa e não alteram o padrão global', async () => {
+  const fake = fixture()
+  fake.config.executables.codex = 'codex-fixture'
+  fake.config.executables.claude = 'claude-fixture'
+  const busy = new Set<string>()
+  const owner = createProcessOwner()
+  const environment = createDevEnvAgentService(fake.config, fake.runner, owner, busy)
+  const selection = { provider: 'chatgpt', model: 'gpt-fixture' }
+  environment.send('card', 'Verifique a porta', () => {}, undefined, selection)
+  expect(fake.calls[0].command).toBe('codex-fixture')
+  expect(fake.calls[0].args[fake.calls[0].args.indexOf('--model') + 1]).toBe('gpt-fixture')
+  expect(fake.config.preferences.llmProvider).toBe('claude')
+  expect(() =>
+    environment.send('card', 'Outro modelo', () => {}, undefined, { provider: 'claude', model: 'sonnet' }),
+  ).toThrow('Já há')
+  expect((await environment.history('card')).selection).toEqual(selection)
+  output(fake.children[0], { type: 'turn.completed' })
+  fake.children[0].emit('close', 0)
+  const reopened = createDevEnvAgentService(fake.config, fake.runner, owner, busy)
+  reopened.send('card', 'Continue', () => {})
+  expect(fake.calls[1].command).toBe('codex-fixture')
+  expect(fake.calls[1].args).toContain('gpt-fixture')
+  output(fake.children[1], { type: 'turn.completed' })
+  fake.children[1].emit('close', 0)
+  const chat = createChatService(fake.config, fake.runner, undefined, { busyPaths: busy })
+  expect((await chat.history('card')).selection).toEqual({ provider: 'claude', model: 'default' })
+  chat.send('card', 'Converse', () => {}, [], { provider: 'claude', model: 'sonnet' })
+  expect(fake.calls[2].command).toBe('claude-fixture')
+  expect(fake.calls[2].args[fake.calls[2].args.indexOf('--model') + 1]).toBe('sonnet')
+  output(fake.children[2], { type: 'result', subtype: 'success' })
+  fake.children[2].emit('close', 0)
+  const nextChat = createChatService(fake.config, fake.runner)
+  expect((await nextChat.history('card')).selection).toEqual({ provider: 'claude', model: 'sonnet' })
+  expect((await reopened.history('card')).selection).toEqual(selection)
+})
+
+test('seleções inválidas não iniciam processos nem alteram a configuração do ambiente', () => {
+  const fake = fixture()
+  const environment = createDevEnvAgentService(fake.config, fake.runner, createProcessOwner(), new Set())
+  for (const selection of [
+    null,
+    {},
+    { provider: 'outro', model: 'sonnet' },
+    { provider: 'claude', model: '--debug' },
+    { provider: 'claude', model: 'sonnet\n--debug' },
+  ]) {
+    expect(() => environment.send('card', 'Inicie', () => {}, { docker: false, projects: [] }, selection)).toThrow()
+  }
+  expect(fake.calls).toHaveLength(0)
+  expect(existsSync(join(fake.path, '.dev-env', 'configuration.json'))).toBe(false)
+  expect(existsSync(join(fake.path, '.dev-env', 'agent', 'chat-model.json'))).toBe(false)
+  environment.send('card', 'Automático', () => {}, undefined, { provider: 'claude', model: 'default' })
+  expect(fake.calls[0].args).not.toContain('--model')
+  fake.children[0].emit('close', 0)
 })
