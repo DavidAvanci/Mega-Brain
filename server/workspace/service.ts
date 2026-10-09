@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { startDevEnv, stopDevEnv } from '../modules/dev-environments/dev-env'
+import { previewDevEnv, startDevEnv, stopDevEnv } from '../modules/dev-environments/dev-env'
+import { parseDevEnvOptions } from '../modules/dev-environments/dev-env-options'
 import { createOwnedProcessRunner, nodeProcessRunner, type ProcessOwner, type ProcessRunner } from '../process'
 import { editorExecutable } from '../app-settings'
 import { assertTestWorkspace } from '../test-safety'
@@ -121,6 +122,7 @@ export function createWorkspaceService(
         await openPullRequests(cardPath, name, data.env, data.project, config, runner)
         return { ok: true }
       }
+      if (path === '/dev-env/preview') return previewDevEnv(cardPath, runner, config.preferences.settingsFile)
       if (path === '/dev-env/stop') {
         stopDevEnv(cardPath)
         return { ok: true }
@@ -157,6 +159,7 @@ export function createWorkspaceService(
             data.frontend ? String(data.frontend) : undefined,
             owner ? createOwnedProcessRunner(runner, owner) : runner,
             config.preferences.settingsFile,
+            parseDevEnvOptions(data.configuration),
           ),
         }
       if (path === '/update') {

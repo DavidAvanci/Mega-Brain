@@ -191,19 +191,6 @@ export const stopCardAgent = (id: string) =>
   action('/api/agents/stop', 'Falha ao interromper o agente', { id }, true)
 export const clearLatestStage = (name: string, stage: string) =>
   action('/api/workspace/stage/clear', 'Falha ao limpar a etapa', { name, stage }, true)
-export const startDevEnv = async (name: string, frontend?: string): Promise<string[] | null> => {
-  try {
-    const result = (await workspaceAction('/api/workspace/dev-env', 'Falha ao iniciar o ambiente dev', {
-      name,
-      frontend,
-    })) as { needsFrontend?: string[] }
-    if (result.needsFrontend) return result.needsFrontend
-    await refresh()
-  } catch (error) {
-    setCardsState({ error: message(error) })
-  }
-  return null
-}
 export const stopDevEnv = (name: string) =>
   action('/api/workspace/dev-env/stop', 'Falha ao parar o ambiente dev', { name }, true)
 export const openDevEnv = (name: string, repo: string) =>

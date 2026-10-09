@@ -1,4 +1,5 @@
 import type { IslandVisualState } from './activity-island'
+import type { DevEnvStartOptions } from './dev-environments'
 
 export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'morto' | 'pausado'
 
@@ -91,5 +92,6 @@ export interface DevEnvInfo {
   phase?: string
   error?: string
   warnings?: string[]
+  configuration?: DevEnvStartOptions
   apps: DevEnvApp[]
 }

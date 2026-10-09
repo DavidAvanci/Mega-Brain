@@ -88,6 +88,10 @@ A variável `MEGA_BRAIN_TERMINAL_BIN`, quando definida no ambiente do backend, t
 
 Os links dos ambientes locais e dos pull requests usam o navegador padrão do macOS. Para escolher outro navegador, `MEGA_BRAIN_BROWSER_BIN` aceita o caminho de um aplicativo `.app` ou de um executável; aplicativos `.app` seguem as preferências de janelas e abas do navegador.
 
+**Iniciar ambiente dev** abre uma prévia dos projetos detectados, com pasta, comando e porta. Selecione os projetos que deseja executar e ajuste as portas antes de iniciar. Também é possível subir apenas o backend; frontends cadastrados aparecem como opções quando só as APIs legadas foram alteradas. Portas inválidas, repetidas ou já ocupadas impedem a execução. A seleção, as portas e a opção de Docker são preservadas para a próxima tentativa do card.
+
+No macOS, **Iniciar containers Docker** fica desmarcado por padrão. Ative a opção se quiser iniciar os containers das APIs legadas. Com ela desmarcada, o backend usa o banco e o Redis já configurados no ambiente local. O botão de tentar novamente reabre a configuração para corrigir a seleção ou as portas.
+
 O build macOS gera o DMG sem automatizar o Finder, evitando que permissões de automação ou a sessão gráfica interrompam o empacotamento. A imagem mantém o aplicativo e o link para Applications, com o layout padrão do Finder. Para usar o posicionamento visual do Tauri, execute `TAURI_BUNDLER_DMG_IGNORE_CI=true npm run tauri:build` em uma sessão gráfica com permissão para controlar o Finder.
 
 Para trabalhar apenas na interface web durante o desenvolvimento:
