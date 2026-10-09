@@ -18,9 +18,10 @@ type Props = {
   cardId: string
   preview: DevEnvPreview
   onClose: () => void
+  onStartWithAgent?: (configuration: DevEnvStartOptions) => void
 }
 
-export function DevEnvConfiguration({ cardId, preview, onClose }: Props) {
+export function DevEnvConfiguration({ cardId, preview, onClose, onStartWithAgent }: Props) {
   const [projects, setProjects] = useState(
     preview.projects.map((project) => ({ ...project, port: String(project.port) })),
   )
@@ -116,6 +117,15 @@ export function DevEnvConfiguration({ cardId, preview, onClose }: Props) {
                     <p className="break-all font-mono text-[11px]">{project.directory}</p>
                     <p className="break-all font-mono text-[11px]">{project.command}</p>
                     <p className="font-mono tabular-nums">localhost:{project.port || '…'}</p>
+                    {project.services && (
+                      <ul className="space-y-1">
+                        {project.services.map((service) => (
+                          <li key={service.name}>
+                            {service.name} · localhost:{service.name === 'external-api' ? project.port : service.port}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </div>
                 <label className="space-y-1 pt-1 text-xs text-muted-foreground">
@@ -173,6 +183,21 @@ export function DevEnvConfiguration({ cardId, preview, onClose }: Props) {
           <Button variant="outline" className="min-h-10" disabled={pending} onClick={onClose}>
             Cancelar
           </Button>
+          {onStartWithAgent && (
+            <Button
+              variant="outline"
+              className="min-h-10"
+              disabled={pending || !selected.length || Boolean(validation)}
+              onClick={() =>
+                onStartWithAgent({
+                  projects: selected.map((project) => ({ repo: project.repo, port: Number(project.port) })),
+                  docker: dockerNeeded && docker,
+                })
+              }
+            >
+              Iniciar com agente
+            </Button>
+          )}
           <Button
             className="min-h-10"
             disabled={pending || !selected.length || Boolean(validation)}

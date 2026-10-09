@@ -38,6 +38,8 @@ export interface GeneralSettings {
   shellCommand?: string
   workspaceDir: string
   worktreesDir: string
+  /** Stored beside the cards directory; omitted by older backends. */
+  readonly knowledgeDir?: string
   llmProvider: LlmProvider
   jiraSite: string
   jiraEmail: string

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
 import { knowledgeAgentEnvironment } from './agent'
-import { knowledgeFile, knowledgeService } from './service'
+import { workspaceKnowledgeFile, knowledgeService } from './service'
 import { loadMegaBrainConfig } from '../config'
 import { createServerRuntime } from '../runtime'
 import { createStandaloneServer, type StandaloneServer } from '../main'
@@ -20,7 +20,7 @@ test.each(['Codex', 'Claude'])(
     const root = mkdtempSync(join(tmpdir(), 'mega-knowledge-agent-'))
     roots.push(root)
     const config = loadMegaBrainConfig({
-      env: { MEGA_BRAIN_SETTINGS_FILE: join(root, 'settings.json'), MEGA_BRAIN_WORKSPACE_DIR: join(root, 'workspace') },
+      env: { MEGA_BRAIN_SETTINGS_FILE: join(root, 'settings.json'), WORKSPACE_DIR: join(root, 'cards') },
       homeDir: root,
     })
     const runtime = createServerRuntime({ config })
@@ -52,7 +52,7 @@ test.each(['Codex', 'Claude'])(
     const input = join(root, 'input.json')
     writeFileSync(input, JSON.stringify({ title: 'Contrato', markdown: '# Regra\n\n- Autenticação local' }))
     await run(['create', input])
-    const service = knowledgeService(knowledgeFile(config.preferences.settingsFile))
+    const service = knowledgeService(workspaceKnowledgeFile(config.workspaceDir))
     const page = service.list().pages[0]
     expect(page.actor).toMatchObject({ name, taskId: 'MB-001', sessionId: 'run-1' })
     expect(await run(['search', 'Autenticação'])).toMatchObject([{ id: page.id }])

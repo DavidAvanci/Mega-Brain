@@ -1,4 +1,5 @@
 import { CardAgentControl } from './CardAgentControl'
+import { CardChatPanel, type EnvironmentChatRequest } from './CardChatPanel'
 import { CardKnowledgeAttachments } from '@/features/knowledge/CardKnowledgeAttachments'
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -65,8 +66,10 @@ import {
   type PrState,
 } from '../../../../shared/domain/cards'
 
-const ChatTab = lazy(() => import('@/features/chat/ChatTab').then((module) => ({ default: module.ChatTab })))
 const DiffTab = lazy(() => import('./DiffTab').then((module) => ({ default: module.DiffTab })))
+const DevEnvTab = lazy(() =>
+  import('@/features/dev-environments/DevEnvTab').then((module) => ({ default: module.DevEnvTab })),
+)
 
 const FILE_TABS = [
   { label: 'Plano', file: 'PLAN.md', outline: true, checklist: false },
@@ -570,6 +573,8 @@ export function CardModal({
   const [savingDescription, setSavingDescription] = useState(false)
   const [descriptionError, setDescriptionError] = useState<string | null>(null)
   const [chatWidth, setChatWidth] = useState(360)
+  const [environmentRequest, setEnvironmentRequest] = useState<EnvironmentChatRequest>()
+  const [environmentAgentRunning, setEnvironmentAgentRunning] = useState(false)
   const resizingDivider = useRef(false)
 
   const resizeChat = (event: PointerEvent<HTMLDivElement>) => {
@@ -651,7 +656,7 @@ export function CardModal({
           </DialogClose>
         </div>
         <div
-          className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,3fr)_minmax(260px,2fr)] lg:grid-cols-[minmax(0,1fr)_8px_var(--chat-width)] lg:grid-rows-1"
+          className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(380px,3fr)_minmax(480px,2fr)] overflow-y-auto lg:grid-cols-[minmax(0,1fr)_8px_var(--chat-width)] lg:grid-rows-1 lg:overflow-hidden"
           style={{ '--chat-width': `${chatWidth}px` } as CSSProperties}
         >
           <div className="flex min-h-0 min-w-0 flex-col">
@@ -745,6 +750,12 @@ export function CardModal({
                 <TabsTrigger value="repos" className="flex-none px-2.5">
                   Repos{repos?.length ? ` (${repos.length})` : ''}
                 </TabsTrigger>
+                <TabsTrigger value="environments" className="flex-none px-2.5">
+                  Ambientes
+                  {card.devEnv?.status === 'erro' && (
+                    <span className="size-1.5 rounded-full bg-destructive" aria-label="Ambiente com falha" />
+                  )}
+                </TabsTrigger>
                 {card.prs && (
                   <TabsTrigger value="links" className="flex-none px-2.5">
                     Links
@@ -805,6 +816,23 @@ export function CardModal({
               <TabsContent value="repos" className="overflow-y-auto px-5 py-4">
                 {repos ? <ReposList repos={repos} /> : <LoadingLines />}
               </TabsContent>
+              <TabsContent value="environments" keepMounted className="min-h-0 overflow-hidden px-5 py-4">
+                <Suspense fallback={<p className="text-muted-foreground">Carregando ambientes…</p>}>
+                  <DevEnvTab
+                    key={card.id}
+                    card={card}
+                    agentRunning={environmentAgentRunning}
+                    onEnvironmentChat={(text, configuration) =>
+                      setEnvironmentRequest((previous) => ({
+                        id: (previous?.id ?? 0) + 1,
+                        cardId: card.id,
+                        text,
+                        configuration,
+                      }))
+                    }
+                  />
+                </Suspense>
+              </TabsContent>
               {card.prs && (
                 <TabsContent value="links" className="overflow-y-auto px-5 py-4">
                   <PrLinksList card={card} />
@@ -843,19 +871,16 @@ export function CardModal({
             aria-label="Chat do card"
           >
             <div className={cn('shrink-0 border-b px-5 py-3', !expanded && 'lg:pr-24')}>
-              <h2 className="text-sm font-semibold">Chat e execuções</h2>
-              <p className="text-[11px] text-muted-foreground">Acompanhe a task e envie orientações ao agente.</p>
+              <h2 className="text-sm font-semibold">Chats do card</h2>
+              <p className="text-[11px] text-muted-foreground">Acompanhe as execuções ou converse sobre o ambiente.</p>
             </div>
             <div className="min-h-0 flex-1">
-              <Suspense
-                fallback={
-                  <div className="px-5 py-4">
-                    <LoadingLines />
-                  </div>
-                }
-              >
-                <ChatTab cardId={card.id} />
-              </Suspense>
+              <CardChatPanel
+                key={card.id}
+                cardId={card.id}
+                environmentRequest={environmentRequest}
+                onEnvironmentRunningChange={setEnvironmentAgentRunning}
+              />
             </div>
           </aside>
         </div>

@@ -77,7 +77,7 @@ async function port(repo: string, value: string) {
   })
 }
 
-test('iniciar e tentar novamente abrem a prévia sem iniciar processos', async () => {
+test('resumo de ambientes abre a aba sem iniciar processos', async () => {
   const card: Card = {
     id: 'MB-1',
     title: 'Card',
@@ -87,25 +87,53 @@ test('iniciar e tentar novamente abrem a prévia sem iniciar processos', async (
     folder: '/tmp/MB-1',
     createdAt: '2026-10-09T10:00:00Z',
   }
-  await act(async () => root.render(<DevEnvPanel card={card} />))
-  const button = [...host.querySelectorAll<HTMLButtonElement>('button')].find((item) =>
-    item.textContent?.includes('Iniciar ambiente dev'),
-  )!
+  const open = vi.fn()
+  await act(async () => root.render(<DevEnvPanel card={card} onOpen={open} />))
+  const button = host.querySelector<HTMLButtonElement>('button[aria-label="Abrir aba Ambientes"]')!
   await act(async () => button.click())
-  expect(api.preview).toHaveBeenCalledWith('MB-1')
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Configurar ambiente dev')
+  expect(open).toHaveBeenCalledOnce()
+  expect(api.preview).not.toHaveBeenCalled()
   expect(api.start).not.toHaveBeenCalled()
   await act(async () => root.unmount())
   root = createRoot(host)
   await act(async () =>
-    root.render(<DevEnvPanel card={{ ...card, devEnv: { status: 'erro', error: 'Docker indisponível', apps: [] } }} />),
+    root.render(
+      <DevEnvPanel
+        onOpen={open}
+        card={{
+          ...card,
+          devEnv: {
+            status: 'erro',
+            failure: { repo: 'api-garcom-digital' },
+            error: 'Timeout esperando a porta 3333 responder',
+            apps: [],
+          },
+        }}
+      />,
+    ),
   )
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('button[aria-label="Configurar e tentar de novo"]')!.click(),
-  )
-  expect(api.preview).toHaveBeenCalledTimes(2)
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Abrir aba Ambientes"]')!.click())
+  expect(host.textContent).toContain('Ambiente com falha · api-garcom-digital')
+  expect(host.textContent).not.toContain('Timeout')
+  expect(open).toHaveBeenCalledTimes(2)
   expect(api.start).not.toHaveBeenCalled()
   expect(api.stop).not.toHaveBeenCalled()
+})
+
+test('iniciar com agente recebe a seleção e não dispara inicialização automática', async () => {
+  const agent = vi.fn()
+  await act(async () =>
+    root.render(<DevEnvConfiguration cardId="MB-1" preview={preview} onClose={vi.fn()} onStartWithAgent={agent} />),
+  )
+  await act(async () => checkbox('Executar manager-area').click())
+  await port('api-garcom-digital', '4100')
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Iniciar com agente')!
+      .click(),
+  )
+  expect(agent).toHaveBeenCalledWith({ docker: false, projects: [{ repo: 'api-garcom-digital', port: 4100 }] })
+  expect(api.start).not.toHaveBeenCalled()
 })
 
 test('envia só projetos marcados, porta editada e Docker desativado no macOS', async () => {

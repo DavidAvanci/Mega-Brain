@@ -38,6 +38,8 @@ Os níveis de fluxo ajustam as etapas: **Simples** gera apenas a checklist de im
 
 Os cards e as preferências ficam em arquivos locais. O backend do aplicativo desktop roda nativamente no macOS e no WSL no Windows, atendendo apenas em 127.0.0.1; veja [a documentação do backend](./server/README.md) para detalhes.
 
+A base de conhecimento fica em `knowledge/catalog.json`, ao lado da pasta dos cards. No macOS, o padrão é `~/Documents/Mega Brain/knowledge/catalog.json`. Ao atualizar, o aplicativo copia a base anterior para esse local quando ainda não existe um catálogo ali e mantém o arquivo original como backup. Configurações → Geral → Diretórios mostra o caminho e permite abrir a pasta.
+
 ## Compatibilidade atual
 
 | Área                    | Compatibilidade                                                                                                                                                                                                                                   |
@@ -88,9 +90,17 @@ A variável `MEGA_BRAIN_TERMINAL_BIN`, quando definida no ambiente do backend, t
 
 Os links dos ambientes locais e dos pull requests usam o navegador padrão do macOS. Para escolher outro navegador, `MEGA_BRAIN_BROWSER_BIN` aceita o caminho de um aplicativo `.app` ou de um executável; aplicativos `.app` seguem as preferências de janelas e abas do navegador.
 
-**Iniciar ambiente dev** abre uma prévia dos projetos detectados, com pasta, comando e porta. Selecione os projetos que deseja executar e ajuste as portas antes de iniciar. Também é possível subir apenas o backend; frontends cadastrados aparecem como opções quando só as APIs legadas foram alteradas. Portas inválidas, repetidas ou já ocupadas impedem a execução. A seleção, as portas e a opção de Docker são preservadas para a próxima tentativa do card.
+O atalho de ambientes no card abre a aba **Ambientes**, com uma tabela de portas previstas e em execução, estados dos projetos e atalhos para abrir os que estão rodando. Os logs ocupam o restante do painel, com abas laterais à esquerda para escolher o arquivo. **Configurar ambiente** abre uma prévia dos projetos detectados, com pasta, comando e porta. Selecione os projetos que deseja executar e ajuste as portas antes de iniciar. Também é possível subir apenas o backend; frontends cadastrados aparecem como opções quando só as APIs legadas foram alteradas. Portas inválidas, repetidas ou já ocupadas impedem a execução. A seleção, as portas e a opção de Docker são preservadas para a próxima tentativa do card.
 
-No macOS, **Iniciar containers Docker** fica desmarcado por padrão. Ative a opção se quiser iniciar os containers das APIs legadas. Com ela desmarcada, o backend usa o banco e o Redis já configurados no ambiente local. O botão de tentar novamente reabre a configuração para corrigir a seleção ou as portas.
+No macOS, **Iniciar containers Docker** fica desmarcado por padrão. Ative a opção se quiser iniciar os containers das APIs legadas. Com ela desmarcada, o backend usa o banco e o Redis já configurados no ambiente local. A aba explica falhas com o projeto, a porta e a etapa da inicialização, e permite corrigir a configuração ou **Diagnosticar com agente**.
+
+O painel de chats à direita tem abas **Execuções** e **Ambiente**, inclusive na visão full screen. **Pedir ao agente**, **Diagnosticar com agente** e **Iniciar com agente** abrem a conversa de ambiente; iniciar envia também a configuração escolhida. O terminal integrado usa o provedor Claude/Codex selecionado para a conversa e mostra comandos, saídas e respostas. Alternar as abas preserva os rascunhos e mantém a execução em andamento. O histórico de ambientes é separado do chat da tarefa. O agente recebe um adaptador Node com acesso restrito ao ambiente deste card, sem a credencial geral do aplicativo; os projetos iniciados por ele continuam sob o controle do Mega Brain. **Interromper agente** encerra a execução do agente; **Parar ambiente** encerra os projetos. Os logs exibidos são limitados aos últimos 64 KB por arquivo, com valores de credenciais reconhecidos ocultados.
+
+As respostas do chat usam Markdown; comandos, ferramentas e saídas ficam em blocos de atividade recolhidos, com uma prévia do comando e detalhes expansíveis. Saídas longas têm rolagem própria. O campo de mensagem cresce conforme você digita: **Enter** envia e **Shift+Enter** insere uma quebra de linha. Durante uma resposta, você pode preparar o próximo pedido e usar o botão de interrupção.
+
+No próprio campo, escolha **Claude** ou **Codex** e o modelo. **Automático** usa o padrão da CLI; os modelos do Codex vêm do catálogo do perfil ativo, com uma indicação quando o aplicativo usa o catálogo de referência. A escolha é salva ao enviar, separadamente por card e conversa. Durante uma execução de etapa, as orientações na aba Execuções continuam na fila do agente dessa etapa, e os seletores ficam bloqueados até o encerramento.
+
+O botão **Exportar chat** no cabeçalho salva o histórico carregado em Markdown, incluindo os comandos e as saídas recolhidos. No aplicativo desktop, abre uma janela nativa para escolher o arquivo; na versão web, inicia o download. A exportação durante uma resposta inclui o conteúdo recebido até aquele momento.
 
 O build macOS gera o DMG sem automatizar o Finder, evitando que permissões de automação ou a sessão gráfica interrompam o empacotamento. A imagem mantém o aplicativo e o link para Applications, com o layout padrão do Finder. Para usar o posicionamento visual do Tauri, execute `TAURI_BUNDLER_DMG_IGNORE_CI=true npm run tauri:build` em uma sessão gráfica com permissão para controlar o Finder.
 

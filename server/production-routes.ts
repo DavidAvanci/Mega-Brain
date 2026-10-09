@@ -3,7 +3,7 @@ import { createCodexModelsService } from './codex-models/service'
 import { createCodexProfilesStore } from './codex-profiles/service'
 import { codexProfilesHttp } from './codex-profiles/http'
 import { knowledgeHttp } from './knowledge/http'
-import { knowledgeFile, knowledgeService } from './knowledge/service'
+import { migrateKnowledgeStorage, knowledgeService } from './knowledge/service'
 import { configureKnowledgeConnection } from './knowledge/agent'
 import { activityIslandHttp } from './activity-island/service'
 import { cardTriageHttp } from './card-triage/http'
@@ -26,6 +26,13 @@ import type { ProcessOwner, ProcessRunner } from './process'
 import { createProcessOwner, nodeProcessRunner } from './process'
 import { workspaceHttp } from './workspace/http'
 import { createWorkspaceService } from './workspace/service'
+import { createDevEnvAgentService } from './modules/dev-environments/dev-env-agent'
+import {
+  devEnvAgentAbortHttp,
+  devEnvAgentControlHttp,
+  devEnvAgentHistoryHttp,
+  devEnvAgentSendHttp,
+} from './modules/dev-environments/dev-env-agent-http'
 import { RepositoryRegistry } from './repositories/registry'
 import { repositoryCatalogFile } from './repositories/catalog'
 import { repositoriesHttp } from './repositories/http'
@@ -53,11 +60,16 @@ export function productionRouteKey(method: string, path: string): string {
  */
 export function createProductionRouteTable(options: ProductionRouteOptions): ProductionRouteTable {
   const routes = new Map<string, ProductionRouteHandler>()
+  const knowledgeCatalogFile = () =>
+    migrateKnowledgeStorage(options.config.preferences.settingsFile, options.config.workspaceDir)
   const add = (method: string, path: string, handler: ProductionRouteHandler) =>
     routes.set(productionRouteKey(method, path), (async (request: import('./contracts').ApiRequest) => {
       const host = request.headers.host
       if (host && /^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(host))
-        configureKnowledgeConnection(options.config.preferences.settingsFile, { url: `http://${host}` })
+        configureKnowledgeConnection(options.config.preferences.settingsFile, {
+          url: `http://${host}`,
+          catalogFile: knowledgeCatalogFile,
+        })
       return handler(request)
     }) as ProductionRouteHandler)
   const runner = options.processRunner ?? nodeProcessRunner
@@ -69,8 +81,9 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   const config = options.config
   configureKnowledgeConnection(config.preferences.settingsFile, {
     url: `http://127.0.0.1:${config.mode === 'web' ? 5173 : config.server.port}`,
+    catalogFile: knowledgeCatalogFile,
   })
-  const knowledge = knowledgeHttp(knowledgeService(knowledgeFile(config.preferences.settingsFile)))
+  const knowledge = knowledgeHttp(knowledgeService(knowledgeCatalogFile))
   for (const [method, path] of [
     ['GET', '/api/knowledge'],
     ['POST', '/api/knowledge'],
@@ -120,10 +133,21 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     workspaceDir: config.workspaceDir,
     worktreesDir: config.worktreesDir,
   })
-  const chat = createChatService(config, runner, owner)
-  const workspaceAdapter = workspaceHttp(
-    createWorkspaceService(config, runner, owner, () => agentService.list().sessions, codexModels),
+  const busyAgentPaths = new Set<string>()
+  const chat = createChatService(config, runner, owner, { busyPaths: busyAgentPaths })
+  const environmentAgent = createDevEnvAgentService(config, runner, owner, busyAgentPaths)
+  add('GET', '/api/dev-env-agent', devEnvAgentHistoryHttp(environmentAgent))
+  add('POST', '/api/dev-env-agent/send', devEnvAgentSendHttp(environmentAgent))
+  add('POST', '/api/dev-env-agent/abort', devEnvAgentAbortHttp(environmentAgent))
+  const workspaceService = createWorkspaceService(
+    config,
+    runner,
+    owner,
+    () => agentService.list().sessions,
+    codexModels,
   )
+  const workspaceAdapter = workspaceHttp(workspaceService)
+  add('POST', '/api/dev-env-agent/control', devEnvAgentControlHttp(workspaceService))
   // The workspace handler predates the common /api registry and intentionally
   // keeps its compact domain-relative paths. Normalize once at composition,
   // rather than teaching either HTTP transport a workspace-specific rule.
@@ -175,12 +199,15 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['GET', '/api/workspace/diff/standard'],
     ['POST', '/api/workspace'],
     ['POST', '/api/workspace/settings'],
+    ['POST', '/api/workspace/settings/open-directory'],
     ['POST', '/api/workspace/open'],
     ['POST', '/api/workspace/diff'],
     ['POST', '/api/workspace/terminal'],
     ['POST', '/api/workspace/prs/open'],
     ['POST', '/api/workspace/dev-env'],
     ['POST', '/api/workspace/dev-env/preview'],
+    ['POST', '/api/workspace/dev-env/logs'],
+    ['GET', '/api/workspace/dev-env'],
     ['POST', '/api/workspace/dev-env/stop'],
     ['POST', '/api/workspace/dev-env/open'],
     ['POST', '/api/workspace/dev-env/agent'],
