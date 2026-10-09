@@ -26,6 +26,13 @@ import type { ProcessOwner, ProcessRunner } from './process'
 import { createProcessOwner, nodeProcessRunner } from './process'
 import { workspaceHttp } from './workspace/http'
 import { createWorkspaceService } from './workspace/service'
+import { createDevEnvAgentService } from './modules/dev-environments/dev-env-agent'
+import {
+  devEnvAgentAbortHttp,
+  devEnvAgentControlHttp,
+  devEnvAgentHistoryHttp,
+  devEnvAgentSendHttp,
+} from './modules/dev-environments/dev-env-agent-http'
 import { RepositoryRegistry } from './repositories/registry'
 import { repositoryCatalogFile } from './repositories/catalog'
 import { repositoriesHttp } from './repositories/http'
@@ -120,10 +127,21 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     workspaceDir: config.workspaceDir,
     worktreesDir: config.worktreesDir,
   })
-  const chat = createChatService(config, runner, owner)
-  const workspaceAdapter = workspaceHttp(
-    createWorkspaceService(config, runner, owner, () => agentService.list().sessions, codexModels),
+  const busyAgentPaths = new Set<string>()
+  const chat = createChatService(config, runner, owner, { busyPaths: busyAgentPaths })
+  const environmentAgent = createDevEnvAgentService(config, runner, owner, busyAgentPaths)
+  add('GET', '/api/dev-env-agent', devEnvAgentHistoryHttp(environmentAgent))
+  add('POST', '/api/dev-env-agent/send', devEnvAgentSendHttp(environmentAgent))
+  add('POST', '/api/dev-env-agent/abort', devEnvAgentAbortHttp(environmentAgent))
+  const workspaceService = createWorkspaceService(
+    config,
+    runner,
+    owner,
+    () => agentService.list().sessions,
+    codexModels,
   )
+  const workspaceAdapter = workspaceHttp(workspaceService)
+  add('POST', '/api/dev-env-agent/control', devEnvAgentControlHttp(workspaceService))
   // The workspace handler predates the common /api registry and intentionally
   // keeps its compact domain-relative paths. Normalize once at composition,
   // rather than teaching either HTTP transport a workspace-specific rule.
@@ -181,6 +199,8 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['POST', '/api/workspace/prs/open'],
     ['POST', '/api/workspace/dev-env'],
     ['POST', '/api/workspace/dev-env/preview'],
+    ['POST', '/api/workspace/dev-env/logs'],
+    ['GET', '/api/workspace/dev-env'],
     ['POST', '/api/workspace/dev-env/stop'],
     ['POST', '/api/workspace/dev-env/open'],
     ['POST', '/api/workspace/dev-env/agent'],

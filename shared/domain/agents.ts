@@ -93,5 +93,6 @@ export interface DevEnvInfo {
   error?: string
   warnings?: string[]
   configuration?: DevEnvStartOptions
+  failure?: { repo?: string; phase?: string }
   apps: DevEnvApp[]
 }

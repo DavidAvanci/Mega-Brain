@@ -10,7 +10,7 @@ import {
 } from './task-conversation'
 import { STAGES } from '../workspace/stage-catalog'
 import { randomUUID } from 'node:crypto'
-import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { readTail, summarizeAgentInput } from '../agent-log'
 import { claudeBin, codexBin } from '../agent-executable'
@@ -24,6 +24,7 @@ import { nodeProcessRunner, type ProcessChild, type ProcessOwner, type ProcessRu
 import { assertTestWorkspace } from '../test-safety'
 import { repositoryMentionContext } from '../repositories/mentions'
 import { finishAgentUsage, startAgentUsage } from '../workspace/agent-usage'
+import { redactDevEnvOutput } from '../modules/dev-environments/dev-env-logs'
 
 const DEFAULT_PROJECTS_ROOT = loadMegaBrainConfig().directories.claudeProjects
 const TRANSCRIPT_TAIL_BYTES = 512 * 1024
@@ -115,10 +116,11 @@ function toolLabel(block: { name?: string; input?: Record<string, unknown> }): s
   return [block.name, summarizeAgentInput(block.input)].filter(Boolean).join(': ')
 }
 
-export function chatEvent(line: string): ChatEvent | null {
+export function chatEvent(line: string, terminal = false): ChatEvent | null {
   const event = jsonRecord(line)
   if (!event) return null
   if (event?.type === 'stream_event') {
+    if (terminal) return null
     const stream = record(event.event)
     const delta = record(stream?.delta)
     if (stream?.type !== 'content_block_delta' || delta?.type !== 'text_delta') return null
@@ -127,7 +129,40 @@ export function chatEvent(line: string): ChatEvent | null {
   if (event?.type === 'assistant') {
     const content = record(event.message)?.content
     const tool = Array.isArray(content) ? content.map(record).find((block) => block?.type === 'tool_use') : undefined
-    return tool ? { type: 'tool', tool: toolLabel(tool) } : null
+    if (tool)
+      return {
+        type: 'tool',
+        tool:
+          terminal && typeof record(tool.input)?.command === 'string'
+            ? String(record(tool.input)?.command)
+            : toolLabel(tool),
+      }
+    const text =
+      terminal && Array.isArray(content)
+        ? content
+            .map(record)
+            .filter((block) => block?.type === 'text')
+            .map((block) => block?.text ?? '')
+            .join('\n')
+        : ''
+    return text ? { type: 'text', text } : null
+  }
+  if (terminal && event.type === 'user') {
+    const content = record(event.message)?.content
+    const results = Array.isArray(content) ? content.map(record).filter((block) => block?.type === 'tool_result') : []
+    const output = results
+      .map((block) =>
+        typeof block?.content === 'string'
+          ? block.content
+          : Array.isArray(block?.content)
+            ? block.content
+                .map(record)
+                .map((part) => part?.text ?? '')
+                .join('\n')
+            : '',
+      )
+      .join('\n')
+    if (output) return { type: 'output', text: output }
   }
   if (event?.type !== 'result') return null
   if (event.subtype === 'success' && !event.is_error) return { type: 'done' }
@@ -158,7 +193,8 @@ function terminalOpen(path: string): boolean {
 
 function busyReason(path: string, running: Map<string, ProcessChild>): string | undefined {
   if (running.has(path)) return 'Já há uma mensagem em andamento'
-  if (['rodando', 'pausado'].includes(readAgent(path)?.status ?? '')) return 'O agente da etapa está rodando; espere ele terminar'
+  if (['rodando', 'pausado'].includes(readAgent(path)?.status ?? ''))
+    return 'O agente da etapa está rodando; espere ele terminar'
   if (terminalOpen(path)) return 'Há um Claude aberto no terminal dessa pasta; feche antes de usar o chat'
   return undefined
 }
@@ -191,15 +227,24 @@ function streamChat(
   aborted: WeakSet<ProcessChild>,
   owner?: ProcessOwner,
   environment?: NodeJS.ProcessEnv,
+  terminal = false,
 ): void {
-  const usageId = startAgentUsage(path, new Date(), { label: 'chat', provider: 'claude' })
-  let costUsd: number | undefined
-  const child = runner.spawn(claudeBin(executable), chatArgs(text, resolveSession(path, projectsRoot)), {
-    cwd: path,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, ...environment },
+  const usageId = startAgentUsage(path, new Date(), {
+    label: terminal ? 'dev-environment' : 'chat',
+    provider: 'claude',
   })
-  owner?.own(child, { label: 'chat' })
+  let costUsd: number | undefined
+  const child = runner.spawn(
+    claudeBin(executable),
+    chatArgs(text, terminal ? undefined : resolveSession(path, projectsRoot)),
+    {
+      cwd: path,
+      detached: terminal && process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, ...environment },
+    },
+  )
+  owner?.own(child, { tree: terminal && process.platform !== 'win32', label: terminal ? 'dev-environment' : 'chat' })
   running.set(path, child)
   let buffer = ''
   let settled = false
@@ -218,7 +263,7 @@ function streamChat(
         costUsd = usageEvent.total_cost_usd
       const settings = settingsEvent(line)
       if (settings) emit(settings)
-      const event = chatEvent(line)
+      const event = chatEvent(line, terminal)
       if (!event) continue
       if (event.type === 'done') finish(event)
       else emit(event)
@@ -246,15 +291,17 @@ function streamCodexChat(
   aborted: WeakSet<ProcessChild>,
   owner?: ProcessOwner,
   environment?: NodeJS.ProcessEnv,
+  terminal = false,
 ): void {
-  const usageId = startAgentUsage(path, new Date(), { label: 'chat', provider: 'codex' })
+  const usageId = startAgentUsage(path, new Date(), { label: terminal ? 'dev-environment' : 'chat', provider: 'codex' })
   const args = ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', text]
   const child = runner.spawn(codexBin(executable), args, {
     cwd: path,
+    detached: terminal && process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ...environment },
   })
-  owner?.own(child, { label: 'chat' })
+  owner?.own(child, { tree: terminal && process.platform !== 'win32', label: terminal ? 'dev-environment' : 'chat' })
   running.set(path, child)
   let buffer = ''
   child.stderr!.on('data', () => {
@@ -275,6 +322,17 @@ function streamCodexChat(
         const event = jsonRecord(line)
         const item = record(event?.item)
         const error = record(event?.error)
+        if (terminal && event?.type === 'item.started' && item?.type === 'command_execution') {
+          emit({ type: 'tool', tool: String(item.command ?? 'Executando comando') })
+        }
+        if (
+          terminal &&
+          event?.type === 'item.completed' &&
+          item?.type === 'command_execution' &&
+          typeof item.aggregated_output === 'string'
+        ) {
+          emit({ type: 'output', text: item.aggregated_output })
+        }
         if (event?.type === 'item.completed' && item?.type === 'agent_message' && item.text) {
           emit({ type: 'text', text: String(item.text) })
         } else if (event?.type === 'turn.completed') {
@@ -296,9 +354,7 @@ function streamCodexChat(
 }
 
 export interface ChatService {
-  history(
-    name: string,
-  ): Promise<{
+  history(name: string): Promise<{
     sessionId: string | null
     entries: ChatEntry[]
     settings?: ChatAgentSettings | null
@@ -310,15 +366,25 @@ export interface ChatService {
   shutdown?(): Promise<void>
 }
 
+type ChatServiceOptions = {
+  purpose?: 'environment'
+  busyPaths?: Set<string>
+  preparePrompt?: (path: string, message: string) => string
+  environment?: (path: string, name: string) => NodeJS.ProcessEnv
+}
+
 export function createChatService(
   config: Pick<MegaBrainConfig, 'workspaceDir' | 'directories' | 'executables'> &
     Partial<Pick<MegaBrainConfig, 'preferences'>>,
   runner: ProcessRunner = nodeProcessRunner,
   owner?: ProcessOwner,
+  options: ChatServiceOptions = {},
 ): ChatService {
   const running = new Map<string, ProcessChild>()
   const aborted = new WeakSet<ProcessChild>()
   let closing = false
+  const terminal = options.purpose === 'environment'
+  const conversationPath = (path: string) => (terminal ? join(path, '.dev-env', 'agent') : path)
   const folderPath = (name: unknown): string => {
     const root = resolve(config.workspaceDir)
     assertTestWorkspace(root)
@@ -327,6 +393,13 @@ export function createChatService(
   return {
     async history(name) {
       const path = folderPath(name)
+      if (terminal)
+        return {
+          sessionId: null,
+          entries: taskConversation(conversationPath(path)),
+          executionRunning: running.has(path),
+          pendingMessages: 0,
+        }
       const projectsRoot = config.directories.claudeProjects
       const saved = taskConversation(path)
       const stages = STAGES.flatMap((stage) => {
@@ -352,7 +425,8 @@ export function createChatService(
       const path = folderPath(name)
       const message = String(text ?? '').trim()
       if (!message) throw new Error('Mensagem vazia')
-      if (['rodando', 'pausado'].includes(readAgent(path)?.status ?? '')) {
+      if (message.length > 12_000) throw new Error('A mensagem deve ter no máximo 12000 caracteres')
+      if (!terminal && ['rodando', 'pausado'].includes(readAgent(path)?.status ?? '')) {
         const prompt = knowledgeContext(
           repositoryMentionContext(message, config.preferences?.settingsFile),
           [...(readCard(path, String(name)).knowledgeRefs ?? []), ...knowledgeRefs(refs)],
@@ -365,16 +439,24 @@ export function createChatService(
       }
       const busy = busyReason(path, running)
       if (busy) throw new Error(busy)
-      if (!taskConversation(path).length && config.preferences?.llmProvider !== 'chatgpt')
+      if (options.busyPaths?.has(path))
+        throw new Error(
+          'Já há um agente trabalhando neste card. Aguarde ou interrompa a execução antes de iniciar outra.',
+        )
+      const conversation = conversationPath(path)
+      if (terminal) mkdirSync(conversation, { recursive: true, mode: 0o700 })
+      if (!terminal && !taskConversation(path).length && config.preferences?.llmProvider !== 'chatgpt')
         for (const entry of transcript(path, config.directories.claudeProjects).entries) appendConversation(path, entry)
-      const prior = taskConversation(path)
+      const previous = taskConversation(conversation)
         .slice(-30)
-        .map((entry) => entry.text ?? entry.tool ?? '')
+        .map((entry) => entry.text ?? entry.tool ?? entry.output ?? '')
         .join('\n')
-      const messages = taskMessageContext(path)
+      const prior = terminal ? previous.slice(-12_000) : previous
+      const messages = terminal ? { prompt: '', acknowledge: () => {} } : taskMessageContext(path)
+      const contextualMessage = options.preparePrompt?.(path, message) ?? message
       const prompt = knowledgeContext(
         repositoryMentionContext(
-          `${prior ? `Conversa e execuções anteriores desta task:\n${prior}\n\nNova mensagem do usuário:\n` : ''}${message}${messages.prompt}`,
+          `${prior ? `Conversa e execuções anteriores desta task:\n${prior}\n\nNova mensagem do usuário:\n` : ''}${contextualMessage}${messages.prompt}`,
           config.preferences?.settingsFile,
         ),
         [...(readCard(path, String(name)).knowledgeRefs ?? []), ...knowledgeRefs(refs)],
@@ -397,18 +479,35 @@ export function createChatService(
           taskId: String(name),
           sessionId: randomUUID(),
         }),
+        ...options.environment?.(path, String(name)),
       }
       const source = profileEnvironment.MEGA_BRAIN_CODEX_PROFILE_NAME
         ? `Codex · ${profileEnvironment.MEGA_BRAIN_CODEX_PROFILE_NAME}`
         : undefined
-      appendConversation(path, { role: 'user', text: message, ...(source ? { source } : {}) })
+      appendConversation(conversation, {
+        role: 'user',
+        text: terminal ? redactDevEnvOutput(message) : message,
+        ...(source ? { source } : {}),
+      })
       let response = ''
       const persistAndEmit = (event: ChatEvent) => {
+        if (terminal && (event.type === 'tool' || event.type === 'output') && response) {
+          appendConversation(conversation, { role: 'assistant', text: response, ...(source ? { source } : {}) })
+          response = ''
+        }
+        if (terminal && event.type === 'text') event = { ...event, text: redactDevEnvOutput(event.text) }
+        if (terminal && event.type === 'output')
+          event = { ...event, text: redactDevEnvOutput(event.text).slice(-20_000) }
+        if (terminal && event.type === 'tool') event = { ...event, tool: redactDevEnvOutput(event.tool).slice(0, 4000) }
+        if (terminal && event.type === 'done' && event.error)
+          event = { ...event, error: redactDevEnvOutput(event.error) }
         if (event.type === 'text') response += event.text
         if (event.type === 'tool')
-          appendConversation(path, { role: 'assistant', tool: event.tool, ...(source ? { source } : {}) })
+          appendConversation(conversation, { role: 'assistant', tool: event.tool, ...(source ? { source } : {}) })
+        if (event.type === 'output') appendConversation(conversation, { role: 'assistant', output: event.text })
         if (event.type === 'done') {
-          if (response) appendConversation(path, { role: 'assistant', text: response, ...(source ? { source } : {}) })
+          if (response)
+            appendConversation(conversation, { role: 'assistant', text: response, ...(source ? { source } : {}) })
           response = ''
         }
         emit(event)
@@ -424,6 +523,7 @@ export function createChatService(
           aborted,
           owner,
           environment,
+          terminal,
         )
       else
         streamChat(
@@ -437,14 +537,18 @@ export function createChatService(
           aborted,
           owner,
           environment,
+          terminal,
         )
+      options.busyPaths?.add(path)
+      running.get(path)?.once('close', () => options.busyPaths?.delete(path))
       messages.acknowledge()
     },
     abort(name) {
       const child = running.get(folderPath(name))
       if (child) {
         aborted.add(child)
-        child.kill('SIGTERM')
+        if (terminal && owner) void owner.stop(child)
+        else child.kill('SIGTERM')
       }
       return true
     },

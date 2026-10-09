@@ -299,7 +299,7 @@ export function CardBody({
 }: {
   card: Card
   interactive?: boolean
-  onOpen?: () => void
+  onOpen?: (tab?: string) => void
 }) {
   const runningAgents = activeAgents(card).filter((agent) => agent.status === 'rodando')
   const isDevelopment = card.status === 'desenvolvendo'
@@ -434,7 +434,7 @@ export function CardBody({
         </span>
       </div>
       {(card.status === 'code-review' || (card.devEnv && card.devEnv.status !== 'parado')) && (
-        <DevEnvPanel card={card} />
+        <DevEnvPanel card={card} onOpen={() => onOpen?.('environments')} />
       )}
     </>
   )
@@ -471,7 +471,7 @@ export const CardView = memo(function CardView({ card, onOpen }: Props) {
         if (!dragged.current) onOpen(card.id)
       }}
     >
-      <CardBody card={card} interactive onOpen={() => onOpen(card.id)} />
+      <CardBody card={card} interactive onOpen={(tab) => onOpen(card.id, tab)} />
     </div>
   )
 })

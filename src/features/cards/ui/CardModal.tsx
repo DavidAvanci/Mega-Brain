@@ -67,6 +67,9 @@ import {
 
 const ChatTab = lazy(() => import('@/features/chat/ChatTab').then((module) => ({ default: module.ChatTab })))
 const DiffTab = lazy(() => import('./DiffTab').then((module) => ({ default: module.DiffTab })))
+const DevEnvTab = lazy(() =>
+  import('@/features/dev-environments/DevEnvTab').then((module) => ({ default: module.DevEnvTab })),
+)
 
 const FILE_TABS = [
   { label: 'Plano', file: 'PLAN.md', outline: true, checklist: false },
@@ -745,6 +748,12 @@ export function CardModal({
                 <TabsTrigger value="repos" className="flex-none px-2.5">
                   Repos{repos?.length ? ` (${repos.length})` : ''}
                 </TabsTrigger>
+                <TabsTrigger value="environments" className="flex-none px-2.5">
+                  Ambientes
+                  {card.devEnv?.status === 'erro' && (
+                    <span className="size-1.5 rounded-full bg-destructive" aria-label="Ambiente com falha" />
+                  )}
+                </TabsTrigger>
                 {card.prs && (
                   <TabsTrigger value="links" className="flex-none px-2.5">
                     Links
@@ -804,6 +813,11 @@ export function CardModal({
               </TabsContent>
               <TabsContent value="repos" className="overflow-y-auto px-5 py-4">
                 {repos ? <ReposList repos={repos} /> : <LoadingLines />}
+              </TabsContent>
+              <TabsContent value="environments" keepMounted className="min-h-0 overflow-y-auto px-5 py-4">
+                <Suspense fallback={<p className="text-muted-foreground">Carregando ambientes…</p>}>
+                  <DevEnvTab key={card.id} card={card} />
+                </Suspense>
               </TabsContent>
               {card.prs && (
                 <TabsContent value="links" className="overflow-y-auto px-5 py-4">

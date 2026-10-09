@@ -25,6 +25,7 @@ import {
   prepareDependencies,
   previewDevEnv,
   readDevEnv,
+  saveDevEnvConfiguration,
   shouldInstallDependencies,
   startDevEnv,
   stopDevEnv,
@@ -54,6 +55,20 @@ test('preferredPort aplica a regra do 3300', () => {
   expect(preferredPort('garcom-restaurant-dashboard', ['garcom-restaurant-dashboard', 'operation-takeat'])).toBe(3300)
   expect(preferredPort('operation-takeat', ['garcom-restaurant-dashboard', 'operation-takeat'])).toBe(3000)
   expect(preferredPort('manager-area', ['manager-area'])).toBe(5173)
+})
+
+test('configuração escolhida para o agente persiste sem iniciar processos', () => {
+  const card = cardWith([{ name: 'manager-area', branch: 'ESTR-460' }])
+  saveDevEnvConfiguration(card, { docker: false, projects: [{ repo: 'manager-area', port: 4310 }] })
+  expect(readDevEnv(card)).toBeNull()
+  expect(previewDevEnv(card)).toMatchObject({
+    docker: false,
+    projects: [{ repo: 'manager-area', port: 4310, selected: true }],
+  })
+  expect(() =>
+    saveDevEnvConfiguration(card, { docker: false, projects: [{ repo: 'unknown-project', port: 4310 }] }),
+  ).toThrow()
+  expect(previewDevEnv(card).projects[0].port).toBe(4310)
 })
 
 test('não reinstala dependências quando node_modules existe e os lockfiles são iguais', () => {

@@ -656,6 +656,7 @@ async function orchestrate(
   } catch (error) {
     if (run.aborted) return
     state.status = 'erro'
+    state.failure = { repo: current?.repo, phase: state.phase }
     state.phase = undefined
     state.error = error instanceof Error ? error.message : String(error)
     if (current) current.status = 'erro'
@@ -672,7 +673,31 @@ export function previewDevEnv(
   const plan = planDevEnv(cardPath, undefined, runner, settingsFile, true)
   if ('needsFrontend' in plan) throw new Error('Plano de ambiente incompleto')
   addOptionalFrontends(plan, repositoryCatalogFile(settingsFile))
-  return devEnvPreview(plan, readDevEnv(cardPath)?.configuration)
+  return devEnvPreview(plan, savedDevEnvConfiguration(cardPath) ?? readDevEnv(cardPath)?.configuration)
+}
+
+function savedDevEnvConfiguration(cardPath: string): DevEnvStartOptions | undefined {
+  try {
+    return parseDevEnvOptions(JSON.parse(readFileSync(join(cardPath, STATE_DIR, 'configuration.json'), 'utf8')))
+  } catch {
+    return undefined
+  }
+}
+
+export function saveDevEnvConfiguration(
+  cardPath: string,
+  configuration: DevEnvStartOptions,
+  runner: ProcessRunner = nodeProcessRunner,
+  settingsFile?: string,
+): void {
+  const options = parseDevEnvOptions(configuration)
+  if (!options) throw new Error('Configuração do ambiente dev inválida')
+  const plan = planDevEnv(cardPath, undefined, runner, settingsFile, true)
+  if ('needsFrontend' in plan) throw new Error('Plano de ambiente incompleto')
+  addOptionalFrontends(plan, repositoryCatalogFile(settingsFile))
+  selectDevEnvProjects(plan, options)
+  mkdirSync(join(cardPath, STATE_DIR), { recursive: true })
+  writeFileSync(join(cardPath, STATE_DIR, 'configuration.json'), `${JSON.stringify(options)}\n`, { mode: 0o600 })
 }
 
 export function startDevEnv(
@@ -694,6 +719,8 @@ export function startDevEnv(
   if (options) {
     addOptionalFrontends(plan, repositoryCatalogFile(settingsFile))
     plan = selectDevEnvProjects(plan, options)
+    mkdirSync(join(cardPath, STATE_DIR), { recursive: true })
+    writeFileSync(join(cardPath, STATE_DIR, 'configuration.json'), `${JSON.stringify(options)}\n`, { mode: 0o600 })
   }
   const handle: Run = { aborted: false }
   active.set(key, handle)
@@ -832,5 +859,6 @@ export function stopDevEnv(cardPath: string): void {
   state.ownerPid = undefined
   state.phase = undefined
   state.error = undefined
+  state.failure = undefined
   writeState(cardPath, state)
 }

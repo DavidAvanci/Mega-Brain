@@ -195,8 +195,6 @@ export const stopDevEnv = (name: string) =>
   action('/api/workspace/dev-env/stop', 'Falha ao parar o ambiente dev', { name }, true)
 export const openDevEnv = (name: string, repo: string) =>
   action('/api/workspace/dev-env/open', 'Falha ao abrir o ambiente dev', { name, repo })
-export const openDevEnvAgent = (name: string) =>
-  action('/api/workspace/dev-env/agent', 'Falha ao abrir o agente do ambiente', { name })
 
 function subscribe(notify: () => void): () => void {
   if (cardsSubscriberCount() === 0) {

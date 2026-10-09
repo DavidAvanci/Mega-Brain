@@ -18,9 +18,10 @@ type Props = {
   cardId: string
   preview: DevEnvPreview
   onClose: () => void
+  onStartWithAgent?: (configuration: DevEnvStartOptions) => void
 }
 
-export function DevEnvConfiguration({ cardId, preview, onClose }: Props) {
+export function DevEnvConfiguration({ cardId, preview, onClose, onStartWithAgent }: Props) {
   const [projects, setProjects] = useState(
     preview.projects.map((project) => ({ ...project, port: String(project.port) })),
   )
@@ -173,6 +174,21 @@ export function DevEnvConfiguration({ cardId, preview, onClose }: Props) {
           <Button variant="outline" className="min-h-10" disabled={pending} onClick={onClose}>
             Cancelar
           </Button>
+          {onStartWithAgent && (
+            <Button
+              variant="outline"
+              className="min-h-10"
+              disabled={pending || !selected.length || Boolean(validation)}
+              onClick={() =>
+                onStartWithAgent({
+                  projects: selected.map((project) => ({ repo: project.repo, port: Number(project.port) })),
+                  docker: dockerNeeded && docker,
+                })
+              }
+            >
+              Iniciar com agente
+            </Button>
+          )}
           <Button
             className="min-h-10"
             disabled={pending || !selected.length || Boolean(validation)}
