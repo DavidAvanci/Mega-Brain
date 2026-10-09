@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { DevEnvInfo } from './shared/domain/agents'
 import type { ProcessRunner } from './server/process'
-import { registeredAppCommand } from './server/modules/dev-environments/dev-env-apps'
+import { prepareRegisteredApp, registeredAppCommand } from './server/modules/dev-environments/dev-env-apps'
 import { parseDevEnvOptions } from './server/modules/dev-environments/dev-env-options'
 import {
   classifyRepos,
@@ -82,7 +82,7 @@ test('não reinstala dependências quando node_modules existe e os lockfiles sã
 
   expect(shouldInstallDependencies(worktree, canonical)).toBe(false)
   writeFileSync(join(worktree, 'package-lock.json'), '{"lockfileVersion":2}')
-  expect(shouldInstallDependencies(worktree, canonical)).toBe(true)
+  expect(shouldInstallDependencies(worktree, canonical)).toBe(false)
 })
 
 test('instala dependências quando node_modules não existe', () => {
@@ -326,11 +326,11 @@ test('configuração inválida é rejeitada antes de escrever estado ou iniciar 
   expect(existsSync(join(card, '.dev-env'))).toBe(false)
 })
 
-async function unusedPort(): Promise<number> {
+async function unusedPort(host = '127.0.0.1'): Promise<number> {
   const server = createServer()
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(0, '127.0.0.1', resolve)
+    server.listen(0, host, resolve)
   })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('Porta não disponível')
@@ -338,7 +338,7 @@ async function unusedPort(): Promise<number> {
   return address.port
 }
 
-function simulatedApps(card: string) {
+function simulatedApps(card: string, host = '127.0.0.1') {
   const calls: { command: string; args: readonly string[]; port?: string; directory?: string }[] = []
   const children = new Set<ReturnType<typeof spawn>>()
   const runner: ProcessRunner = {
@@ -353,7 +353,7 @@ function simulatedApps(card: string) {
     spawn(command, args, options) {
       calls.push({ command, args, port: options?.env?.PORT, directory: String(options?.cwd ?? '') })
       const script = options?.detached
-        ? "require('node:net').createServer(socket => socket.end()).listen(Number(process.env.PORT), '127.0.0.1')"
+        ? `require('node:net').createServer(socket => socket.end()).listen(Number(process.env.PORT), ${JSON.stringify(host)})`
         : 'process.exit(0)'
       const child = spawn(process.execPath, ['-e', script], options)
       children.add(child)
@@ -440,28 +440,47 @@ test('portas dos backends escolhidas atualizam URLs dos frontends e Docker exige
   }
 }, 15_000)
 
-test('porta ocupada falha antes de Docker, installs ou processos e não muda a porta escolhida', async () => {
-  const server = createServer()
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const address = server.address()
-  if (!address || typeof address === 'string') throw new Error('Porta não disponível')
-  const card = cardWith([{ name: 'api-garcom-digital', branch: 'fix/backend' }])
-  const { runner, calls, stop } = simulatedApps(card)
-  try {
-    startDevEnv(card, undefined, runner, undefined, {
-      docker: true,
-      projects: [{ repo: 'api-garcom-digital', port: address.port }],
+test.each(['127.0.0.1', '::1'])(
+  'porta ocupada em %s falha antes de iniciar processos e não muda a porta escolhida',
+  async (host) => {
+    const server = createServer()
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, host, resolve)
     })
-    for (let attempt = 0; attempt < 20 && readDevEnv(card)?.status === 'subindo'; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(readDevEnv(card)).toMatchObject({ status: 'erro', apps: [{ port: address.port }] })
-    expect(readDevEnv(card)?.error).toContain(`porta ${address.port} já está ocupada`)
-    expect(calls).toEqual([])
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Porta não disponível')
+    const card = cardWith([{ name: 'api-garcom-digital', branch: 'fix/backend' }])
+    const { runner, calls, stop } = simulatedApps(card)
+    try {
+      startDevEnv(card, undefined, runner, undefined, {
+        docker: true,
+        projects: [{ repo: 'api-garcom-digital', port: address.port }],
+      })
+      for (let attempt = 0; attempt < 20 && readDevEnv(card)?.status === 'subindo'; attempt++)
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(readDevEnv(card)).toMatchObject({ status: 'erro', apps: [{ port: address.port }] })
+      expect(readDevEnv(card)?.error).toContain(`porta ${address.port} já está ocupada`)
+      expect(calls).toEqual([])
+    } finally {
+      stop()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  },
+)
+
+test('confirma um frontend servido somente pelo localhost IPv6', async () => {
+  const card = cardWith([{ name: 'operation-takeat', branch: 'fix/ipv6' }])
+  const port = await unusedPort('::1')
+  const { runner, stop } = simulatedApps(card, '::1')
+  try {
+    startDevEnv(card, undefined, runner, undefined, { docker: false, projects: [{ repo: 'operation-takeat', port }] })
+    await waitForStartup(card)
+    expect(readDevEnv(card)?.apps).toMatchObject([{ repo: 'operation-takeat', port, status: 'rodando' }])
   } finally {
     stop()
-    await new Promise<void>((resolve) => server.close(() => resolve()))
   }
-})
+}, 10_000)
 
 test('planDevEnv: docs Next cadastradas rodam mesmo fora da lista legada', () => {
   const card = cardWith(
@@ -496,10 +515,13 @@ test('planDevEnv: docs Next cadastradas rodam mesmo fora da lista legada', () =>
   ])
 })
 
-test('planDevEnv: platform inicia só a API externa, com pnpm do monorepo', () => {
+test('planDevEnv: platform inicia as APIs pelo dev da raiz e mantém scheduler fora do ambiente', () => {
   const card = cardWith([{ name: 'takeat-platform', branch: 'fix/api' }], 'repos')
   const root = realpathSync(join(card, 'repos', 'takeat-platform'))
-  mkdirSync(join(root, 'apps/external-api'), { recursive: true })
+  for (const name of ['external-api', 'operation-api', 'auth-api', 'manager-api', 'scheduler']) {
+    mkdirSync(join(root, 'apps', name), { recursive: true })
+    writeFileSync(join(root, 'apps', name, 'package.json'), JSON.stringify({ scripts: { dev: 'nest start --watch' } }))
+  }
   writeFileSync(
     join(root, 'package.json'),
     JSON.stringify({ packageManager: 'pnpm@10', scripts: { dev: 'turbo run dev' } }),
@@ -516,14 +538,109 @@ test('planDevEnv: platform inicia só a API externa, com pnpm do monorepo', () =
     apps: [
       {
         repo: 'takeat-platform',
-        dir: join(root, 'apps/external-api'),
+        dir: root,
         kind: 'backend',
-        preferred: 3000,
-        command: { cmd: 'pnpm', args: ['run', 'dev'] },
+        preferred: 3100,
+        command: {
+          cmd: 'pnpm',
+          args: [
+            'run',
+            'dev',
+            '--filter=external-api',
+            '--filter=operation-api',
+            '--filter=auth-api',
+            '--filter=manager-api',
+          ],
+        },
+        services: [
+          { name: 'external-api', port: 3100 },
+          { name: 'operation-api', port: 3300 },
+          { name: 'auth-api', port: 3400 },
+          { name: 'manager-api', port: 3500 },
+        ],
       },
     ],
   })
 })
+
+test('configuração do monorepo preserva envs locais e usa uma porta por API sem alterar o checkout canônico', () => {
+  const root = mkdtempSync(join(tmpdir(), 'devenv-platform-env-'))
+  cardFixtures.push(root)
+  const canonical = join(root, 'canonical')
+  const task = join(root, 'task')
+  for (const name of ['external-api', 'operation-api']) {
+    mkdirSync(join(canonical, 'apps', name), { recursive: true })
+    mkdirSync(join(task, 'apps', name), { recursive: true })
+  }
+  writeFileSync(join(canonical, 'apps/external-api/.env'), 'PORT=3100\nVALUE=canonical\n')
+  writeFileSync(join(canonical, 'apps/operation-api/.env'), 'PORT=3300\nVALUE=operation\n')
+  writeFileSync(join(task, 'apps/external-api/.env'), 'PORT=3100\nVALUE=task\n')
+  const app = {
+    repo: 'takeat-platform',
+    root: task,
+    dir: task,
+    canonical,
+    kind: 'backend' as const,
+    command: { cmd: 'pnpm', args: ['run', 'dev'] },
+    preferred: 3100,
+    services: [
+      { name: 'external-api', port: 3100 },
+      { name: 'operation-api', port: 3300 },
+    ],
+  }
+  prepareRegisteredApp(app, 4310)
+  expect(readFileSync(join(task, 'apps/external-api/.env'), 'utf8')).toBe('PORT=4310\nVALUE=task\n')
+  expect(readFileSync(join(task, 'apps/operation-api/.env'), 'utf8')).toBe('PORT=3300\nVALUE=operation\n')
+  expect(readFileSync(join(canonical, 'apps/external-api/.env'), 'utf8')).toBe('PORT=3100\nVALUE=canonical\n')
+  rmSync(join(task, 'apps/external-api/.env'))
+  symlinkSync(join(canonical, 'apps/external-api/.env'), join(task, 'apps/external-api/.env'))
+  prepareRegisteredApp(app, 4311)
+  expect(readFileSync(join(task, 'apps/external-api/.env'), 'utf8')).toBe('PORT=4311\nVALUE=canonical\n')
+  expect(readFileSync(join(canonical, 'apps/external-api/.env'), 'utf8')).toBe('PORT=3100\nVALUE=canonical\n')
+})
+
+test('dev da raiz acompanha todas as APIs com um processo e portas independentes', async () => {
+  const card = cardWith([{ name: 'takeat-platform', branch: 'fix/runtime' }], 'repos')
+  const root = realpathSync(join(card, 'repos/takeat-platform'))
+  mkdirSync(join(root, 'node_modules'))
+  const names = ['external-api', 'operation-api', 'auth-api', 'manager-api']
+  const ports = []
+  for (const name of names) {
+    const port = await unusedPort()
+    ports.push(port)
+    mkdirSync(join(root, 'apps', name), { recursive: true })
+    writeFileSync(join(root, 'apps', name, 'package.json'), JSON.stringify({ scripts: { dev: 'node worker.mjs' } }))
+    writeFileSync(join(root, 'apps', name, '.env'), `PORT=${port}\n`)
+  }
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { dev: 'node worker.mjs' } }))
+  writeFileSync(
+    join(root, 'worker.mjs'),
+    `
+    import { createServer } from 'node:net';
+    import { readFileSync } from 'node:fs';
+    if (process.env.PORT) throw new Error('PORT must not be shared between APIs');
+    for (const name of ${JSON.stringify(names)}) {
+      const port = Number(/PORT=(\\d+)/.exec(readFileSync('apps/' + name + '/.env', 'utf8'))[1]);
+      createServer(socket => socket.end()).listen(port, '127.0.0.1');
+    }
+  `,
+  )
+  try {
+    startDevEnv(card, undefined, undefined, undefined, {
+      docker: false,
+      projects: [{ repo: 'takeat-platform', port: ports[0] }],
+    })
+    await waitForStartup(card)
+    const apps = readDevEnv(card)!.apps
+    expect(apps).toHaveLength(4)
+    expect(apps.map((app) => app.port)).toEqual(ports)
+    expect(apps.every((app) => app.status === 'rodando')).toBe(true)
+    expect(new Set(apps.map((app) => app.pid)).size).toBe(1)
+  } finally {
+    stopDevEnv(card)
+  }
+  expect(readDevEnv(card)?.apps.every((app) => app.status === 'parado' && !app.pid)).toBe(true)
+}, 15_000)
 
 test('planDevEnv: respeita script e porta configurados de um repo customizado', () => {
   const card = cardWith([{ name: 'custom-api', branch: 'fix/api' }])
@@ -571,6 +688,8 @@ test('app cadastrado inicia na worktree, confirma a porta e para sem persistir v
   writeFileSync(join(root, 'package-lock.json'), '{}')
   writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { dev: 'node worker.mjs' } }))
   writeFileSync(join(root, '.env.local'), 'LOCAL_SETTING=fixture-value\n')
+  mkdirSync(join(card, '.dev-env'))
+  writeFileSync(join(card, '.dev-env/custom-api.log'), 'Application startup failed: old error\n[nodemon] app crashed\n')
   writeFileSync(
     join(root, 'worker.mjs'),
     `
@@ -598,6 +717,40 @@ test('app cadastrado inicia na worktree, confirma a porta e para sem persistir v
     stopDevEnv(card)
   }
   expect(readDevEnv(card)?.status).toBe('parado')
+}, 10_000)
+
+test('watcher vivo com aplicação caída falha sem timeout e oculta credenciais do diagnóstico', async () => {
+  const card = cardWith([{ name: 'custom-api', branch: 'fix/crash' }], 'repos')
+  const root = realpathSync(join(card, 'repos/custom-api'))
+  const catalogFile = join(dirname(card), 'repositories.json')
+  const catalog = JSON.parse(readFileSync(catalogFile, 'utf8'))
+  const port = await unusedPort()
+  catalog.repositories.find((repo: { alias: string }) => repo.alias === 'custom-api').environments.local.port = port
+  writeFileSync(catalogFile, JSON.stringify(catalog))
+  mkdirSync(join(root, 'node_modules'))
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { dev: 'node worker.mjs' } }))
+  writeFileSync(
+    join(root, 'worker.mjs'),
+    `
+    console.log('Application startup failed: dependency unavailable; TOKEN=private-fixture-value');
+    console.log('[nodemon] app crashed - waiting for file changes before starting...');
+    setInterval(() => {}, 1000);
+  `,
+  )
+  try {
+    startDevEnv(card)
+    for (let attempt = 0; attempt < 60 && readDevEnv(card)?.status === 'subindo'; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    const state = readDevEnv(card)
+    expect(state?.status).toBe('erro')
+    expect(state?.error).toContain('dependency unavailable')
+    expect(state?.error).not.toContain('private-fixture-value')
+    expect(state?.error).not.toContain('Timeout')
+    expect(state?.apps[0].pid).toBeUndefined()
+  } finally {
+    stopDevEnv(card)
+  }
 }, 10_000)
 
 test('killRunningApps derruba os outros apps e preserva quem falhou', () => {

@@ -117,6 +117,15 @@ export function DevEnvConfiguration({ cardId, preview, onClose, onStartWithAgent
                     <p className="break-all font-mono text-[11px]">{project.directory}</p>
                     <p className="break-all font-mono text-[11px]">{project.command}</p>
                     <p className="font-mono tabular-nums">localhost:{project.port || '…'}</p>
+                    {project.services && (
+                      <ul className="space-y-1">
+                        {project.services.map((service) => (
+                          <li key={service.name}>
+                            {service.name} · localhost:{service.name === 'external-api' ? project.port : service.port}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </div>
                 <label className="space-y-1 pt-1 text-xs text-muted-foreground">

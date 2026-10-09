@@ -13,6 +13,7 @@ export type DevEnvProjectPreview = {
   command: string
   port: number
   selected: boolean
+  services?: { name: string; port: number }[]
 }
 
 export type DevEnvPreview = {

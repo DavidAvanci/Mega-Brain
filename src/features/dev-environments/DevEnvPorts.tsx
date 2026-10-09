@@ -13,7 +13,7 @@ const STATUS: Record<DevEnvAppStatus, string> = {
   erro: 'Falhou',
   parado: 'Parado',
 }
-type PlannedPort = Pick<DevEnvProjectPreview, 'repo' | 'port' | 'selected'>
+type PlannedPort = Pick<DevEnvProjectPreview, 'repo' | 'port' | 'selected' | 'services'>
 
 export function DevEnvPorts({
   apps,
@@ -25,8 +25,18 @@ export function DevEnvPorts({
   onOpen: (repo: string) => void
 }) {
   const selected =
-    projects?.filter((project) => project.selected) ??
-    apps.map((app) => ({ repo: app.repo, port: app.port, selected: true }))
+    projects
+      ?.filter((project) => project.selected)
+      .flatMap((project) => [
+        project,
+        ...(project.services ?? [])
+          .filter((service) => service.name !== 'external-api')
+          .map((service) => ({
+            repo: `${project.repo}/${service.name}`,
+            port: service.port,
+            selected: true,
+          })),
+      ]) ?? apps.map((app) => ({ repo: app.repo, port: app.port, selected: true }))
   const repositories = [
     ...new Set([
       ...selected.map((project) => project.repo),

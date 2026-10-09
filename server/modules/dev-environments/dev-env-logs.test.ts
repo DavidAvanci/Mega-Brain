@@ -39,7 +39,14 @@ test('limita logs ao final do arquivo, remove ANSI e oculta credenciais', () => 
   expect(logs.truncated).toBe(true)
   expect(logs.content.length).toBeLessThanOrEqual(65536)
   expect(logs.content).toContain('ready')
-  for (const secret of ['hidden-password', 'hidden-token', 'user:password', 'hidden-key', 'hidden-capability', '\u001b'])
+  for (const secret of [
+    'hidden-password',
+    'hidden-token',
+    'user:password',
+    'hidden-key',
+    'hidden-capability',
+    '\u001b',
+  ])
     expect(logs.content).not.toContain(secret)
   expect(redactDevEnvOutput('PORT=3333\nready')).toBe('PORT=3333\nready')
 })
@@ -49,6 +56,15 @@ test('recusa diretório de logs redirecionado por symlink', () => {
   const elsewhere = card()
   symlinkSync(elsewhere, join(root, '.dev-env'))
   expect(() => readDevEnvLogs(root)).toThrow('Diretório de logs inválido')
+})
+
+test('oculta credenciais em corpos JSON serializados dentro de logs JSON', () => {
+  const output = JSON.stringify({
+    config: { data: JSON.stringify({ token: 'private-fixture-token', password: 'private-fixture-password' }) },
+  })
+  const redacted = redactDevEnvOutput(output)
+  expect(redacted).not.toContain('private-fixture-token')
+  expect(redacted).not.toContain('private-fixture-password')
 })
 
 test('timeout identifica projeto e porta e orienta a consultar logs', () => {

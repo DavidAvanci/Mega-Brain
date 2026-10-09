@@ -74,6 +74,8 @@ export type DevEnvAppStatus = 'aguardando' | 'instalando' | 'subindo' | 'rodando
 
 export interface DevEnvApp {
   repo: string
+  /** Repository that owns a service started by a shared monorepo process. */
+  parentRepo?: string
   kind: 'backend' | 'frontend'
   source: 'worktree' | 'master'
   apiUrl?: string

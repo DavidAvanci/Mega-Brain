@@ -11,7 +11,7 @@ export function redactDevEnvOutput(text: string): string {
     .replace(/\bBearer\s+[^\s"']+/gi, 'Bearer [oculto]')
     .replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1[oculto]@')
     .replace(
-      /((?:\b[\w-]*(?:password|passwd|token|secret|api[_-]?key|authorization|credential|capability)[\w-]*)["']?\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\s,;}]+)/gi,
+      /((?:\b[\w-]*(?:password|passwd|token|secret|api[_-]?key|authorization|credential|capability)[\w-]*)[\\"']*\s*[:=]\s*)(?:\\*"[^"\n]*"|'[^'\n]*'|[^\s,;}]+)/gi,
       '$1[oculto]',
     )
 }
