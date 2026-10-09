@@ -131,7 +131,7 @@ test('markItem without explicit id matches by text', () => {
 
 test('resetUnfinished keeps scenario sub-bullets, drops only notes', () => {
   const dir = mkdtempSync(join(tmpdir(), 'cl-'))
-  const file = join(dir, 'TEST-CHECKLIST.md')
+  const file = join(dir, 'TASK-CHECKLIST.md')
   writeFileSync(
     file,
     [

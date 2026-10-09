@@ -6,7 +6,6 @@ export const STATUSES = [
   'planejando',
   'revisao-de-plano',
   'desenvolvendo',
-  'auto-testing',
   'code-review',
   'staging',
   'aguardando-deploy',
@@ -25,9 +24,9 @@ export const FLOW_LABELS: Record<FlowLevel, string> = {
 }
 
 export const FLOW_DESCRIPTIONS: Record<FlowLevel, string> = {
-  simples: 'Gera apenas a checklist de desenvolvimento e pula revisão de plano e testes automáticos.',
-  medio: 'Gera plano e checklist de desenvolvimento, mantém a revisão de plano e não gera testes.',
-  dificil: 'Fluxo completo atual, com plano, checklist de desenvolvimento e testes automáticos.',
+  simples: 'Gera apenas a checklist de desenvolvimento e pula a revisão de plano.',
+  medio: 'Gera plano e checklist de desenvolvimento, mantendo a revisão de plano.',
+  dificil: 'Fluxo completo, com plano, checklist de desenvolvimento e revisão de plano.',
 }
 
 export const STATUS_LABELS: Record<Status, string> = {
@@ -35,7 +34,6 @@ export const STATUS_LABELS: Record<Status, string> = {
   planejando: 'Planejando',
   'revisao-de-plano': 'Revisão de plano',
   desenvolvendo: 'Desenvolvendo',
-  'auto-testing': 'Auto Testing',
   'code-review': 'Code Review',
   staging: 'Staging',
   'aguardando-deploy': 'Aguardando deploy',
@@ -73,6 +71,6 @@ export interface Card {
   devEnv?: DevEnvInfo
   prs?: PrLinks
   prStates?: Record<string, PrState>
-  taskCounts?: Partial<Record<'TASK-CHECKLIST.md' | 'TEST-CHECKLIST.md', CardTaskCounts>>
+  taskCounts?: Partial<Record<'TASK-CHECKLIST.md', CardTaskCounts>>
   repoCount?: number
 }

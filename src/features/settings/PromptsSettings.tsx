@@ -16,12 +16,6 @@ export const PROMPT_FIELDS: { key: keyof PromptSettings; label: string; title: s
     help: 'Instruções usadas para implementar cada item do checklist.',
   },
   {
-    key: 'testItem',
-    label: 'Testes',
-    title: 'Execução de testes',
-    help: 'Instruções usadas para executar cada cenário de teste.',
-  },
-  {
     key: 'testEnvironment',
     label: 'Ambiente',
     title: 'Ambiente de testes',

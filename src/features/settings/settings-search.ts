@@ -109,14 +109,6 @@ const ENTRIES: SettingsSearchEntry[] = [
       'modelos de execução claude codex effort reasoning low medium high x-high max ultra fable opus sonnet haiku gpt',
   },
   {
-    target: 'run-test-checklist',
-    tab: 'models',
-    title: 'Modelo e esforço de testes',
-    description: 'Modelo e raciocínio para os testes automáticos.',
-    keywords:
-      'modelos de execução claude codex effort reasoning low medium high x-high max ultra fable opus sonnet haiku gpt',
-  },
-  {
     target: 'codex-profiles',
     tab: 'models',
     title: 'Perfis do Codex',
@@ -164,13 +156,6 @@ const ENTRIES: SettingsSearchEntry[] = [
     title: 'Prompt de execução de tarefas',
     description: 'Instruções para implementar cada item do checklist.',
     keywords: 'prompts claude codex desenvolvimento task agente',
-  },
-  {
-    target: 'prompt-testItem',
-    tab: 'prompts',
-    title: 'Prompt de execução de testes',
-    description: 'Instruções para executar cada cenário de teste.',
-    keywords: 'prompts claude codex agente',
   },
   {
     target: 'prompt-testEnvironment',

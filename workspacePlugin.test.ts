@@ -91,10 +91,9 @@ test('readAgent', () => {
     progress: { done: 1, total: 3 },
   })
   writeFileSync(join(dir, 'TASK-CHECKLIST.md'), '- [ ] task')
-  writeFileSync(join(dir, 'TEST-CHECKLIST.md'), '- [ ] teste')
   expect(readAgent(dir, () => true)).toMatchObject({
     phase: 'Finalizando',
-    progress: { done: 3, total: 3 },
+    progress: { done: 2, total: 2 },
   })
 
   const result = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, session_id: 'abc-123' })
@@ -258,23 +257,18 @@ test('advanceStage', () => {
 
   const dev = { ...card, status: 'desenvolvendo' }
   const devDone = { status: 'concluido' as const, stage: 'run-task-checklist' }
-  expect(advanceStage(dir, dev, devDone, start)).toEqual({ ...card, flow: 'dificil', status: 'auto-testing' })
-  expect(started).toEqual(['run-test-checklist'])
-
-  const testing = { ...card, status: 'auto-testing' }
-  const testDone = { status: 'concluido' as const, stage: 'run-test-checklist' }
-  expect(advanceStage(dir, testing, testDone, start)).toEqual({ ...card, flow: 'dificil', status: 'code-review' })
-  expect(started).toEqual(['run-test-checklist'])
+  expect(advanceStage(dir, dev, devDone, start)).toEqual({ ...card, flow: 'dificil', status: 'code-review' })
+  expect(started).toEqual([])
 
   const staging = { ...card, status: 'staging' }
   const stagingDone = { status: 'concluido' as const, stage: 'stage-task' }
   expect(advanceStage(dir, staging, stagingDone, start)).toEqual(staging)
-  expect(started).toEqual(['run-test-checklist'])
+  expect(started).toEqual([])
 
   const waiting = { ...card, status: 'aguardando-deploy' }
   const waitingDone = { status: 'concluido' as const, stage: 'master-pr-task' }
   expect(advanceStage(dir, waiting, waitingDone, start)).toEqual(waiting)
-  expect(started).toEqual(['run-test-checklist'])
+  expect(started).toEqual([])
 })
 
 test('advanceStage respeita os fluxos simples e médio', () => {
@@ -308,9 +302,6 @@ test('isResolvedAgentError limpa somente erros superados ou comprovadamente reso
   const card = { title: 'Fix bug', description: '', status: 'code-review' }
   const developmentError = { status: 'erro' as const, stage: 'run-task-checklist' }
   expect(isResolvedAgentError(card, developmentError)).toBe(true)
-
-  const currentTestError = { status: 'erro' as const, stage: 'run-test-checklist' }
-  expect(isResolvedAgentError({ ...card, status: 'auto-testing' }, currentTestError)).toBe(false)
 
   const stagingError = { status: 'erro' as const, stage: 'stage-task' }
   expect(isResolvedAgentError({ ...card, status: 'staging' }, stagingError)).toBe(false)
@@ -377,7 +368,7 @@ test('perfis compartilham modelos e restringem os artefatos do planejamento', ()
     const prompt = planning?.prompt?.({ title: 'Ajuste', description: '', status: 'planejando', flow })
     expect(prompt).toContain('inclua somente ações de implementação')
     expect(prompt).toContain('Não crie tasks de testes de qualquer tipo')
-    expect(prompt).toContain('pertence exclusivamente à TEST-CHECKLIST.md')
+    expect(prompt).toContain('Não inclua tarefas de teste ou verificação na checklist de implementação.')
   }
 })
 

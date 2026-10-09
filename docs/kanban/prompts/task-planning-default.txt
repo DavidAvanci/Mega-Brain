@@ -24,8 +24,6 @@ Portuguese, at `<artifact dir>/PLAN.md`. Its job is to preserve **why, architect
 
 - `PLAN.md`: why, evidence, decisions, contracts, risks and the context an executor cannot infer from one checklist line.
 - `TASK-CHECKLIST.md`: what atomic action runs, which files it may touch and its dependencies.
-- `TEST-CHECKLIST.md`: how behavior is validated.
-
 Do not repeat the same implementation prose across these artifacts. Follow this compact template:
 
 ```markdown
@@ -92,7 +90,7 @@ Rules for a useful, lean plan:
 
 Portuguese, at `<artifact dir>/TASK-CHECKLIST.md` — atomic execution checklist derived from PLAN.md. Each item is one small, independently completable action (a change in one file/module, a migration, a config), ordered by dependency and grouped per repo:
 
-`TASK-CHECKLIST.md` contains **implementation work only**. Never create checklist items for tests of any kind, creating or changing test files, validation, checking, QA, smoke tests, visual review, screenshots, or manual/automated verification. Do not append validation clauses such as “e validar”, “e conferir” or “e testar” to an implementation item. All test and verification activity belongs exclusively in `TEST-CHECKLIST.md`; when that artifact is disabled by the selected flow, omit those activities instead of moving them into the task checklist.
+`TASK-CHECKLIST.md` contains **implementation work only**. Never create checklist items for tests of any kind, creating or changing test files, validation, checking, QA, smoke tests, visual review, screenshots, or manual/automated verification. Do not append validation clauses such as “e validar”, “e conferir” or “e testar” to an implementation item. Do not include test or verification tasks in the implementation checklist.
 
 Every item gets a sequential id (`T1`, `T2`, …, global across repos) and a machine-readable metadata block `{files: …; deps: …}` — the Mega Brain scheduler uses it to decide which items can run **in parallel** (disjoint `files` in the same repo) and in which order (`deps`):
 
@@ -116,41 +114,13 @@ Metadata rules (they gate parallelism, so be precise):
 - `deps`: comma-separated ids the item depends on, or `-` for none. Only real ordering dependencies — don't chain everything linearly out of caution, that kills parallelism.
 - Um item que **consome** um contrato produzido por outro declara `deps` nele, mesmo em repos diferentes e mesmo com `files` disjuntos. A única dispensa é o contrato literal já estar escrito em `Decisões` no PLAN.md — aí os dois lados leem a mesma fonte e podem rodar em paralelo.
 - One checkbox per line, no nested checkboxes. Notes added later by the scheduler start with `>` — never use `>` lines yourself.
-- A task may implement production observability, validation rules or error handling when those are product behavior. It may not exist merely to prove, inspect or visually confirm another implementation item; that is a test scenario and belongs in `TEST-CHECKLIST.md`.
+- A task may implement production observability, validation rules or error handling when those are product behavior. It may not exist merely to prove, inspect or visually confirm another implementation item; that is test work and does not belong in this implementation checklist.
 
-### 5. Write TEST-CHECKLIST.md (artifact dir)
-
-Portuguese, at `<artifact dir>/TEST-CHECKLIST.md` — a manual QA script to be executed with the `playwright-cli` skill (browser automation), **not** automated tests to be written. Write it like a roteiro for a QA analyst. Cover the happy path of the Definition of done plus the main edge cases; for refactors/chores, focus on regression — the flows that must keep working unchanged:
-
-Every scenario gets a sequential id (`S1`, `S2`, …) and a `{app: <frontend repo>; deps: …}` block — the scheduler runs one isolated playwright session per scenario, in parallel when `deps` allow:
-
-```markdown
-# TEST CHECKLIST
-issue: <same id as PLAN.md>
-
-- [ ] S1 Persistir Instagram após recarregar {app: operation-takeat; deps: -}
-  - Quando: `/profile/info` → alterar Instagram → Salvar → recarregar
-  - Então: sucesso visível e valor permanece salvo sem `@`
-- [ ] S2 Atualizar cardápio via socket {app: menu; deps: -}
-  - Dado: restaurante 123 com socket conectado
-  - Quando: publicar evento `MENU_UPDATED`
-  - Então: produtos atualizam sem reload e ocorre apenas 1 refetch
-```
-
-Keep ordinary scenarios compact and self-contained. The title states the behavior under test; the detail lines contain only information that changes how the executor acts or decides pass/fail:
-
-- `Dado` is optional. Include it only for non-default state such as a required role/permission, feature flag, fixture, mock, specific record, or state created earlier. Omit generic conditions already supplied by the test runner, such as the app running, base URL, common login, or an available browser.
-- `Quando` is a compact critical path: route plus primary actions and test data. Prefer one line with `→`; add numbered sub-steps only for genuinely complex flows such as multiple tabs/apps, sockets, mocks, network assertions, or order-sensitive setup. Do not inventory the UI or narrate discoverable intermediate clicks.
-- `Então` is mandatory and contains 1–3 observable assertions. Preserve exact visible text, persisted values, request counts, reload/no-reload behavior, or other evidence needed to distinguish success from failure; do not replace the oracle with vague phrases such as “funciona corretamente”.
-- **Cenário negativo** — erro mockado, 401/500, permissão negada, campo inválido — declara `deps` no cenário de caminho feliz que prova que a tela funciona, e o `Então` precisa discriminar *aquele* erro de uma tela genericamente quebrada: cite a mensagem exata e some uma asserção que só vale com o resto da tela de pé (título, bloco vizinho, botão de retry). Sem isso o cenário passa justamente quando a feature está quebrada, e o `deps` faz o scheduler marcá-lo `blocked` em vez de dar um falso verde.
-
-For an ordinary scenario, aim for **150–250 characters of detail** as a budget, not a validity rule. Expand only when removing detail would make the setup, action, data, or expected result ambiguous. Literal routes, button labels, and values are useful only when they disambiguate the flow. Use `deps` only when a scenario genuinely needs the state another one creates. Scenarios of the **same app run sequentially** (shared backend state); scenarios of different apps run in parallel. Never start a line with `>` (reserved for scheduler notes).
-
-### 6. Estimate and handoff
+### 5. Estimate and handoff
 
 1. Based on PLAN.md scope (repos, files, risk), record a time estimate in the `estimate:` line.
 2. Do not create branches, worktrees or symlinks. The Mega Brain scheduler creates the managed worktrees only when execution starts. In particular, never run `git worktree add` or `ln -s` from planning.
 
-### 7. Return (subagent) / report
+### 6. Return (subagent) / report
 
-Return raw data (it feeds the orchestrator's report): task id + type, paths of the 3 artifacts, affected repos and estimate.
+Return raw data (it feeds the orchestrator's report): task id + type, paths of PLAN.md and TASK-CHECKLIST.md, affected repos and estimate.

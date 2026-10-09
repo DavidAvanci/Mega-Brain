@@ -24,7 +24,6 @@ const settings: MegaBrainSettings = {
   stages: {
     'task-planning': { model: 'fable', effort: 'low' },
     'run-task-checklist': { model: 'fable', effort: 'medium' },
-    'run-test-checklist': { model: 'sonnet', effort: 'high' },
   },
   prompts: { ...DEFAULT_PROMPTS, smartDiffReview: 'instruções de revisão' },
 }
@@ -57,7 +56,6 @@ test('Codex stage defaults preserve roles and respect a restricted account catal
   expect(switched.stages).toEqual({
     'task-planning': { model: 'gpt-6.1-sol', effort: 'high' },
     'run-task-checklist': { model: 'gpt-6.1-sol', effort: 'medium' },
-    'run-test-checklist': { model: 'gpt-6-luna', effort: 'high' },
   })
   expect(switched.prompts).toEqual(settings.prompts)
   const restricted = {

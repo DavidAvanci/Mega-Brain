@@ -12,7 +12,6 @@ export interface StageProgress {
 const ARTIFACT_PHASES = [
   ['PLAN.md', 'Iniciando plano'],
   ['TASK-CHECKLIST.md', 'Criando tasks'],
-  ['TEST-CHECKLIST.md', 'Criando testes'],
 ] as const
 
 export const CARD_FILES = ARTIFACT_PHASES.map(([file]) => file)

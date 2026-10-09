@@ -21,7 +21,6 @@ test('stage settings combine persisted values with safe defaults', () => {
   expect(readStageSettings(root)).toEqual({
     'task-planning': { model: 'opus', effort: 'max' },
     'run-task-checklist': { model: 'fable', effort: 'low' },
-    'run-test-checklist': { model: 'sonnet', effort: 'low' },
   })
 })
 
@@ -31,8 +30,8 @@ test('stage settings reject invalid writes and persist valid settings', () => {
     'Effort inválido',
   )
 
-  const settings = writeStageSettings(root, { 'run-test-checklist': { model: 'haiku', effort: 'medium' } })
-  expect(settings['run-test-checklist']).toEqual({ model: 'haiku', effort: 'medium' })
+  const settings = writeStageSettings(root, { 'run-task-checklist': { model: 'haiku', effort: 'medium' } })
+  expect(settings['run-task-checklist']).toEqual({ model: 'haiku', effort: 'medium' })
   expect(JSON.parse(readFileSync(join(root, '.mega-brain-settings.json'), 'utf8'))).toEqual({ stages: settings })
 })
 

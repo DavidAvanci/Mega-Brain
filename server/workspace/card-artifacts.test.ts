@@ -8,7 +8,7 @@ test('planning progress follows the selected flow artifacts', () => {
   const root = mkdtempSync(join(tmpdir(), 'mega-brain-artifacts-'))
   writeFileSync(join(root, 'TASK-CHECKLIST.md'), 'tasks')
 
-  expect(CARD_FILES).toEqual(['PLAN.md', 'TASK-CHECKLIST.md', 'TEST-CHECKLIST.md'])
+  expect(CARD_FILES).toEqual(['PLAN.md', 'TASK-CHECKLIST.md'])
   expect(planningProgress(root, undefined, 'simples')).toEqual({ done: 1, total: 1, phase: 'Finalizando' })
   expect(planningProgress(root, undefined, 'medio')).toEqual({ done: 1, total: 2, phase: 'Iniciando plano' })
 })

@@ -98,7 +98,12 @@ export function readCard(folderPath: string, name: string): CardData {
     title: typeof data.title === 'string' && data.title ? data.title : name,
     knowledgeRefs: knowledgeRefs(data.knowledgeRefs),
     description: typeof data.description === 'string' ? data.description : '',
-    status: typeof data.status === 'string' && data.status ? data.status : 'a-fazer',
+    status:
+      data.status === 'auto-testing'
+        ? 'code-review'
+        : typeof data.status === 'string' && data.status
+          ? data.status
+          : 'a-fazer',
     flow: readFlow(data.flow),
     prs: readPrs(data.prs),
     worktrees: readWorktrees(data.worktrees),
