@@ -271,7 +271,10 @@ function IslandPreview({ display }: { display: IslandDisplaySettings }) {
   const agent = display.petAppearance === 'auto' ? 'codex' : display.petAppearance
   const asking = state === 'waiting' && display.autoExpandOnWaiting
   return (
-    <div className="grid gap-2 rounded-lg border bg-muted/20 p-3" aria-label="Prévia da ilha dinâmica">
+    <div
+      className="grid min-w-0 grid-cols-1 gap-2 rounded-lg border bg-muted/20 p-3"
+      aria-label="Prévia da ilha dinâmica"
+    >
       <style>{`
         @keyframes island-pet-running { 50% { transform: translateY(-2px); } }
         @keyframes island-pet-thinking { 50% { opacity: .45; transform: scale(.94); } }
@@ -281,7 +284,7 @@ function IslandPreview({ display }: { display: IslandDisplaySettings }) {
         @media (prefers-reduced-motion: reduce) { .island-pet-preview { animation: none !important; } }
       `}</style>
       <div
-        className={`mx-auto grid max-w-full gap-3 bg-black p-4 text-white transition-opacity ${display.enabled ? '' : 'opacity-35'}`}
+        className={`mx-auto grid min-w-0 max-w-full grid-cols-1 gap-3 bg-black p-4 text-white transition-opacity ${display.enabled ? '' : 'opacity-35'}`}
         style={{ width: display.compactWidth, borderRadius: display.cornerRadius, fontSize: display.fontSize }}
       >
         <div className="flex items-center gap-3">
@@ -319,7 +322,7 @@ function IslandPreview({ display }: { display: IslandDisplaySettings }) {
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[10px] text-muted-foreground">Prévia · escolha um estado</span>
         <div className="flex gap-1" role="group" aria-label="Estado da prévia">
           {STATES.map(([value, title, key]) => (
@@ -356,9 +359,13 @@ export function ActivityIslandSettings({
     return () => onLoadedChange?.(false)
   }, [loaded, onLoadedChange])
   return (
-    <section className="grid gap-4" aria-label="Ilha dinâmica" data-settings-section="island">
+    <section
+      className="@container grid min-w-0 grid-cols-1 gap-4"
+      aria-label="Ilha dinâmica"
+      data-settings-section="island"
+    >
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h3 className="text-sm font-medium">Ilha dinâmica</h3>
           <p className="text-xs text-muted-foreground">Acompanhe agentes e responda às tarefas no topo da tela.</p>
           <p className="mt-1 text-[10px] text-muted-foreground" role="status" aria-live="polite">
@@ -399,7 +406,7 @@ export function ActivityIslandSettings({
         </div>
       )}
       <IslandPreview display={display} />
-      <fieldset disabled={!loaded} className="grid gap-4">
+      <fieldset disabled={!loaded} className="grid min-w-0 grid-cols-1 gap-4">
         <div className="grid gap-2">
           <Toggle label="Ativar ilha dinâmica" checked={display.enabled} onChange={(enabled) => update({ enabled })} />
           <Toggle
@@ -467,7 +474,7 @@ export function ActivityIslandSettings({
               ]}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid min-w-0 grid-cols-1 gap-3 @min-[24rem]:grid-cols-2">
             <Range
               label="Tamanho do mascote"
               value={display.petSize}
@@ -489,13 +496,13 @@ export function ActivityIslandSettings({
             checked={display.animations}
             onChange={(animations) => update({ animations })}
           />
-          <div className="grid grid-cols-5 gap-2" role="group" aria-label="Cores dos estados">
+          <div className="grid grid-cols-3 gap-2 @min-[24rem]:grid-cols-5" role="group" aria-label="Cores dos estados">
             {STATES.map(([, label, key]) => (
               <label key={key} className="grid gap-1 text-[10px] text-muted-foreground">
                 <input
                   type="color"
                   aria-label={`Cor: ${label}`}
-                  className="h-8 w-full cursor-pointer rounded-md border bg-background p-1"
+                  className="h-8 w-full min-w-0 cursor-pointer rounded-md border bg-background p-1"
                   value={display[key]}
                   onChange={(event) => update({ [key]: event.target.value })}
                 />
@@ -539,7 +546,7 @@ export function ActivityIslandSettings({
         </div>
         <details className="border-t pt-3" data-settings-section="island-dimensions">
           <summary className="cursor-pointer text-xs font-medium">Dimensões e texto</summary>
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 @min-[24rem]:grid-cols-2">
             {RANGES.map(([key, label, min, max]) => (
               <Range
                 key={key}
@@ -590,7 +597,7 @@ function Range({
   onChange: (value: number) => void
 }) {
   return (
-    <label className="grid gap-1 text-xs">
+    <label className="grid min-w-0 gap-1 text-xs">
       <span className="flex justify-between gap-2">
         {label}
         <output className="shrink-0 text-muted-foreground">
@@ -599,6 +606,7 @@ function Range({
       </span>
       <input
         type="range"
+        className="w-full min-w-0"
         aria-label={label}
         min={min}
         max={max}

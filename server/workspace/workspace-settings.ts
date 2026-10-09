@@ -5,12 +5,15 @@ import type { MegaBrainConfig } from '../config'
 import { detectEditors } from '../editor-detection'
 import { readStageSettings, validateStageSettings, writeStageSettings } from './stage-settings'
 import { FALLBACK_CODEX_CATALOG, type CodexModelCatalog } from '../../shared/domain/codex-models'
+import { migrateKnowledgeStorage } from '../knowledge/service'
 
 export function availableWorkspaceEditors(config: MegaBrainConfig) {
   return detectEditors(config)
 }
 
 export function readWorkspaceSettings(config: MegaBrainConfig, root: string, catalog = FALLBACK_CODEX_CATALOG) {
+  // Make the existing catalog available before Settings offers its folder shortcut.
+  migrateKnowledgeStorage(config.preferences.settingsFile, config.workspaceDir)
   return {
     general: readGeneralSettings(config),
     stages: readStageSettings(root, config.preferences.llmProvider, catalog),

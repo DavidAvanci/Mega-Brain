@@ -7,6 +7,7 @@ import { resolveOptionalExecutable } from './platform'
 import { detectEditors } from './editor-detection'
 import { DEFAULT_JEV_BASE_URL, normalizeJevBaseUrl } from './integrations/jev/url'
 import { DEFAULT_PROMPTS, type PromptSettings } from '../shared/domain/settings'
+import { migrateKnowledgeStorage, workspaceKnowledgeFile } from './knowledge/service'
 
 const EDITORS = new Set(['cursor', 'vscode', 'windsurf', 'zed', 'sublime', 'intellij', 'webstorm', 'pycharm', 'custom'])
 const PROVIDERS = new Set(['claude', 'chatgpt'])
@@ -36,6 +37,7 @@ export function readGeneralSettings(config: MegaBrainConfig): GeneralSettings {
     shellCommand: config.preferences.shellCommand ?? '',
     workspaceDir: resolve(config.workspaceDir),
     worktreesDir: resolve(config.worktreesDir),
+    knowledgeDir: dirname(workspaceKnowledgeFile(config.workspaceDir)),
     llmProvider: config.preferences.llmProvider,
     jiraSite: config.jira.site ?? '',
     jiraEmail: config.jira.email ?? '',
@@ -160,6 +162,7 @@ export function writeGeneralSettings(config: MegaBrainConfig, value: unknown): G
   mkdirSync(settings.workspaceDir, { recursive: true })
   mkdirSync(settings.worktreesDir, { recursive: true })
   const file = config.preferences.settingsFile
+  migrateKnowledgeStorage(file, settings.workspaceDir, config.workspaceDir)
   mkdirSync(dirname(file), { recursive: true })
   const temporary = `${file}.${randomUUID()}.tmp`
   try {

@@ -38,6 +38,8 @@ Os níveis de fluxo ajustam as etapas: **Simples** gera apenas a checklist de im
 
 Os cards e as preferências ficam em arquivos locais. O backend do aplicativo desktop roda nativamente no macOS e no WSL no Windows, atendendo apenas em 127.0.0.1; veja [a documentação do backend](./server/README.md) para detalhes.
 
+A base de conhecimento fica em `knowledge/catalog.json`, ao lado da pasta dos cards. No macOS, o padrão é `~/Documents/Mega Brain/knowledge/catalog.json`. Ao atualizar, o aplicativo copia a base anterior para esse local quando ainda não existe um catálogo ali e mantém o arquivo original como backup. Configurações → Geral → Diretórios mostra o caminho e permite abrir a pasta.
+
 ## Compatibilidade atual
 
 | Área                    | Compatibilidade                                                                                                                                                                                                                                   |

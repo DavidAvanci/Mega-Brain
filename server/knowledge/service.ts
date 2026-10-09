@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { repositoryCatalogFile } from '../repositories/catalog'
+import { assertTestWorkspace } from '../test-safety'
 import type {
   KnowledgeActor,
   KnowledgeCatalog,
@@ -21,26 +22,66 @@ export class KnowledgeError extends Error {
     super(message)
   }
 }
+/** Legacy location, retained for migration and existing standalone integrations. */
 export function knowledgeFile(settingsFile?: string): string {
   return join(dirname(repositoryCatalogFile(settingsFile)), 'knowledge', 'catalog.json')
+}
+export function workspaceKnowledgeFile(workspaceDir: string): string {
+  return join(dirname(resolve(workspaceDir)), 'knowledge', 'catalog.json')
+}
+function parseCatalog(contents: string): KnowledgeCatalog {
+  const catalog: KnowledgeCatalog = JSON.parse(contents)
+  if (!catalog || catalog.version !== 1 || !Array.isArray(catalog.folders) || !Array.isArray(catalog.pages))
+    throw new KnowledgeError('Base de conhecimento inválida', 500)
+  return catalog
+}
+/** Copies an existing catalog without replacing the destination or removing the source. */
+export function migrateKnowledgeStorage(
+  settingsFile: string,
+  workspaceDir: string,
+  previousWorkspaceDir?: string,
+): string {
+  const destination = workspaceKnowledgeFile(workspaceDir)
+  if (existsSync(destination)) return destination
+  const previous = previousWorkspaceDir ? workspaceKnowledgeFile(previousWorkspaceDir) : undefined
+  const source = previous && existsSync(previous) ? previous : knowledgeFile(settingsFile)
+  if (resolve(source) === destination || !existsSync(source)) return destination
+  const contents = readFileSync(source, 'utf8')
+  parseCatalog(contents)
+  assertTestWorkspace(dirname(destination))
+  mkdirSync(dirname(destination), { recursive: true, mode: 0o700 })
+  const temporary = `${destination}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, contents, { flag: 'wx', mode: 0o600 })
+    try {
+      // Linking publishes the complete file atomically and refuses to overwrite another catalog.
+      linkSync(temporary, destination)
+    } catch (error) {
+      if (!existsSync(destination)) throw error
+    }
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+  return destination
 }
 function text(value: unknown, label: string, limit: number): string {
   if (typeof value !== 'string' || value.length > limit) throw new KnowledgeError(`${label} inválido`)
   return value
 }
-export function knowledgeService(file = knowledgeFile()) {
+export function knowledgeService(file: string | (() => string) = knowledgeFile()) {
+  const catalogFile = () => (typeof file === 'function' ? file() : file)
   const load = (): KnowledgeCatalog => {
-    if (!existsSync(file)) return { version: 1, folders: [], pages: [] }
-    const catalog: KnowledgeCatalog = JSON.parse(readFileSync(file, 'utf8'))
-    if (catalog.version !== 1 || !Array.isArray(catalog.folders) || !Array.isArray(catalog.pages))
-      throw new KnowledgeError('Base de conhecimento inválida', 500)
-    return catalog
+    const path = catalogFile()
+    if (!existsSync(path)) return { version: 1, folders: [], pages: [] }
+    return parseCatalog(readFileSync(path, 'utf8'))
   }
   const persist = (catalog: KnowledgeCatalog) => {
-    mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
-    const temporary = `${file}.${randomUUID()}.tmp`
+    const path = catalogFile()
+    assertTestWorkspace(dirname(path))
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+    const temporary = `${path}.${randomUUID()}.tmp`
     writeFileSync(temporary, `${JSON.stringify(catalog, null, 2)}\n`, { mode: 0o600 })
-    renameSync(temporary, file)
+    renameSync(temporary, path)
   }
   const find = (catalog: KnowledgeCatalog, ref: KnowledgeRef) => {
     const item = (ref.kind === 'page' ? catalog.pages : catalog.folders).find((item) => item.id === ref.id)

@@ -11,6 +11,7 @@ import { createWorkspacePathResolver } from './path'
 import { deleteCard } from './worktree-lifecycle'
 import { listBoardCards } from './board-list'
 import { openEditor } from './launchers'
+import { openDirectory } from './open-directory'
 import { createStageController } from './stage-controller'
 import { inspectCard, inspectCardDiff } from './card-inspection'
 import { createSmartDiffReview } from './smart-diff-review'
@@ -97,6 +98,10 @@ export function createWorkspaceService(
       }
       if (method !== 'POST') throw new Error('Método não suportado')
       const data = (body ?? {}) as Record<string, unknown>
+      if (path === '/settings/open-directory') {
+        await openDirectory(data.path, runner)
+        return { ok: true }
+      }
       if (path === '/settings') {
         const provider = (data.general as { llmProvider?: unknown } | undefined)?.llmProvider ?? config.preferences.llmProvider
         const result = writeWorkspaceSettings(config, data, provider === 'chatgpt' ? await codexModels?.() : undefined)

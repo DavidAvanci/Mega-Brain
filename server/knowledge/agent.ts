@@ -5,7 +5,7 @@ import { knowledgeFile, knowledgeService } from './service'
 import { knowledgeMentions, knowledgeRefs, type KnowledgeActor, type KnowledgeRef } from '../../shared/domain/knowledge'
 
 const secret = randomBytes(32)
-type Connection = { url: string }
+type Connection = { url: string; catalogFile?: () => string }
 const connections = new Map<string, Connection>()
 export function configureKnowledgeConnection(settingsFile: string | undefined, connection: Connection) {
   const url = new URL(connection.url)
@@ -50,9 +50,9 @@ try {
 } catch { console.error('Não foi possível conectar à base de conhecimento.'); process.exitCode = 1; }
 `
 export function knowledgeAgentEnvironment(settingsFile: string | undefined, actor: KnowledgeActor): NodeJS.ProcessEnv {
-  const file = knowledgeFile(settingsFile)
-  const connection = connections.get(file)
+  const connection = connections.get(knowledgeFile(settingsFile))
   if (!connection) return {}
+  const file = connection.catalogFile?.() ?? knowledgeFile(settingsFile)
   const script = join(dirname(file), 'agent.mjs')
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
   writeFileSync(script, KNOWLEDGE_ADAPTER, { mode: 0o600 })
@@ -65,9 +65,10 @@ export function knowledgeAgentEnvironment(settingsFile: string | undefined, acto
 }
 export function knowledgeContext(text: string, refs: KnowledgeRef[] = [], settingsFile?: string): string {
   const references = [...knowledgeRefs(refs), ...knowledgeMentions(text)]
-  const configured = connections.has(knowledgeFile(settingsFile))
+  const connection = connections.get(knowledgeFile(settingsFile))
+  const configured = Boolean(connection)
   if (!references.length && !configured) return text
-  const pages = knowledgeService(knowledgeFile(settingsFile)).resolve(references)
+  const pages = knowledgeService(connection?.catalogFile ?? knowledgeFile(settingsFile)).resolve(references)
   const sections: string[] = []
   let remaining = 24_000
   for (const page of pages) {

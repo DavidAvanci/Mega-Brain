@@ -3,7 +3,7 @@ import { createCodexModelsService } from './codex-models/service'
 import { createCodexProfilesStore } from './codex-profiles/service'
 import { codexProfilesHttp } from './codex-profiles/http'
 import { knowledgeHttp } from './knowledge/http'
-import { knowledgeFile, knowledgeService } from './knowledge/service'
+import { migrateKnowledgeStorage, knowledgeService } from './knowledge/service'
 import { configureKnowledgeConnection } from './knowledge/agent'
 import { activityIslandHttp } from './activity-island/service'
 import { cardTriageHttp } from './card-triage/http'
@@ -60,11 +60,16 @@ export function productionRouteKey(method: string, path: string): string {
  */
 export function createProductionRouteTable(options: ProductionRouteOptions): ProductionRouteTable {
   const routes = new Map<string, ProductionRouteHandler>()
+  const knowledgeCatalogFile = () =>
+    migrateKnowledgeStorage(options.config.preferences.settingsFile, options.config.workspaceDir)
   const add = (method: string, path: string, handler: ProductionRouteHandler) =>
     routes.set(productionRouteKey(method, path), (async (request: import('./contracts').ApiRequest) => {
       const host = request.headers.host
       if (host && /^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(host))
-        configureKnowledgeConnection(options.config.preferences.settingsFile, { url: `http://${host}` })
+        configureKnowledgeConnection(options.config.preferences.settingsFile, {
+          url: `http://${host}`,
+          catalogFile: knowledgeCatalogFile,
+        })
       return handler(request)
     }) as ProductionRouteHandler)
   const runner = options.processRunner ?? nodeProcessRunner
@@ -76,8 +81,9 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   const config = options.config
   configureKnowledgeConnection(config.preferences.settingsFile, {
     url: `http://127.0.0.1:${config.mode === 'web' ? 5173 : config.server.port}`,
+    catalogFile: knowledgeCatalogFile,
   })
-  const knowledge = knowledgeHttp(knowledgeService(knowledgeFile(config.preferences.settingsFile)))
+  const knowledge = knowledgeHttp(knowledgeService(knowledgeCatalogFile))
   for (const [method, path] of [
     ['GET', '/api/knowledge'],
     ['POST', '/api/knowledge'],
@@ -193,6 +199,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['GET', '/api/workspace/diff/standard'],
     ['POST', '/api/workspace'],
     ['POST', '/api/workspace/settings'],
+    ['POST', '/api/workspace/settings/open-directory'],
     ['POST', '/api/workspace/open'],
     ['POST', '/api/workspace/diff'],
     ['POST', '/api/workspace/terminal'],
