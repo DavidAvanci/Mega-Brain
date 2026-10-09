@@ -14,13 +14,7 @@ import type { SettingsSectionProps } from './settings-form'
 import { CodexProfilesSettings } from './CodexProfilesSettings'
 import { ProviderSettings } from './ProviderSettings'
 import { EffortScale } from './EffortScale'
-
-const CLAUDE_MODELS = [
-  { value: 'fable', label: 'Fable' },
-  { value: 'opus', label: 'Opus' },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'haiku', label: 'Haiku' },
-]
+import { CLAUDE_MODELS } from '../../../shared/domain/chat-models'
 
 const STAGES: { key: keyof BoardSettings; title: string; description: string }[] = [
   { key: 'task-planning', title: 'Planejamento', description: 'Criação do plano e checklists.' },

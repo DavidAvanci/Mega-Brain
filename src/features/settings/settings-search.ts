@@ -68,8 +68,8 @@ const ENTRIES: SettingsSearchEntry[] = [
     target: 'directories',
     tab: 'general',
     title: 'Diretórios',
-    description: 'Workspace dos cards e pasta de worktrees.',
-    keywords: 'caminho pastas arquivos git',
+    description: 'Workspace dos cards, pasta de worktrees e armazenamento do conhecimento.',
+    keywords: 'caminho pastas arquivos git knowledge conhecimento catálogo catalog.json',
   },
   {
     target: 'flows',

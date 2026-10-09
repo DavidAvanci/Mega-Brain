@@ -357,7 +357,7 @@ export function SettingsDialog({
           <DialogDescription>Personalize o aplicativo, as integrações e seu ambiente de execução.</DialogDescription>
         </DialogHeader>
         {error && <p className="mx-5 mb-3 rounded-md bg-destructive/10 p-2 text-xs text-destructive">{error}</p>}
-        <div className="h-full min-h-0 flex-1">
+        <div className="h-full min-h-0 min-w-0 flex-1">
           <Tabs
             value={tab}
             onValueChange={(value) => {
@@ -365,7 +365,7 @@ export function SettingsDialog({
               setSearchTarget(null)
             }}
             orientation="vertical"
-            className="h-full min-h-0 flex-1 flex-col gap-0 overflow-clip border-t sm:flex-row"
+            className="h-full min-h-0 min-w-0 flex-1 flex-col gap-0 overflow-clip border-t sm:flex-row"
           >
             <aside
               aria-label="Navegação de configurações"
@@ -407,8 +407,8 @@ export function SettingsDialog({
               </TabsList>
             </aside>
 
-            <TabsContent value="general" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
-              <div className="grid gap-5">
+            <TabsContent value="general" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
+              <div className="grid min-w-0 gap-5">
                 <section className="grid gap-2">
                   <div>
                     <h3 className="text-sm font-medium">Aparência</h3>
@@ -471,7 +471,7 @@ export function SettingsDialog({
                                 key={option.value}
                                 type="button"
                                 aria-pressed={selected}
-                                className={`grid grid-cols-[auto_1fr] items-center gap-3 rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'border-primary bg-primary/8 ring-1 ring-primary/25' : 'border-border hover:bg-muted/60'}`}
+                                  className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'border-primary bg-primary/8 ring-1 ring-primary/25' : 'border-border hover:bg-muted/60'}`}
                                 onClick={() => {
                                   if (category.key === 'palette') setPalette(option.value as ThemeSettings['palette'])
                                   else if (category.key === 'typography') {
@@ -592,7 +592,7 @@ export function SettingsDialog({
                   </div>
                   <div className="divide-y overflow-hidden rounded-lg border">
                     {FLOW_SUMMARIES.map((profile) => (
-                      <div key={profile.title} className="grid gap-0.5 px-3 py-2.5 sm:grid-cols-[70px_1fr] sm:gap-3">
+                        <div key={profile.title} className="grid gap-0.5 px-3 py-2.5 sm:grid-cols-[70px_minmax(0,1fr)] sm:gap-3">
                         <div className="text-xs font-semibold">{profile.title}</div>
                         <div>
                           <p className="text-xs text-foreground/85">{profile.path}</p>
@@ -605,7 +605,7 @@ export function SettingsDialog({
               </div>
             </TabsContent>
 
-            <TabsContent value="jira" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+            <TabsContent value="jira" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
               {settings ? (
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <JiraSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
@@ -614,7 +614,7 @@ export function SettingsDialog({
                 <SettingsSectionLoading />
               )}
             </TabsContent>
-            <TabsContent value="models" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+            <TabsContent value="models" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
               {settings ? (
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <ExecutionSettings
@@ -631,7 +631,7 @@ export function SettingsDialog({
                 <SettingsSectionLoading />
               )}
             </TabsContent>
-            <TabsContent value="ides" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+            <TabsContent value="ides" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
               {settings && editorsLoaded ? (
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <IdeSettings
@@ -645,7 +645,7 @@ export function SettingsDialog({
                 <SettingsSectionLoading />
               )}
             </TabsContent>
-            <TabsContent value="terminal" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+            <TabsContent value="terminal" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
               {settings ? (
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <TerminalSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
@@ -654,7 +654,7 @@ export function SettingsDialog({
                 <SettingsSectionLoading />
               )}
             </TabsContent>
-            <TabsContent value="integrations" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+            <TabsContent value="integrations" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
               {settings ? (
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <TriageSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
@@ -664,7 +664,7 @@ export function SettingsDialog({
               )}
             </TabsContent>
 
-            <TabsContent value="prompts" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+            <TabsContent value="prompts" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
               {settings ? (
                 <PromptsSettings
                   value={settings.prompts}
@@ -681,7 +681,7 @@ export function SettingsDialog({
               )}
             </TabsContent>
             {isMacOSDesktop() && (
-              <TabsContent value="island" className="min-h-0 min-w-0 overflow-y-auto p-4 sm:p-5">
+              <TabsContent value="island" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <ActivityIslandSettings ref={islandSettings} onLoadedChange={setIslandLoaded} />
                 </Suspense>

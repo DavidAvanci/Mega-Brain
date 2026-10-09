@@ -10,6 +10,7 @@
     "allow-set-wsl-workspace-dir",
     "allow-normalize-wsl-directory",
     "allow-open-diagnostics-folder",
+    "allow-export-chat-markdown",
     "allow-window-controls",
     "autostart:allow-enable",
     "autostart:allow-disable",

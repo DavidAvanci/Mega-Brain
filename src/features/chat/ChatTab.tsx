@@ -1,47 +1,16 @@
 import { KnowledgeAttachments } from '@/features/knowledge/KnowledgeAttachments'
 import type { KnowledgeRef } from '../../../shared/domain/knowledge'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { SentIcon, StopIcon } from '@hugeicons/core-free-icons'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Spinner } from '@/components/ui/spinner'
-import { RepositoryMentionTextarea } from '@/components/RepositoryMentionTextarea'
-import { cn } from '@/lib/utils'
 import { abortChat, fetchChat, sendChat } from '@/features/cards/api/card-detail-api'
 import { workspaceAction } from '@/features/cards/api/cards-api'
 import { isTauriDesktop } from '@/desktopBootstrap'
-import { Markdown } from '@/Markdown'
 import type { ChatAgentSettings, ChatEntry } from '../../../shared/contracts/chat'
-
-function Entry({ entry }: { entry: ChatEntry }) {
-  if (entry.tool) {
-    return (
-      <p className="shrink-0 truncate pl-3 font-mono text-[11px] text-muted-foreground" title={entry.tool}>
-        {entry.source ? `${entry.source} · ` : ''}
-        {entry.tool}
-      </p>
-    )
-  }
-  if (entry.role === 'user') {
-    return (
-      <div className="ml-auto max-w-[80%] rounded-lg bg-muted px-3 py-2 text-sm whitespace-pre-wrap">
-        <p>{entry.text}</p>
-        {entry.queued && (
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            Pendente · será entregue na próxima chamada do agente
-          </p>
-        )}
-      </div>
-    )
-  }
-  return (
-    <div className="min-w-0">
-      {entry.source && <p className="mb-1 text-[11px] text-muted-foreground">{entry.source}</p>}
-      <Markdown text={entry.text ?? ''} />
-    </div>
-  )
-}
+import { ChatTranscript } from './ChatTranscript'
+import { ChatComposer } from './ChatComposer'
+import { ChatExport } from './ChatExport'
+import { useChatModelSelection } from './ChatModelPicker'
 
 export function ChatTab({ cardId }: { cardId: string }) {
   const [entries, setEntries] = useState<ChatEntry[] | null>(null)
@@ -60,6 +29,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
   const textarea = useRef<HTMLTextAreaElement>(null)
   const actionButton = useRef<HTMLButtonElement>(null)
   const pendingFocus = useRef<string | null>(null)
+  const { selection, choose, restore } = useChatModelSelection(cardId)
 
   useEffect(() => {
     const cancelOnFocus = (event: FocusEvent) => {
@@ -104,6 +74,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
           setSettings(data.settings ?? null)
           setExecutionRunning(Boolean(data.executionRunning))
           setPendingMessages(data.pendingMessages ?? 0)
+          restore(data.selection)
         })
         .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)))
     if (streaming) return
@@ -113,7 +84,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
       cancelled = true
       clearInterval(timer)
     }
-  }, [cardId, streaming])
+  }, [cardId, streaming, restore])
 
   useEffect(() => {
     const el = scroller.current
@@ -141,6 +112,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
             return
           }
           if (event.type === 'tool') return append({ role: 'assistant', tool: event.tool })
+          if (event.type === 'output') return append({ role: 'assistant', output: event.text })
           if (event.type === 'done') return event.error ? setError(event.error) : undefined
           setEntries((prev) => {
             const list = prev ?? []
@@ -152,6 +124,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
           })
         },
         knowledgeRefs,
+        selection,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -163,6 +136,10 @@ export function ChatTab({ cardId }: { cardId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-5 py-1">
+        <span className="text-xs text-muted-foreground">Conversa e atividade das execuções</span>
+        <ChatExport cardId={cardId} conversation="Execuções" entries={entries ?? []} />
+      </div>
       {(executionRunning || pendingMessages > 0) && (
         <p className="border-b px-5 py-2 text-[11px] text-muted-foreground" role="status">
           {executionRunning
@@ -204,32 +181,28 @@ export function ChatTab({ cardId }: { cardId: string }) {
             {session ? 'Sessão sem mensagens ainda.' : 'Nenhuma sessão do agente ainda — a primeira mensagem abre uma.'}
           </p>
         ) : (
-          entries.map((entry, index) => <Entry key={index} entry={entry} />)
+          <ChatTranscript entries={entries} busy={streaming || executionRunning} />
         )}
         {streaming && <Spinner className="text-muted-foreground" />}
       </div>
-      <div className="px-5 py-1">
-        <KnowledgeAttachments
-          value={knowledgeRefs}
-          onChange={setKnowledgeRefs}
-          onMention={(mention) => setInput((previous) => `${previous}${previous ? ' ' : ''}${mention} `)}
-          disabled={streaming}
-        />
-      </div>
       {error && <p className="px-5 pb-2 text-xs text-destructive">{error}</p>}
-      <div ref={composer} className="flex items-end gap-2 border-t px-5 py-3">
-        <RepositoryMentionTextarea
+      <div ref={composer} className="shrink-0 px-5 py-3">
+        <ChatComposer
+          input={input}
+          onInput={setInput}
+          onSend={() => void send()}
+          onStop={() => void abortChat(cardId)}
+          busy={streaming}
+          loading={entries === null}
+          modelLocked={executionRunning}
+          selection={selection}
+          onSelection={choose}
           textareaRef={textarea}
-          popupPlacement="above"
-          aria-label="Mensagem do chat"
-          rows={1}
-          value={input}
-          onValueChange={setInput}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter' || e.shiftKey) return
-            e.preventDefault()
-            send()
-          }}
+          actionRef={actionButton}
+          label="Mensagem do chat"
+          sendLabel="Enviar mensagem"
+          stopLabel="Parar resposta"
+          mentions
           placeholder={
             executionRunning
               ? 'Adicione uma orientação à execução…'
@@ -237,32 +210,14 @@ export function ChatTab({ cardId }: { cardId: string }) {
                 ? 'Peça um ajuste ao agente…'
                 : 'Comece uma sessão nessa pasta…'
           }
-          className={cn('max-h-40 min-h-10 resize-none', streaming && 'opacity-60')}
-          disabled={streaming}
-        />
-        {streaming ? (
-          <Button
-            ref={actionButton}
-            aria-label="Parar resposta"
-            className="h-10 w-10 px-0"
-            variant="outline"
-            size="sm"
-            onClick={() => abortChat(cardId)}
-          >
-            <HugeiconsIcon icon={StopIcon} strokeWidth={2} />
-          </Button>
-        ) : (
-          <Button
-            ref={actionButton}
-            aria-label="Enviar mensagem"
-            className="h-10 w-10 px-0"
-            size="sm"
-            onClick={send}
-            disabled={!input.trim()}
-          >
-            <HugeiconsIcon icon={SentIcon} strokeWidth={2} />
-          </Button>
-        )}
+        >
+          <KnowledgeAttachments
+            value={knowledgeRefs}
+            onChange={setKnowledgeRefs}
+            onMention={(mention) => setInput((previous) => `${previous}${previous ? ' ' : ''}${mention} `)}
+            disabled={streaming}
+          />
+        </ChatComposer>
       </div>
     </div>
   )

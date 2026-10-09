@@ -183,6 +183,12 @@
           "markdownDescription": "Allows the WebView to read the authenticated loopback backend configuration."
         },
         {
+          "description": "Allows exporting chat Markdown only to a file chosen in the native Save dialog.",
+          "type": "string",
+          "const": "allow-export-chat-markdown",
+          "markdownDescription": "Allows exporting chat Markdown only to a file chosen in the native Save dialog."
+        },
+        {
           "description": "Allows the WebView to list displays for the native activity island.",
           "type": "string",
           "const": "allow-list-island-monitors",

@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { previewDevEnv, startDevEnv, stopDevEnv } from '../modules/dev-environments/dev-env'
+import { previewDevEnv, readDevEnv, startDevEnv, stopDevEnv } from '../modules/dev-environments/dev-env'
+import { readDevEnvLogs } from '../modules/dev-environments/dev-env-logs'
 import { parseDevEnvOptions } from '../modules/dev-environments/dev-env-options'
 import { createOwnedProcessRunner, nodeProcessRunner, type ProcessOwner, type ProcessRunner } from '../process'
 import { editorExecutable } from '../app-settings'
@@ -10,6 +11,7 @@ import { createWorkspacePathResolver } from './path'
 import { deleteCard } from './worktree-lifecycle'
 import { listBoardCards } from './board-list'
 import { openEditor } from './launchers'
+import { openDirectory } from './open-directory'
 import { createStageController } from './stage-controller'
 import { inspectCard, inspectCardDiff } from './card-inspection'
 import { createSmartDiffReview } from './smart-diff-review'
@@ -90,6 +92,7 @@ export function createWorkspaceService(
             diffReview.isRunning,
           )
         const card = folder(query.get('name'))
+        if (path === '/dev-env') return readDevEnv(card.path)
         if (path === '/detail')
           return inspectCard(
             card,
@@ -113,6 +116,10 @@ export function createWorkspaceService(
       }
       if (method !== 'POST') throw new Error('Método não suportado')
       const data = (body ?? {}) as Record<string, unknown>
+      if (path === '/settings/open-directory') {
+        await openDirectory(data.path, runner)
+        return { ok: true }
+      }
       if (path === '/settings') {
         const provider =
           (data.general as { llmProvider?: unknown } | undefined)?.llmProvider ?? config.preferences.llmProvider
@@ -146,6 +153,7 @@ export function createWorkspaceService(
         return { ok: true }
       }
       if (path === '/dev-env/preview') return previewDevEnv(cardPath, runner, config.preferences.settingsFile)
+      if (path === '/dev-env/logs') return readDevEnvLogs(cardPath, data.file)
       if (path === '/dev-env/stop') {
         stopDevEnv(cardPath)
         return { ok: true }

@@ -8,6 +8,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -20,8 +21,16 @@ import type { DevEnvApp, DevEnvInfo } from '../../../shared/domain/agents'
 import type { DevEnvPreview, DevEnvStartOptions } from '../../../shared/domain/dev-environments'
 import { addOptionalFrontends, devEnvPreview, parseDevEnvOptions, selectDevEnvProjects } from './dev-env-options'
 import { nodeProcessRunner, type ProcessChild, type ProcessRunner } from '../../process'
-import { registeredAppCommand, registeredAppEnvironment, registeredDevApp, type RegisteredApp } from './dev-env-apps'
+import {
+  prepareRegisteredApp,
+  registeredAppCommand,
+  registeredAppEnvironment,
+  registeredDevApp,
+  type RegisteredApp,
+} from './dev-env-apps'
 import { AGD, BACKEND_LIBS, BACKEND_PORT, CLUBE, CLUBE_PORT, FRONTENDS, type FrontendConfig } from './dev-env-config'
+import { readTail } from '../../agent-log'
+import { redactDevEnvOutput } from './dev-env-logs'
 const STATE_DIR = '.dev-env'
 
 export { FRONTENDS } from './dev-env-config'
@@ -225,6 +234,7 @@ interface Run {
   aborted: boolean
   child?: ProcessChild
   childError?: Error
+  logOffset?: number
 }
 
 const active = new Map<string, Run>()
@@ -308,7 +318,11 @@ function processEnvironment(runner: ProcessRunner): NodeJS.ProcessEnv {
 }
 
 export function shouldInstallDependencies(dir: string, canonicalDir: string): boolean {
-  return !existsSync(join(dir, 'node_modules')) || !lockfilesMatch(dir, canonicalDir)
+  const modules = join(dir, 'node_modules')
+  if (!existsSync(modules)) return true
+  // Only a shared tree depends on the canonical lockfile. Independently
+  // installed task dependencies must not be replaced on every environment run.
+  return lstatSync(modules).isSymbolicLink() && !lockfilesMatch(dir, canonicalDir)
 }
 
 export function prepareDependencies(dir: string, canonicalDir: string): boolean {
@@ -355,10 +369,12 @@ function detach(
   logFile: string,
   cmd: string,
   args: string[],
-  env: Record<string, string>,
+  env: NodeJS.ProcessEnv,
   runner: ProcessRunner,
 ): ProcessChild {
   const fd = openSync(logFile, 'a')
+  run.logOffset = statSync(logFile).size
+  run.childError = undefined
   const child = runner.spawn(cmd, args, {
     cwd,
     detached: true,
@@ -374,9 +390,9 @@ function detach(
   return child
 }
 
-function tryConnect(port: number): Promise<boolean> {
+function tryConnectHost(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const socket = connect({ port, host: '127.0.0.1' })
+    const socket = connect({ port, host })
     const finish = (ok: boolean) => {
       socket.destroy()
       resolve(ok)
@@ -385,6 +401,12 @@ function tryConnect(port: number): Promise<boolean> {
     socket.once('error', () => finish(false))
     socket.setTimeout(1000, () => finish(false))
   })
+}
+
+async function tryConnect(port: number): Promise<boolean> {
+  // On macOS Vite can resolve localhost to ::1. Check both loopback families
+  // for readiness and conflicts, rather than timing out on a running app.
+  return (await Promise.all(['127.0.0.1', '::1'].map((host) => tryConnectHost(port, host)))).some(Boolean)
 }
 
 async function portFree(port: number): Promise<boolean> {
@@ -412,6 +434,18 @@ async function waitPort(port: number, run: Run, logFile: string, timeoutMs = 300
       throw new Error(`O processo encerrou antes da porta ${port} responder — veja ${logFile}`)
     }
     if (await tryConnect(port)) return
+    // Watchers can remain alive after their app crashes. Report the concrete
+    // startup error instead of waiting five minutes for an impossible probe.
+    const newBytes = statSync(logFile).size - (run.logOffset ?? 0)
+    if (newBytes > 0) {
+      const output = readTail(logFile, Math.min(newBytes, 16 * 1024))
+      if (/\[nodemon\] app crashed/.test(output)) {
+        const failure = /Application startup failed: ([^\n]+)/.exec(output)?.[1]
+        throw new Error(
+          redactDevEnvOutput(failure ?? 'A aplicação encerrou durante a inicialização — confira os logs.'),
+        )
+      }
+    }
     await sleep(1500)
   }
   throw new Error(`Timeout esperando a porta ${port} responder`)
@@ -580,13 +614,21 @@ async function orchestrate(
         )
       }
       used.add(port)
+      for (const service of configured.services ?? []) {
+        if (service.name === 'external-api') continue
+        if (used.has(service.port) || !(await portFree(service.port))) {
+          throw new Error(`${configured.repo}/${service.name}: porta ${service.port} já está ocupada.`)
+        }
+        used.add(service.port)
+      }
       app.port = port
       app.url = `http://localhost:${port}`
       app.status = 'subindo'
-      // Environment values stay in memory and are never written to state/logs.
-      const environment = {
+      // Keep credentials out of state/logs; a monorepo uses private per-API env files.
+      prepareRegisteredApp(configured, port)
+      const environment: NodeJS.ProcessEnv = {
         ...registeredAppEnvironment(configured),
-        PORT: String(port),
+        PORT: configured.services ? undefined : String(port),
         ...(configured.flavor === 'cra' ? { CI: 'true' } : {}),
       }
       run.child = detach(
@@ -598,11 +640,22 @@ async function orchestrate(
         runner,
       )
       app.pid = run.child.pid
+      const services = state.apps.filter((service) => service.parentRepo === configured.repo)
+      for (const service of services) {
+        service.pid = app.pid
+        service.status = 'subindo'
+      }
       update()
       await waitPort(port, run, logFile)
-      run.child = undefined
       app.status = 'rodando'
       update()
+      for (const service of services) {
+        current = service
+        await waitPort(service.port!, run, logFile)
+        service.status = 'rodando'
+        update()
+      }
+      run.child = undefined
     }
     for (const front of plan.fronts) {
       checkAborted(run)
@@ -656,6 +709,7 @@ async function orchestrate(
   } catch (error) {
     if (run.aborted) return
     state.status = 'erro'
+    state.failure = { repo: current?.repo, phase: state.phase }
     state.phase = undefined
     state.error = error instanceof Error ? error.message : String(error)
     if (current) current.status = 'erro'
@@ -672,7 +726,31 @@ export function previewDevEnv(
   const plan = planDevEnv(cardPath, undefined, runner, settingsFile, true)
   if ('needsFrontend' in plan) throw new Error('Plano de ambiente incompleto')
   addOptionalFrontends(plan, repositoryCatalogFile(settingsFile))
-  return devEnvPreview(plan, readDevEnv(cardPath)?.configuration)
+  return devEnvPreview(plan, savedDevEnvConfiguration(cardPath) ?? readDevEnv(cardPath)?.configuration)
+}
+
+function savedDevEnvConfiguration(cardPath: string): DevEnvStartOptions | undefined {
+  try {
+    return parseDevEnvOptions(JSON.parse(readFileSync(join(cardPath, STATE_DIR, 'configuration.json'), 'utf8')))
+  } catch {
+    return undefined
+  }
+}
+
+export function saveDevEnvConfiguration(
+  cardPath: string,
+  configuration: DevEnvStartOptions,
+  runner: ProcessRunner = nodeProcessRunner,
+  settingsFile?: string,
+): void {
+  const options = parseDevEnvOptions(configuration)
+  if (!options) throw new Error('Configuração do ambiente dev inválida')
+  const plan = planDevEnv(cardPath, undefined, runner, settingsFile, true)
+  if ('needsFrontend' in plan) throw new Error('Plano de ambiente incompleto')
+  addOptionalFrontends(plan, repositoryCatalogFile(settingsFile))
+  selectDevEnvProjects(plan, options)
+  mkdirSync(join(cardPath, STATE_DIR), { recursive: true })
+  writeFileSync(join(cardPath, STATE_DIR, 'configuration.json'), `${JSON.stringify(options)}\n`, { mode: 0o600 })
 }
 
 export function startDevEnv(
@@ -694,6 +772,8 @@ export function startDevEnv(
   if (options) {
     addOptionalFrontends(plan, repositoryCatalogFile(settingsFile))
     plan = selectDevEnvProjects(plan, options)
+    mkdirSync(join(cardPath, STATE_DIR), { recursive: true })
+    writeFileSync(join(cardPath, STATE_DIR, 'configuration.json'), `${JSON.stringify(options)}\n`, { mode: 0o600 })
   }
   const handle: Run = { aborted: false }
   active.set(key, handle)
@@ -728,17 +808,30 @@ export function startDevEnv(
             } satisfies DevEnvApp,
           ]
         : []),
-      ...plan.apps.map(
-        (app) =>
-          ({
-            repo: app.repo,
-            kind: app.kind,
-            source: 'worktree',
-            port: app.preferred,
-            url: `http://localhost:${app.preferred}`,
-            status: 'aguardando',
-          }) satisfies DevEnvApp,
-      ),
+      ...plan.apps.flatMap((app) => [
+        {
+          repo: app.repo,
+          kind: app.kind,
+          source: 'worktree',
+          port: app.preferred,
+          url: `http://localhost:${app.preferred}`,
+          status: 'aguardando',
+        } satisfies DevEnvApp,
+        ...(app.services ?? [])
+          .filter((service) => service.name !== 'external-api')
+          .map(
+            (service) =>
+              ({
+                repo: `${app.repo}/${service.name}`,
+                parentRepo: app.repo,
+                kind: app.kind,
+                source: 'worktree',
+                port: service.port,
+                url: `http://localhost:${service.port}`,
+                status: 'aguardando',
+              }) satisfies DevEnvApp,
+          ),
+      ]),
       ...plan.fronts.map((front) => {
         const productionVariables = readRepositoryEnvironmentVariables(
           front.canonical,
@@ -832,5 +925,6 @@ export function stopDevEnv(cardPath: string): void {
   state.ownerPid = undefined
   state.phase = undefined
   state.error = undefined
+  state.failure = undefined
   writeState(cardPath, state)
 }

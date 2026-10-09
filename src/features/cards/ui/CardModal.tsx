@@ -1,4 +1,5 @@
 import { CardAgentControl } from './CardAgentControl'
+import { CardChatPanel, type EnvironmentChatRequest } from './CardChatPanel'
 import { CardKnowledgeAttachments } from '@/features/knowledge/CardKnowledgeAttachments'
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -66,8 +67,10 @@ import {
   type PrState,
 } from '../../../../shared/domain/cards'
 
-const ChatTab = lazy(() => import('@/features/chat/ChatTab').then((module) => ({ default: module.ChatTab })))
 const DiffTab = lazy(() => import('./DiffTab').then((module) => ({ default: module.DiffTab })))
+const DevEnvTab = lazy(() =>
+  import('@/features/dev-environments/DevEnvTab').then((module) => ({ default: module.DevEnvTab })),
+)
 
 const FILE_TABS = [
   { label: 'Plano', file: 'PLAN.md', outline: true, checklist: false },
@@ -586,6 +589,8 @@ export function CardModal({
   const [savingDescription, setSavingDescription] = useState(false)
   const [descriptionError, setDescriptionError] = useState<string | null>(null)
   const [chatWidthRatio, setChatWidthRatio] = useState(storedChatWidthRatio)
+  const [environmentRequest, setEnvironmentRequest] = useState<EnvironmentChatRequest>()
+  const [environmentAgentRunning, setEnvironmentAgentRunning] = useState(false)
   const resizingDivider = useRef(false)
 
   useEffect(() => {
@@ -641,8 +646,7 @@ export function CardModal({
         overlayClassName={expanded ? 'hidden' : undefined}
         role={expanded ? 'main' : 'dialog'}
         className={cn(
-          'flex h-[92dvh] max-h-[880px] w-[calc(100%-2rem)] max-w-[80dvw] flex-col gap-0 overflow-hidden p-0 shadow-2xl sm:max-w-[80dvw]',
-          !expanded && 'sm:h-[88dvh]',
+          'flex h-[92dvh] max-h-[960px] w-[calc(100%-2rem)] max-w-[1280px] flex-col gap-0 overflow-hidden p-0 shadow-2xl sm:max-w-[1280px]',
           expanded && 'relative top-auto left-auto z-auto h-full max-h-none w-full max-w-none translate-x-0 translate-y-0 rounded-none bg-background shadow-none ring-0 sm:max-w-none data-open:animate-none',
         )}
       >
@@ -676,7 +680,7 @@ export function CardModal({
           </DialogClose>
         </div>
         <div
-          className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,3fr)_minmax(260px,2fr)] lg:grid-cols-[minmax(0,1fr)_8px_var(--chat-width)] lg:grid-rows-1"
+          className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(380px,3fr)_minmax(480px,2fr)] overflow-y-auto lg:grid-cols-[minmax(0,1fr)_8px_var(--chat-width)] lg:grid-rows-1 lg:overflow-hidden"
           style={{ '--chat-width': `clamp(260px, ${chatWidthRatio * 100}%, 780px)` } as CSSProperties}
         >
           <div className="flex min-h-0 min-w-0 flex-col">
@@ -738,7 +742,7 @@ export function CardModal({
                       </ol>
                     </div>
                   )}
-                </details>
+              </details>
               {agents.map((agent, index) => (
                 <AgentStatusRow key={`${agent.stage ?? 'autonomo'}-${index}`} agent={agent} cardId={card.id} />
               ))}
@@ -751,18 +755,18 @@ export function CardModal({
                   Descrição
                 </TabsTrigger>
                 {FILE_TABS.map((tab) => {
-                  const content = files[tab.file]
+                  const content = files?.[tab.file]
                   return (
                     <TabsTrigger
                       key={tab.file}
                       value={tab.file}
-                      disabled={Object.hasOwn(files, tab.file) && !content}
+                      disabled={Boolean(files && Object.hasOwn(files, tab.file) && !content)}
                       className="flex-none px-2.5"
                     >
                       {tab.label}
-                      {tab.file === 'TASK-CHECKLIST.md' || tab.file === 'TEST-CHECKLIST.md' ? (
+                      {tab.checklist && (
                         <TabCounter counts={card.taskCounts?.[tab.file] ?? (content ? countTasks(content) : undefined)} />
-                      ) : null}
+                      )}
                     </TabsTrigger>
                   )
                 })}
@@ -775,6 +779,12 @@ export function CardModal({
                     <Badge variant="secondary" className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none tabular-nums">
                       {card.repoCount ?? repos?.length}
                     </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="environments" className="flex-none px-2.5">
+                  Ambientes
+                  {card.devEnv?.status === 'erro' && (
+                    <span className="size-1.5 rounded-full bg-destructive" aria-label="Ambiente com falha" />
                   )}
                 </TabsTrigger>
                 {card.prs && (
@@ -816,12 +826,12 @@ export function CardModal({
                 <CardKnowledgeAttachments card={card} />
               </TabsContent>
               {FILE_TABS.map((tab) => {
-                const content = files[tab.file]
+                const content = files?.[tab.file]
                 return (
                   <TabsContent key={tab.file} value={tab.file} className="overflow-y-auto px-5 py-4">
                     {content ? (
                       <Markdown text={content} outline={tab.outline} />
-                    ) : Object.hasOwn(files, tab.file) ? (
+                    ) : files && Object.hasOwn(files, tab.file) ? (
                       <Placeholder>Sem {tab.file} na pasta.</Placeholder>
                     ) : (
                       <LoadingLines />
@@ -838,6 +848,23 @@ export function CardModal({
               </TabsContent>
               <TabsContent value="repos" className="overflow-y-auto px-5 py-4">
                 {repos ? <ReposList repos={repos} /> : <LoadingLines />}
+              </TabsContent>
+              <TabsContent value="environments" keepMounted className="min-h-0 overflow-hidden px-5 py-4">
+                <Suspense fallback={<p className="text-muted-foreground">Carregando ambientes…</p>}>
+                  <DevEnvTab
+                    key={card.id}
+                    card={card}
+                    agentRunning={environmentAgentRunning}
+                    onEnvironmentChat={(text, configuration) =>
+                      setEnvironmentRequest((previous) => ({
+                        id: (previous?.id ?? 0) + 1,
+                        cardId: card.id,
+                        text,
+                        configuration,
+                      }))
+                    }
+                  />
+                </Suspense>
               </TabsContent>
               {card.prs && (
                 <TabsContent value="links" className="overflow-y-auto px-5 py-4">
@@ -884,19 +911,16 @@ export function CardModal({
             aria-label="Chat do card"
           >
             <div className={cn('shrink-0 border-b px-5 py-3', !expanded && 'lg:pr-24')}>
-              <h2 className="text-sm font-semibold">Chat e execuções</h2>
-              <p className="text-[11px] text-muted-foreground">Acompanhe a task e envie orientações ao agente.</p>
+              <h2 className="text-sm font-semibold">Chats do card</h2>
+              <p className="text-[11px] text-muted-foreground">Acompanhe as execuções ou converse sobre o ambiente.</p>
             </div>
             <div className="min-h-0 flex-1">
-              <Suspense
-                fallback={
-                  <div className="px-5 py-4">
-                    <LoadingLines />
-                  </div>
-                }
-              >
-                <ChatTab cardId={card.id} />
-              </Suspense>
+              <CardChatPanel
+                key={card.id}
+                cardId={card.id}
+                environmentRequest={environmentRequest}
+                onEnvironmentRunningChange={setEnvironmentAgentRunning}
+              />
             </div>
           </aside>
         </div>

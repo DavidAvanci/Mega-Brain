@@ -57,7 +57,20 @@ export function devEnvPreview(plan: DevEnvPlan, previous?: DevEnvStartOptions): 
   const projects: DevEnvProjectPreview[] = []
   const add = (project: Omit<DevEnvProjectPreview, 'selected'>, selected = true) => {
     const saved = previous?.projects.find((item) => item.repo === project.repo)
-    projects.push({ ...project, port: saved?.port ?? project.port, selected: previous ? Boolean(saved) : selected })
+    const port = saved?.port ?? project.port
+    projects.push({
+      ...project,
+      port,
+      selected: previous ? Boolean(saved) : selected,
+      ...(project.services
+        ? {
+            services: project.services.map((service) => ({
+              ...service,
+              port: service.name === 'external-api' ? port : service.port,
+            })),
+          }
+        : {}),
+    })
   }
   for (const [repo, app] of [
     [AGD, plan.backend],
@@ -83,6 +96,7 @@ export function devEnvPreview(plan: DevEnvPlan, previous?: DevEnvStartOptions): 
       directory: app.dir,
       port: app.preferred,
       command: [command.cmd, ...command.args].join(' '),
+      services: app.services?.map((service) => ({ ...service })),
     })
   }
   for (const front of plan.fronts) {

@@ -2,7 +2,7 @@ import type { KnowledgeRef } from '../../../../shared/domain/knowledge'
 import { ApiError, apiClient } from '@/shared/api/api-client'
 import { requestJson } from '@/shared/api/request-json'
 import { DEFAULT_PROMPTS, type EditorDiscovery, type MegaBrainSettings } from '../../../../shared/domain/settings'
-import type { ChatAgentSettings, ChatEntry, ChatEvent } from '../../../../shared/contracts/chat'
+import type { ChatAgentSettings, ChatEntry, ChatEvent, ChatModelSelection } from '../../../../shared/contracts/chat'
 import type { CardAgentUsage, CardAgentUsageEntry } from '../../../../shared/domain/agents'
 
 export interface WorktreeRepoInfo {
@@ -62,6 +62,7 @@ export interface ChatHistory {
   sessionId: string | null
   entries: ChatEntry[]
   settings?: ChatAgentSettings | null
+  selection?: ChatModelSelection
   executionRunning?: boolean
   pendingMessages?: number
 }
@@ -139,11 +140,12 @@ export async function sendChat(
   text: string,
   onEvent: (event: ChatEvent) => void,
   knowledgeRefs: KnowledgeRef[] = [],
+  selection?: ChatModelSelection,
 ): Promise<void> {
   try {
     await apiClient().sse('/api/chat/send', {
       method: 'POST',
-      body: JSON.stringify({ name, text, knowledgeRefs }),
+      body: JSON.stringify({ name, text, knowledgeRefs, selection }),
       headers: { 'Content-Type': 'application/json' },
       onEvent: (event) => onEvent(event as ChatEvent),
     })

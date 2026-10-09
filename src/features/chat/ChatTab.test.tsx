@@ -135,7 +135,10 @@ test('mostra execução e mensagens pendentes, mantendo o composer disponível',
   expect(input().disabled).toBe(false)
   await type('Ajuste o contrato')
   await sendWithEnter()
-  expect(mocks.sendChat).toHaveBeenCalledWith('running-card', 'Ajuste o contrato', expect.any(Function), [])
+  expect(mocks.sendChat).toHaveBeenCalledWith('running-card', 'Ajuste o contrato', expect.any(Function), [], {
+    provider: 'claude',
+    model: 'default',
+  })
   await finish()
 })
 

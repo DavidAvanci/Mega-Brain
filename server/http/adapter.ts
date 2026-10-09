@@ -1,4 +1,5 @@
 import { knowledgeCapabilityActor } from '../knowledge/agent'
+import { devEnvCapabilityCard } from '../modules/dev-environments/dev-env-capability'
 import { randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { hasValidBearerToken } from '../auth'
@@ -72,7 +73,12 @@ export async function handleHttpRequest(
     new URL(request.url ?? '/', 'http://localhost').pathname === '/api/knowledge/agent' &&
     !headers.origin &&
     knowledgeCapabilityActor(headers['x-mega-knowledge-capability']) !== null
-  if (!knowledgeAgentRequest && !hasValidBearerToken(headers.authorization, sessionToken)) {
+  const devEnvAgentRequest =
+    request.method === 'POST' &&
+    new URL(request.url ?? '/', 'http://localhost').pathname === '/api/dev-env-agent/control' &&
+    !headers.origin &&
+    devEnvCapabilityCard(headers['x-mega-dev-env-capability']) !== null
+  if (!knowledgeAgentRequest && !devEnvAgentRequest && !hasValidBearerToken(headers.authorization, sessionToken)) {
     writeJson(response, 401, { error: 'Não autorizado' })
     log('unauthorized', 401)
     return
