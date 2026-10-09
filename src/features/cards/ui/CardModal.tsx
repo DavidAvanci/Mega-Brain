@@ -18,7 +18,6 @@ import {
   Tick02Icon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogClose,
@@ -45,7 +44,6 @@ import {
   stopCardAgent,
   updateCardDescription,
 } from '../model/card-commands'
-import { type WorktreeRepoInfo } from '../api/card-detail-api'
 import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 import { PrChip, StageResetButton } from './CardView'
 import { isTauriDesktop } from '@/desktopBootstrap'
@@ -75,13 +73,11 @@ const DevEnvTab = lazy(() =>
 const FILE_TABS = [
   { label: 'Plano', file: 'PLAN.md', outline: true, checklist: false },
   { label: 'Tasks', file: 'TASK-CHECKLIST.md', outline: false, checklist: true },
-  { label: 'Tests', file: 'TEST-CHECKLIST.md', outline: false, checklist: true },
 ]
 
 const DEFAULT_TAB: Partial<Record<Card['status'], string>> = {
   'revisao-de-plano': 'PLAN.md',
   desenvolvendo: 'TASK-CHECKLIST.md',
-  'auto-testing': 'TEST-CHECKLIST.md',
   'code-review': 'diff',
   staging: 'links',
   'aguardando-deploy': 'links',
@@ -223,7 +219,6 @@ function usageEntryTitle(entry: CardAgentUsageEntry): string {
   const labels: Record<string, string> = {
     'task-planning': 'Planejamento',
     'run-task-checklist': 'Desenvolvimento',
-    'run-test-checklist': 'Testes automáticos',
     'stage-task': 'Publicação em staging',
     'master-pr-task': 'Publicação em produção',
     chat: 'Chat',
@@ -304,77 +299,6 @@ function PrLinksList({ card }: { card: Card }) {
   )
 }
 
-function CommitLink({ hash, shortHash }: { hash: string; shortHash: string }) {
-  return (
-    <code title={hash} className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
-      {shortHash}
-    </code>
-  )
-}
-
-function ReposList({ repos }: { repos: WorktreeRepoInfo[] }) {
-  if (!repos.length) return <Placeholder>Nenhuma worktree vinculada a esta task.</Placeholder>
-  return (
-    <div className="flex flex-col gap-3 py-1">
-      {repos.map((repo) => (
-        <section key={repo.name} className="rounded-lg border p-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3 className="truncate text-sm font-semibold">{repo.name}</h3>
-            {repo.dirty && (
-              <span className="rounded-sm bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
-                alterada
-              </span>
-            )}
-            <span className="ml-auto shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[11px]">{repo.branch}</span>
-          </div>
-          {repo.error ? (
-            <p className="mt-2 text-xs text-destructive">{repo.error}</p>
-          ) : (
-            <dl className="mt-3 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-              <dt className="text-muted-foreground">Criada de</dt>
-              <dd className="min-w-0">
-                {repo.base ? (
-                  <span className="inline-flex flex-wrap items-center gap-1.5">
-                    <span>{repo.base.ref}</span>
-                    <CommitLink hash={repo.base.hash} shortHash={repo.base.shortHash} />
-                    {repo.base.inferred && (
-                      <span
-                        className="text-[10px] text-muted-foreground"
-                        title="Worktree anterior ao registro de origem; base calculada pelo merge-base"
-                      >
-                        inferida
-                      </span>
-                    )}
-                  </span>
-                ) : (
-                  'Base não identificada'
-                )}
-              </dd>
-              <dt className="text-muted-foreground">Versão atual</dt>
-              <dd className="min-w-0">
-                <span className="inline-flex max-w-full flex-wrap items-center gap-1.5">
-                  <CommitLink hash={repo.head.hash} shortHash={repo.head.shortHash} />
-                  <span className="truncate" title={repo.head.subject}>
-                    {repo.head.subject}
-                  </span>
-                </span>
-              </dd>
-              <dt className="text-muted-foreground">Repositório</dt>
-              <dd className="truncate font-mono text-[11px]" title={repo.remote ?? repo.repository}>
-                {repo.remote ?? repo.repository}
-              </dd>
-              <dt className="text-muted-foreground">Worktree</dt>
-              <dd className="truncate font-mono text-[11px]" title={repo.path}>
-                {repo.path}
-              </dd>
-            </dl>
-          )}
-        </section>
-      ))}
-    </div>
-  )
-}
-
 function DeleteCardButton({ card, onDeleted }: { card: Card; onDeleted: () => void }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -425,7 +349,6 @@ function DeleteCardButton({ card, onDeleted }: { card: Card; onDeleted: () => vo
 const STAGE_LABELS: Record<string, string> = {
   'task-planning': 'Planejando',
   'run-task-checklist': 'Desenvolvendo',
-  'run-test-checklist': 'Auto Testing',
   'stage-task': 'Staging',
   'master-pr-task': 'Aguardando deploy',
 }
@@ -581,7 +504,7 @@ export function CardModal({
   const [activeTab, setActiveTab] = useState(
     initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description'),
   )
-  const { files, repos, usage, usageBreakdown, error } = useCardDetail(card.id, activeTab, true)
+  const { files, usage, usageBreakdown, error } = useCardDetail(card.id, activeTab, true)
   const agents = activeAgents(card)
   const [editingDescription, setEditingDescription] = useState(false)
   const [descriptionDraft, setDescriptionDraft] = useState(card.description)
@@ -646,7 +569,7 @@ export function CardModal({
         overlayClassName={expanded ? 'hidden' : undefined}
         role={expanded ? 'main' : 'dialog'}
         className={cn(
-          'flex h-[92dvh] max-h-[960px] w-[calc(100%-2rem)] max-w-[1280px] flex-col gap-0 overflow-hidden p-0 shadow-2xl sm:max-w-[1280px]',
+          'flex h-[92dvh] max-h-[960px] w-[calc(100%-2rem)] max-w-[80dvw] flex-col gap-0 overflow-hidden p-0 shadow-2xl sm:max-w-[80dvw]',
           expanded && 'relative top-auto left-auto z-auto h-full max-h-none w-full max-w-none translate-x-0 translate-y-0 rounded-none bg-background shadow-none ring-0 sm:max-w-none data-open:animate-none',
         )}
       >
@@ -773,14 +696,6 @@ export function CardModal({
                 <TabsTrigger value="diff" className="flex-none px-2.5">
                   Diff
                 </TabsTrigger>
-                <TabsTrigger value="repos" className="flex-none px-2.5">
-                  Repos
-                  {(card.repoCount ?? repos?.length ?? 0) > 0 && (
-                    <Badge variant="secondary" className="h-4 min-w-4 justify-center px-1 text-[10px] leading-none tabular-nums">
-                      {card.repoCount ?? repos?.length}
-                    </Badge>
-                  )}
-                </TabsTrigger>
                 <TabsTrigger value="environments" className="flex-none px-2.5">
                   Ambientes
                   {card.devEnv?.status === 'erro' && (
@@ -845,9 +760,6 @@ export function CardModal({
                     <DiffTab cardId={card.id} />
                   </Suspense>
                 )}
-              </TabsContent>
-              <TabsContent value="repos" className="overflow-y-auto px-5 py-4">
-                {repos ? <ReposList repos={repos} /> : <LoadingLines />}
               </TabsContent>
               <TabsContent value="environments" keepMounted className="min-h-0 overflow-hidden px-5 py-4">
                 <Suspense fallback={<p className="text-muted-foreground">Carregando ambientes…</p>}>

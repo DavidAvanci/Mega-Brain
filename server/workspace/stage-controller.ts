@@ -150,7 +150,7 @@ export function createStageController(
       else run.child.kill('SIGTERM')
     }
     runningStages.delete(cardPath)
-    restoreStageSnapshot(cardPath, stage.name, agent.startedAt)
+    restoreStageSnapshot(cardPath, stage.name)
     for (const file of [`${stage.name}.jsonl`, `${stage.name}.log`]) {
       rmSync(join(cardPath, file), { force: true })
     }

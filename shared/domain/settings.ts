@@ -5,7 +5,7 @@ export interface ModelStageSettings {
   effort: Effort
 }
 
-export type BoardSettings = Record<'task-planning' | 'run-task-checklist' | 'run-test-checklist', ModelStageSettings>
+export type BoardSettings = Record<'task-planning' | 'run-task-checklist', ModelStageSettings>
 
 export type EditorPreference =
   'cursor' | 'vscode' | 'windsurf' | 'zed' | 'sublime' | 'intellij' | 'webstorm' | 'pycharm' | 'custom'
@@ -62,7 +62,6 @@ export interface MegaBrainSettings {
 export interface PromptSettings {
   taskPlanning: string
   taskItem: string
-  testItem: string
   testEnvironment: string
   smartDiffReview: string
 }

@@ -69,7 +69,6 @@ vi.mock('./useSettingsDialog', () => ({
       stages: {
         'task-planning': { model: state.codex ? 'gpt-6.1-sol' : 'fable', effort: 'low' },
         'run-task-checklist': { model: state.codex ? 'gpt-6.1-sol' : 'fable', effort: 'low' },
-        'run-test-checklist': { model: state.codex ? 'gpt-6-luna' : 'fable', effort: 'low' },
       },
     },
     editorDiscovery: { editors: [] },

@@ -3,13 +3,13 @@
 ## Ao entrar na etapa
 
 1. O status é salvo e a etapa automática `task-planning` inicia, se o card não tiver outra execução ativa. A interface mostra provisoriamente “Iniciando agente” até receber o estado do servidor.
-2. O agente recebe título, descrição e instruções de planejamento configuradas. Pelo fluxo: **simples** cria apenas `TASK-CHECKLIST.md`; **médio** cria `PLAN.md` e `TASK-CHECKLIST.md`; **difícil** cria também `TEST-CHECKLIST.md`. A checklist de desenvolvimento deve conter só tarefas de implementação.
+2. O agente recebe título, descrição e instruções de planejamento configuradas. Pelo fluxo: **simples** cria apenas `TASK-CHECKLIST.md`; **médio** e **difícil** criam `PLAN.md` e `TASK-CHECKLIST.md`. A checklist de desenvolvimento deve conter só tarefas de implementação.
 3. O card mostra fase e progresso conforme os arquivos esperados são criados. O processo registra sessão, logs, uso e resultado. Se terminar com sucesso, na próxima leitura do quadro o servidor muda o card para **Desenvolvendo** (simples) ou **Revisão de plano** (médio/difícil), iniciando a próxima automação caso exista.
 4. Se houver falha, o card permanece em Planejando e indica atenção. Uma falha por limite de uso pode provocar tentativa automática com `opus` quando a configuração e os registros permitirem. Não há transição Jira específica desta etapa na movimentação pela interface.
 
 ## Contrato técnico
 
-**Entrada:** `POST /api/workspace/update` com `{ name: CARD_ID, status: 'planejando' }` grava `CARD_DIR/card.json`. Como `stageFor` retorna `task-planning`, `createStageController.start` chama `runStageAgent`, desde que não haja processo/`agent.json` ativo para o card. Antes do `spawn`, é capturado um snapshot dos artefatos `PLAN.md`, `TASK-CHECKLIST.md` e `TEST-CHECKLIST.md`.
+**Entrada:** `POST /api/workspace/update` com `{ name: CARD_ID, status: 'planejando' }` grava `CARD_DIR/card.json`. Como `stageFor` retorna `task-planning`, `createStageController.start` chama `runStageAgent`, desde que não haja processo/`agent.json` ativo para o card. Antes do `spawn`, é capturado um snapshot dos artefatos `PLAN.md` e `TASK-CHECKLIST.md`.
 
 **Executável e argumentos:** o provedor `claude` executa `claude -p <PROMPT> --name "<CARD_ID> · task-planning" --model <MODEL> [--fallback-model opus] --effort <EFFORT> --dangerously-skip-permissions --output-format stream-json --verbose`. O fallback `opus` é acrescentado quando o nome do modelo contém `fable`. Com provedor `chatgpt`, executa `codex exec --json --dangerously-bypass-approvals-and-sandbox [--model <MODEL>] [--config 'model_reasoning_effort="<EFFORT>"'] <PROMPT>`; `--model` é omitido quando o valor é `default`. O modelo padrão desta etapa é `fable`, e o esforço padrão é `high`; ambos podem ser configurados.
 
@@ -28,7 +28,7 @@ Para `flow=simples`, o texto é exatamente a concatenação abaixo com `\n` entr
 Tarefa: <TAREFA>
 
 Fluxo SIMPLES (obrigatório): gere somente TASK-CHECKLIST.md.
-Não crie nem altere PLAN.md ou TEST-CHECKLIST.md.
+Não crie nem altere PLAN.md.
 A TASK-CHECKLIST.md deve ser autocontida e trazer em cada item todo o contexto necessário para a implementação.
 <REGRAS_DA_CHECKLIST>
 ```
@@ -38,7 +38,6 @@ Para `flow=medio`, a parte após `Tarefa: <TAREFA>` é:
 ```text
 
 Fluxo MÉDIO (obrigatório): gere somente PLAN.md e TASK-CHECKLIST.md.
-Não crie nem altere TEST-CHECKLIST.md.
 <REGRAS_DA_CHECKLIST>
 ```
 
@@ -49,7 +48,7 @@ Para `flow=dificil`, depois de `Tarefa: <TAREFA>` há uma linha vazia e diretame
 ```text
 Regra obrigatória para TASK-CHECKLIST.md: inclua somente ações de implementação.
 Não crie tasks de testes de qualquer tipo, criação ou alteração de arquivos de teste, validação, conferência, QA, smoke test, revisão visual, screenshots ou verificações manuais/automatizadas.
-Toda atividade de teste ou verificação pertence exclusivamente à TEST-CHECKLIST.md quando esse artefato fizer parte do fluxo; nos demais fluxos, apenas não a inclua na TASK-CHECKLIST.md.
+Não inclua tarefas de teste ou verificação na checklist de implementação.
 Cada item deve ser uma entrega pequena e verificável. Divida páginas extensas em estrutura, filtros, ações e integração; dê a cada parte um critério de conclusão próprio e deps explícitas. Itens substituídos devem ser riscados, com os novos itens dependentes preservando o histórico.
 Declare arquivos compartilhados (helpers, exports e rotas) em files para serializar itens que os alterem. Para pré-condições use requires: e para arquivos novos use creates:, nunca trate uma criação prevista como requisito existente.
 Quando uma migração ou base for obrigatória, registre em card.json requiredBases por repositório e use deps no item; não dependa só da descrição. Limites específicos podem ser declarados como timeoutMin: e attempts:.

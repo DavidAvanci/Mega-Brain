@@ -228,7 +228,7 @@ const FLOW_SUMMARIES = [
   },
   {
     title: 'Difícil',
-    path: 'Fluxo completo, incluindo revisão e Auto Testing',
+    path: 'Fluxo completo, incluindo revisão de plano',
     artifacts: 'Gera plano, tasks e testes',
   },
 ]

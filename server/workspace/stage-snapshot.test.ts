@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
@@ -20,18 +20,4 @@ test('restores only artifacts owned by a stage', () => {
   expect(readFileSync(plan, 'utf8')).toBe('plano original')
   expect(existsSync(join(root, 'TASK-CHECKLIST.md'))).toBe(false)
   expect(readFileSync(unrelated, 'utf8')).toBe('preservar')
-})
-
-test('removes screenshots created after a test-stage snapshot', () => {
-  const root = mkdtempSync(join(tmpdir(), 'mega-brain-stage-screenshots-'))
-  const screenshots = join(root, 'screenshots')
-  mkdirSync(screenshots)
-  writeFileSync(join(screenshots, 'before.png'), 'before')
-  captureStageSnapshot(root, 'run-test-checklist', ['TEST-CHECKLIST.md'])
-  writeFileSync(join(screenshots, 'after.png'), 'after')
-
-  restoreStageSnapshot(root, 'run-test-checklist')
-
-  expect(existsSync(join(screenshots, 'before.png'))).toBe(true)
-  expect(existsSync(join(screenshots, 'after.png'))).toBe(false)
 })

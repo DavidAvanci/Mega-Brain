@@ -15,16 +15,15 @@ Crie um card com título, descrição e nível de fluxo. Você pode associá-lo 
 | Coluna                | O que acontece ao colocar um card nela                                                                                                                                                  |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A fazer**           | O card fica na fila, sem iniciar uma etapa automática.                                                                                                                                  |
-| **Planejando**        | A IA prepara os arquivos de planejamento e a checklist de implementação. No fluxo completo, também prepara a checklist de testes. Ao terminar, o card avança conforme o nível de fluxo. |
+| **Planejando**        | A IA prepara os arquivos de planejamento e a checklist de implementação. Ao terminar, o card avança conforme o nível de fluxo. |
 | **Revisão de plano**  | O plano fica disponível para revisão e ajustes antes da implementação. A movimentação para a próxima etapa é manual.                                                                    |
-| **Desenvolvendo**     | O agente executa os itens da checklist de implementação nos repositórios da tarefa. Ao terminar, avança para testes no fluxo completo ou para Code Review nos demais fluxos.            |
-| **Auto Testing**      | O agente executa a checklist de testes e, ao concluir, leva o card para Code Review. Essa etapa faz parte do fluxo completo.                                                            |
+| **Desenvolvendo**     | O agente executa os itens da checklist de implementação nos repositórios da tarefa. Ao terminar, avança para Code Review.            |
 | **Code Review**       | Você revisa o diff e o resultado da tarefa. O card aguarda uma decisão manual para seguir.                                                                                              |
 | **Staging**           | A automação prepara as alterações e abre pull requests para a branch staging dos repositórios associados. Requer GitHub CLI e acesso ao remoto.                                         |
 | **Aguardando deploy** | A automação abre pull requests para a branch principal dos repositórios e registra a janela prevista de deploy. Requer GitHub CLI e acesso ao remoto.                                   |
 | **Produção**          | Marca a entrega como concluída no quadro; não inicia um agente.                                                                                                                         |
 
-Os níveis de fluxo ajustam as etapas: **Simples** gera apenas a checklist de implementação e pula revisão de plano e testes automáticos; **Médio** gera plano e checklist de implementação, com revisão de plano; **Difícil** inclui plano, revisão e testes automáticos. A movimentação do card pode sincronizar o status com o Jira quando a integração estiver configurada.
+Os níveis de fluxo ajustam as etapas: **Simples** gera apenas a checklist de implementação e pula revisão de plano; **Médio** e **Difícil** geram plano e checklist de implementação, com revisão de plano. A movimentação do card pode sincronizar o status com o Jira quando a integração estiver configurada.
 
 ## Stack
 

@@ -21,7 +21,6 @@ const USER_ACTION_WINDOW_MS = 10_000
 const AGENT_STATUSES: ReadonlySet<Status> = new Set([
   'planejando',
   'desenvolvendo',
-  'auto-testing',
   'staging',
   'aguardando-deploy',
 ])

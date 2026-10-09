@@ -19,7 +19,6 @@ import { CLAUDE_MODELS } from '../../../shared/domain/chat-models'
 const STAGES: { key: keyof BoardSettings; title: string; description: string }[] = [
   { key: 'task-planning', title: 'Planejamento', description: 'Criação do plano e checklists.' },
   { key: 'run-task-checklist', title: 'Desenvolvimento', description: 'Execução dos itens de desenvolvimento.' },
-  { key: 'run-test-checklist', title: 'Testes automáticos', description: 'Execução dos cenários de teste.' },
 ]
 
 export function ExecutionSettings({

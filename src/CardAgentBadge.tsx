@@ -31,7 +31,6 @@ const BADGES: Record<AgentStatus, { label: string; className: string }> = {
 const KINDS: Record<string, { name: string; icon: IconSvgElement }> = {
   'task-planning': { name: 'plano', icon: BlueprintIcon },
   'run-task-checklist': { name: 'dev', icon: CodeIcon },
-  'run-test-checklist': { name: 'testes', icon: FlaskConicalIcon },
   'stage-task': { name: 'staging', icon: GitPullRequestIcon },
   'master-pr-task': { name: 'master', icon: GitPullRequestIcon },
 }

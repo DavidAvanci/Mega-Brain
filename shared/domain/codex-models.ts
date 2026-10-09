@@ -110,10 +110,8 @@ export function defaultStageSettings(provider: LlmProvider, catalog = FALLBACK_C
     return {
       'task-planning': { model: 'fable', effort: 'high' },
       'run-task-checklist': { model: 'fable', effort: 'low' },
-      'run-test-checklist': { model: 'sonnet', effort: 'low' },
     }
   const sol = catalog.models.some((entry) => entry.id === 'gpt-6.1-sol') ? 'gpt-6.1-sol' : 'default'
-  const luna = catalog.models.some((entry) => entry.id === 'gpt-6-luna') ? 'gpt-6-luna' : sol
   const stage = (model: string, effort: Effort) => ({
     model,
     effort: compatibleEffort(provider, model, effort, catalog),
@@ -121,7 +119,6 @@ export function defaultStageSettings(provider: LlmProvider, catalog = FALLBACK_C
   return {
     'task-planning': stage(sol, 'high'),
     'run-task-checklist': stage(sol, 'medium'),
-    'run-test-checklist': stage(luna, 'high'),
   }
 }
 

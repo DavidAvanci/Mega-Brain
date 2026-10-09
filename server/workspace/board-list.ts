@@ -106,7 +106,7 @@ export function listBoardCards(
       }
       const prUrls = Object.values(advanced.prs?.staging ?? {}).concat(Object.values(advanced.prs?.master ?? {}))
       const taskCounts = Object.fromEntries(
-        (['TASK-CHECKLIST.md', 'TEST-CHECKLIST.md'] as const)
+        (['TASK-CHECKLIST.md'] as const)
           .filter((file) => existsSync(join(path, file)))
           .map((file) => [file, countTasks(readFileSync(join(path, file), 'utf8'))]),
       )

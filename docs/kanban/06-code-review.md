@@ -2,13 +2,13 @@
 
 ## Ao entrar na etapa
 
-1. O status é salvo. Não há script automático associado a Code Review. A etapa recebe automaticamente cards cujo desenvolvimento (simples/médio) ou Auto Testing (difícil) terminou com sucesso. A revisão e a movimentação seguinte são manuais.
+1. O status é salvo. Não há script automático associado a Code Review. A etapa recebe automaticamente os cards cujo desenvolvimento terminou com sucesso. A revisão e a movimentação seguinte são manuais.
 2. Se a entrada foi feita pela interface e a pasta é uma chave Jira válida, a interface tenta mudar o chamado para `CODE REVIEW`. A passagem automática feita pelo servidor não faz essa chamada.
 3. O card **sempre oferece o botão “Iniciar ambiente dev”** quando não há ambiente ativo. Iniciar o ambiente depende de um clique; entrar na etapa, por si só, não o inicia. Se o ambiente já estiver ativo, aparecem seu estado e controles. Um PR aberto conhecido pode acender o aviso de atenção.
 
 ## Contrato técnico
 
-**Entrada:** `advanceStage` escreve `status: 'code-review'` em `card.json` depois de `run-task-checklist` ou `run-test-checklist` concluir, conforme `flow`. Se a mudança é manual, a interface envia `POST /api/workspace/update` com `{ name: CARD_ID, status: 'code-review' }` e, para uma chave Jira válida, chama `POST /api/jira/transition` com `CODE REVIEW`. O avanço pelo servidor não faz essa requisição Jira.
+**Entrada:** `advanceStage` escreve `status: 'code-review'` em `card.json` depois de `run-task-checklist` concluir. Se a mudança é manual, a interface envia `POST /api/workspace/update` com `{ name: CARD_ID, status: 'code-review' }` e, para uma chave Jira válida, chama `POST /api/jira/transition` com `CODE REVIEW`. O avanço pelo servidor não faz essa requisição Jira.
 
 **Processo:** `stageFor('code-review')` retorna `undefined`; não há `spawn`, CLI ou prompt por entrada na coluna. O modal abre inicialmente a aba Diff nessa etapa. Ela consulta `GET /api/workspace/diff` para ler uma revisão salva e, se não houver, `GET /api/workspace/diff/standard` para mostrar o diff Git. **Gerar Smart Diff** exige clicar no botão, que envia `POST /api/workspace/diff` e pode então executar a ferramenta Smart Diff e um agente Claude/Codex. `Iniciar ambiente dev` também exige clique (`POST /api/workspace/dev-env`).
 
