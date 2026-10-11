@@ -1,7 +1,9 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { FlowLevel } from '../../shared/domain/cards'
 import { DEFAULT_FLOW } from './card-folder'
+import { activeChecklistItems, countTasks, TASK_CHECKLIST_FILE } from '../../shared/domain/task-checklist'
+import { readTaskChecklist } from '../../shared/storage/task-checklist'
 
 export interface StageProgress {
   done: number
@@ -11,7 +13,7 @@ export interface StageProgress {
 
 const ARTIFACT_PHASES = [
   ['PLAN.md', 'Iniciando plano'],
-  ['TASK-CHECKLIST.md', 'Criando tasks'],
+  [TASK_CHECKLIST_FILE, 'Criando tasks'],
 ] as const
 
 export const CARD_FILES = ARTIFACT_PHASES.map(([file]) => file)
@@ -24,33 +26,28 @@ export function planningProgress(path: string, startedAt?: string, flow: FlowLev
   let phase = 'Finalizando'
   for (const [file, label] of artifacts) {
     const artifact = join(path, file)
-    if (existsSync(artifact) && statSync(artifact).mtimeMs >= since) done++
+    let valid = existsSync(artifact) && statSync(artifact).mtimeMs >= since
+    if (valid && file === TASK_CHECKLIST_FILE) {
+      try {
+        valid = Boolean(readTaskChecklist(path)?.items.some((item) => item.state !== 'discarded'))
+      } catch { valid = false }
+    }
+    if (valid) done++
     else if (phase === 'Finalizando') phase = label
   }
   return { done, total: artifacts.length, phase }
 }
 
-const CHECKBOX = /^\s*[-*]\s*\[([ xX!-])\]\s*(.*)/
-
-export function checklistProgress(file: string): (path: string) => StageProgress {
+export function checklistProgress(): (path: string) => StageProgress {
   return (path) => {
-    const full = join(path, file)
-    if (!existsSync(full)) return { done: 0, total: 1, phase: `Aguardando ${file}` }
-    const boxes = readFileSync(full, 'utf8')
-      .split('\n')
-      .map((line) => CHECKBOX.exec(line))
-      .filter((match): match is RegExpExecArray => match !== null)
-    const done = boxes.filter((match) => match[1] === 'x' || match[1] === 'X').length
-    const pending = boxes.find((match) => match[1] === ' ')
-    return {
-      done,
-      total: boxes.length || 1,
-      phase: pending
-        ? pending[2]
-            .replace(/\{[^}]*\}\s*$/, '')
-            .trim()
-            .slice(0, 60)
-        : 'Finalizando',
+    try {
+      const checklist = readTaskChecklist(path)
+      if (!checklist) return { done: 0, total: 1, phase: `Aguardando ${TASK_CHECKLIST_FILE}` }
+      const counts = countTasks(checklist)
+      const pending = activeChecklistItems(checklist).find((item) => item.state === 'pending')
+      return { done: counts.done, total: counts.total || 1, phase: pending?.title.slice(0, 60) ?? (counts.failed || counts.blocked ? 'Itens com falha ou bloqueio' : 'Finalizando') }
+    } catch (error) {
+      return { done: 0, total: 1, phase: `Checklist inválida: ${error instanceof Error ? error.message : String(error)}` }
     }
   }
 }

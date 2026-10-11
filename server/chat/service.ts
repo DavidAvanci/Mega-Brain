@@ -24,7 +24,13 @@ import { loadMegaBrainConfig, type MegaBrainConfig } from '../config'
 import { nodeProcessRunner, type ProcessChild, type ProcessOwner, type ProcessRunner } from '../process'
 import { assertTestWorkspace } from '../test-safety'
 import { repositoryMentionContext } from '../repositories/mentions'
-import { finishAgentUsage, startAgentUsage } from '../workspace/agent-usage'
+import {
+  agentSessionIdFromEvent,
+  agentSessionIdFromOutput,
+  finishAgentUsage,
+  setAgentUsageSessionId,
+  startAgentUsage,
+} from '../workspace/agent-usage'
 import { redactDevEnvOutput } from '../modules/dev-environments/dev-env-logs'
 
 const DEFAULT_PROJECTS_ROOT = loadMegaBrainConfig().directories.claudeProjects
@@ -262,6 +268,7 @@ function streamChat(
     buffer = lines.pop() ?? ''
     for (const line of lines) {
       const usageEvent = jsonRecord(line)
+      setAgentUsageSessionId(path, usageId, agentSessionIdFromEvent(usageEvent))
       if (usageEvent?.type === 'result' && typeof usageEvent.total_cost_usd === 'number')
         costUsd = usageEvent.total_cost_usd
       const settings = settingsEvent(line)
@@ -277,6 +284,7 @@ function streamChat(
   })
   child.on('error', () => finish({ type: 'done', error: 'Falha ao iniciar o agente Claude.' }))
   child.on('close', (code, signal) => {
+    setAgentUsageSessionId(path, usageId, agentSessionIdFromOutput(buffer))
     finishAgentUsage(path, usageId, costUsd)
     if (running.get(path) === child) running.delete(path)
     if (signal || aborted.has(child)) return finish({ type: 'done', error: 'Interrompido' })
@@ -330,6 +338,7 @@ function streamCodexChat(
     for (const line of lines) {
       try {
         const event = jsonRecord(line)
+        setAgentUsageSessionId(path, usageId, agentSessionIdFromEvent(event))
         const item = record(event?.item)
         const error = record(event?.error)
         if (terminal && event?.type === 'item.started' && item?.type === 'command_execution') {
@@ -355,6 +364,7 @@ function streamCodexChat(
   })
   child.on('error', () => finish({ type: 'done', error: 'Falha ao iniciar a CLI do Codex.' }))
   child.on('close', (code, signal) => {
+    setAgentUsageSessionId(path, usageId, agentSessionIdFromOutput(buffer))
     finishAgentUsage(path, usageId)
     if (running.get(path) === child) running.delete(path)
     if (signal || aborted.has(child)) return finish({ type: 'done', error: 'Interrompido' })

@@ -39,12 +39,12 @@ function findCycle(items: Item[]): string[] | null {
 
 export function preflight(items: Item[], deps: PreflightDeps): PreflightIssue[] {
   if (!items.length) {
-    return [{ level: 'error', where: 'checklist', message: 'Nenhum item executável (seções descartadas não contam)' }]
+    return [{ level: 'error', where: 'checklist', message: 'Nenhum item executável (itens descartados não contam)' }]
   }
   const issues: PreflightIssue[] = []
   const counts = new Map<string, number>()
   for (const item of items) {
-    if (item.explicitId) counts.set(item.id, (counts.get(item.id) ?? 0) + 1)
+    counts.set(item.id, (counts.get(item.id) ?? 0) + 1)
   }
   for (const [id, count] of counts) {
     if (count > 1) issues.push({ level: 'error', where: id, message: `Id repetido em ${count} itens` })
@@ -55,7 +55,7 @@ export function preflight(items: Item[], deps: PreflightDeps): PreflightIssue[] 
   for (const item of items) {
     if (item.repo) repos.add(item.repo)
     else
-      issues.push({ level: 'error', where: item.id, message: 'Sem repo — falta um heading `## <repo>` antes do item' })
+      issues.push({ level: 'error', where: item.id, message: 'Sem repo — declare o alias no campo repo do item' })
     for (const dep of item.deps) {
       if (dep === item.id) issues.push({ level: 'error', where: item.id, message: 'Depende de si mesmo' })
       else if (!ids.has(dep))
@@ -67,8 +67,8 @@ export function preflight(items: Item[], deps: PreflightDeps): PreflightIssue[] 
     if (deps.repoExists(repo)) continue
     issues.push({
       level: 'error',
-      where: `## ${repo}`,
-      message: deps.repoIssue?.(repo) ?? `Repositório ausente ou inativo em Repositórios. Cadastre/ative o checkout com o alias \`${repo}\`, ou corrija o título da seção para o alias cadastrado. Descarte a seção (\`## ~~${repo}~~\`) somente se ela não fizer parte da tarefa.`,
+      where: repo,
+      message: deps.repoIssue?.(repo) ?? `Repositório ausente ou inativo em Repositórios. Cadastre/ative o checkout com o alias \`${repo}\`, ou corrija repo nos itens para o alias cadastrado. Use state=discarded somente nos itens que não fazem parte da tarefa.`,
     })
   }
 

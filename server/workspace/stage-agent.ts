@@ -19,6 +19,7 @@ import { taskMessageContext } from '../chat/task-conversation'
 import { claudeCostFromStream, finishAgentUsage, setAgentUsageProcess, startAgentUsage } from './agent-usage'
 import { DEFAULT_PROMPTS } from '../../shared/domain/settings'
 import { isClaudeModelAlias } from '../../shared/domain/codex-models'
+import { readTaskChecklist } from '../../shared/storage/task-checklist'
 
 export const AGENT_FILE = 'agent.json'
 
@@ -65,7 +66,8 @@ export function stageAgentCommand(
     card.knowledgeRefs,
     settingsFile,
   )
-  const sessionName = `${basename(path)} · ${stage.name}`
+  const sessionName = stage.name === 'task-planning' ? 'Planejador' : stage.name
+  const namedPrompt = `${sessionName}\n\n${prompt}`
   if (provider === 'chatgpt') {
     return [
       codexBin(codex),
@@ -75,7 +77,7 @@ export function stageAgentCommand(
         '--dangerously-bypass-approvals-and-sandbox',
         ...(model && model !== 'default' && !isClaudeModelAlias(model) ? ['--model', model] : []),
         ...(effort ? ['--config', `model_reasoning_effort="${effort}"`] : []),
-        prompt,
+        namedPrompt,
       ],
     ]
   }
@@ -84,7 +86,7 @@ export function stageAgentCommand(
     [
       '-p',
       ...(fastMode ? ['--settings', JSON.stringify({ fastMode: true })] : []),
-      prompt,
+      namedPrompt,
       '--name',
       sessionName,
       '--model',
@@ -118,7 +120,11 @@ export function runStageAgent(
 ): void {
   const settings = settingsForStage(path, stage, provider)
   const effectiveModel = model ?? settings.model
-  if (!resume && model === undefined) captureStageSnapshot(path, stage.name, stageOwnedFiles(stage))
+  if (!resume && model === undefined) {
+    // Migrate old artifacts before snapshotting so cancellation restores the JSON source of truth.
+    try { readTaskChecklist(path) } catch { /* Planning may replace an invalid previous artifact. */ }
+    captureStageSnapshot(path, stage.name, stageOwnedFiles(stage))
+  }
   const usageId = stage.script
     ? undefined
     : startAgentUsage(path, new Date(), {

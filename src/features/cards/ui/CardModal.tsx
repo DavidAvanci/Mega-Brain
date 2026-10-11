@@ -3,9 +3,9 @@ import { CardChatPanel, type EnvironmentChatRequest } from './CardChatPanel'
 import { CardKnowledgeAttachments } from '@/features/knowledge/CardKnowledgeAttachments'
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
+import { SmartDiffIndicator } from './SmartDiffIndicator'
 import {
   ArrowLeft01Icon,
-  ArrowRight01Icon,
   Cancel01Icon,
   CancelSquareIcon,
   ComputerTerminal01Icon,
@@ -48,7 +48,8 @@ import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 import { PrChip, StageResetButton } from './CardView'
 import { isTauriDesktop } from '@/desktopBootstrap'
 import { Markdown } from '@/Markdown'
-import { countTasks, type TaskCounts } from '@/markdownFormat'
+import { countTasks, type TaskCounts } from '../../../../shared/domain/task-checklist'
+import { TaskChecklist } from './TaskChecklist'
 import { relativeTime } from '@/relativeTime'
 import { Tip } from '@/Tip'
 import { Textarea } from '@/components/ui/textarea'
@@ -72,12 +73,12 @@ const DevEnvTab = lazy(() =>
 
 const FILE_TABS = [
   { label: 'Plano', file: 'PLAN.md', outline: true, checklist: false },
-  { label: 'Tasks', file: 'TASK-CHECKLIST.md', outline: false, checklist: true },
+  { label: 'Tasks', file: 'TASK-CHECKLIST.json', outline: false, checklist: true },
 ]
 
 const DEFAULT_TAB: Partial<Record<Card['status'], string>> = {
   'revisao-de-plano': 'PLAN.md',
-  desenvolvendo: 'TASK-CHECKLIST.md',
+  desenvolvendo: 'TASK-CHECKLIST.json',
   'code-review': 'diff',
   staging: 'links',
   'aguardando-deploy': 'links',
@@ -109,7 +110,7 @@ function storedChatWidthRatio(): number {
   return DEFAULT_CHAT_WIDTH_RATIO
 }
 
-function CopyId({ id }: { id: string }) {
+function CopyId({ id, compact = false }: { id: string; compact?: boolean }) {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!copied) return
@@ -120,10 +121,10 @@ function CopyId({ id }: { id: string }) {
     <Tip label="Copiar id">
       <button
         type="button"
-        className="inline-flex items-center gap-1 font-medium text-foreground hover:text-primary dark:hover:text-chart-2"
+        className={cn('inline-flex min-w-0 items-center gap-1 font-medium text-foreground hover:text-primary dark:hover:text-chart-2', compact && 'max-w-[48%] text-xs')}
         onClick={() => navigator.clipboard.writeText(id).then(() => setCopied(true))}
       >
-        {id}
+        <span className={cn(compact && 'truncate')} title={id}>{id}</span>
         <HugeiconsIcon
           icon={copied ? Tick02Icon : Copy01Icon}
           strokeWidth={2}
@@ -182,9 +183,9 @@ function TabCounter({ counts }: { counts?: TaskCounts }) {
       {counts.failed > 0 && (
         <span className="rounded-sm bg-destructive/10 px-1 py-px font-semibold text-destructive">{counts.failed}!</span>
       )}
-      {counts.skipped > 0 && (
+      {counts.blocked > 0 && (
         <span className="rounded-sm bg-foreground/10 px-1 py-px font-semibold text-muted-foreground">
-          {counts.skipped}-
+          {counts.blocked} bloqueadas
         </span>
       )}
     </span>
@@ -212,7 +213,36 @@ function LoadingLines() {
 function formatAgentTime(durationMs: number): string {
   const seconds = Math.floor(durationMs / 1000)
   const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  if (days) return `${days}d ${hours % 24}h ${minutes % 60}min`
+  if (hours) return `${hours}h ${minutes % 60}min`
   return `${minutes}min ${seconds % 60}s`
+}
+
+function elapsedAgentTime(entries: CardAgentUsageEntry[]): number {
+  if (!entries.length) return 0
+  const now = Date.now()
+  const intervals = entries.flatMap((entry) => {
+    const start = Date.parse(entry.startedAt)
+    const end = entry.finishedAt ? Date.parse(entry.finishedAt) : now
+    return Number.isFinite(start) && Number.isFinite(end) ? [{ start, end: Math.max(start, end) }] : []
+  }).sort((left, right) => left.start - right.start)
+  if (!intervals.length) return 0
+
+  let total = 0
+  let intervalStart = intervals[0].start
+  let intervalEnd = intervals[0].end
+  for (const interval of intervals.slice(1)) {
+    if (interval.start <= intervalEnd) {
+      intervalEnd = Math.max(intervalEnd, interval.end)
+    } else {
+      total += intervalEnd - intervalStart
+      intervalStart = interval.start
+      intervalEnd = interval.end
+    }
+  }
+  return total + intervalEnd - intervalStart
 }
 
 function usageEntryTitle(entry: CardAgentUsageEntry): string {
@@ -415,7 +445,7 @@ function AgentSessionStopButton({
   )
 }
 
-function AgentStatusRow({ agent, cardId }: { agent: AgentInfo; cardId: string }) {
+export function AgentStatusRow({ agent, cardId }: { agent: AgentInfo; cardId: string }) {
   const [stopping, setStopping] = useState(false)
   const progress = agent.status === 'rodando' && agent.stage !== 'task-planning' ? agent.progress : undefined
   return (
@@ -427,9 +457,6 @@ function AgentStatusRow({ agent, cardId }: { agent: AgentInfo; cardId: string })
           <StageResetButton agent={agent} cardId={cardId} iconOnly onPendingChange={setStopping} />
         ) : (
           <AgentSessionStopButton agent={agent} iconOnly onPendingChange={setStopping} />
-        )}
-        {agent.activity && agent.stage !== 'task-planning' && (
-          <span className="min-w-0 truncate">{agent.activity}</span>
         )}
         {progress && (
           <span className="ml-auto shrink-0 tabular-nums">
@@ -504,8 +531,14 @@ export function CardModal({
   const [activeTab, setActiveTab] = useState(
     initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description'),
   )
-  const { files, usage, usageBreakdown, error } = useCardDetail(card.id, activeTab, true)
+  const [usageSort, setUsageSort] = useState<'duration' | 'cost'>('duration')
+  const { files, checklist, checklistLoaded, usage, usageBreakdown, artifactError, error } = useCardDetail(card.id, activeTab, true)
   const agents = activeAgents(card)
+  const agentWorking = agents.some((agent) => agent.status === 'rodando')
+  const sortedUsageBreakdown = [...usageBreakdown].sort((left, right) => {
+    if (usageSort === 'duration') return right.durationMs - left.durationMs
+    return (right.costUsd ?? -1) - (left.costUsd ?? -1) || Date.parse(right.startedAt) - Date.parse(left.startedAt)
+  })
   const [editingDescription, setEditingDescription] = useState(false)
   const [descriptionDraft, setDescriptionDraft] = useState(card.description)
   const [descriptionText, setDescriptionText] = useState(card.description)
@@ -616,66 +649,30 @@ export function CardModal({
                 <span className="tabular-nums">criado {relativeTime(card.createdAt)}</span>
               </div>
               <DialogTitle className="text-lg leading-snug">{card.title}</DialogTitle>
-              <details className="group w-full text-xs">
-                  <summary
-                    className="flex cursor-pointer list-none items-center gap-1.5 whitespace-nowrap text-muted-foreground select-none [&::-webkit-details-marker]:hidden"
-                    aria-label="Uso acumulado dos agentes"
-                  >
-                    <HugeiconsIcon
-                      icon={ArrowRight01Icon}
-                      strokeWidth={2}
-                      className="size-3 shrink-0 transition-transform group-open:rotate-90"
-                    />
-                    <span>Gastos dos agentes:</span>
-                    <strong className="font-medium tabular-nums text-foreground">
-                      {usage ? `${formatAgentTime(usage.durationMs)} • ` : 'Carregar uso'}
-                      {usage && (usage.runs > 0 && usage.unpricedRuns === usage.runs
-                        ? 'indisponível'
-                        : `$${usage.costUsd.toFixed(usage.costUsd > 0 && usage.costUsd < 0.01 ? 4 : 2)}${usage.unpricedRuns ? ' (parcial)' : ''}`)}
-                    </strong>
-                    {usage && usage.unpricedRuns > 0 && (
-                      <span title={`${usage.unpricedRuns} execução(ões) sem custo informado pela CLI`}>
-                        <Spinner className="size-3" aria-label="Custo parcial dos agentes" />
-                      </span>
-                    )}
-                  </summary>
-                  {!usage ? (
-                    <div className="mt-1.5"><LoadingLines /></div>
-                  ) : usageBreakdown.length > 0 && (
-                    <div className="mt-1.5 rounded-md border bg-muted/20 px-2 py-1.5">
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        Valores em USD reportados pelo provedor; custos ausentes não são estimados.
-                      </p>
-                      <ol className="mt-1 max-h-36 divide-y overflow-y-auto border-t">
-                        {usageBreakdown.map((entry) => (
-                          <li key={entry.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 py-1.5">
-                            <span className="truncate font-medium text-foreground" title={usageEntryTitle(entry)}>
-                              {usageEntryTitle(entry)}
-                            </span>
-                            <strong className="text-right font-medium tabular-nums text-foreground">
-                              {entry.costUsd === undefined && !entry.finishedAt
-                                ? 'Em andamento'
-                                : formatUsageCost(entry.costUsd)}
-                            </strong>
-                            <span className="col-span-2 text-[11px] text-muted-foreground">
-                              {formatUsageDate(entry.startedAt)} · {formatAgentTime(entry.durationMs)}
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  )}
-              </details>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground" aria-label="Tempo em execução e custo acumulado dos agentes">
+                <span>Tempo em execução: <strong className="font-medium tabular-nums text-foreground">{usage ? formatAgentTime(elapsedAgentTime(usageBreakdown)) : 'Carregando…'}</strong></span>
+                <span>Custo: <strong className="font-medium tabular-nums text-foreground">{usage ? (usage.runs > 0 && usage.unpricedRuns === usage.runs ? 'indisponível' : `$${usage.costUsd.toFixed(usage.costUsd > 0 && usage.costUsd < 0.01 ? 4 : 2)}`) : 'Carregando…'}</strong></span>
+                {agentWorking && (
+                  <span title="Agente em execução; custo sendo atualizado">
+                    <Spinner className="size-3" aria-label="Agente em execução; custo sendo atualizado" />
+                  </span>
+                )}
+              </div>
               {agents.map((agent, index) => (
                 <AgentStatusRow key={`${agent.stage ?? 'autonomo'}-${index}`} agent={agent} cardId={card.id} />
               ))}
+              {card.smartDiffRunning && <SmartDiffIndicator cardId={card.id} activity={card.smartDiffActivity} />}
               <ActionBar card={card} onDeleted={onClose} />
               {error && <p className="text-xs text-destructive">{error}</p>}
+              {card.checklistError && card.checklistError !== error && <p className="text-xs text-destructive">{card.checklistError}</p>}
             </DialogHeader>
             <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 gap-0">
-              <TabsList variant="line" className="w-full justify-start overflow-x-auto border-b px-3">
+              <TabsList variant="line" className="w-full shrink-0 justify-start overflow-x-auto overflow-y-hidden border-b px-3">
                 <TabsTrigger value="description" className="flex-none px-2.5">
                   Descrição
+                </TabsTrigger>
+                <TabsTrigger value="agents" className="flex-none px-2.5">
+                  Agentes
                 </TabsTrigger>
                 {FILE_TABS.map((tab) => {
                   const content = files?.[tab.file]
@@ -683,12 +680,12 @@ export function CardModal({
                     <TabsTrigger
                       key={tab.file}
                       value={tab.file}
-                      disabled={Boolean(files && Object.hasOwn(files, tab.file) && !content)}
+                      disabled={!tab.checklist && Boolean(files && Object.hasOwn(files, tab.file) && !content)}
                       className="flex-none px-2.5"
                     >
                       {tab.label}
                       {tab.checklist && (
-                        <TabCounter counts={card.taskCounts?.[tab.file] ?? (content ? countTasks(content) : undefined)} />
+                        <TabCounter counts={checklist ? countTasks(checklist) : card.taskCounts?.['TASK-CHECKLIST.json']} />
                       )}
                     </TabsTrigger>
                   )
@@ -740,11 +737,68 @@ export function CardModal({
                 ) : descriptionText ? <Markdown text={descriptionText} /> : <Placeholder>Sem descrição.</Placeholder>}
                 <CardKnowledgeAttachments card={card} />
               </TabsContent>
+              <TabsContent value="agents" className="min-h-0 overflow-y-auto px-5 py-4">
+                {!usage ? <LoadingLines /> : (
+                  <div className="flex flex-col gap-5">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <section className="rounded-lg border bg-muted/20 p-4">
+                        <p className="text-xs text-muted-foreground">Tempo acumulado</p>
+                        <p className="mt-1 text-xl font-semibold tabular-nums">{formatAgentTime(usage.durationMs)}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">Soma do tempo de todas as execuções</p>
+                      </section>
+                      <section className="rounded-lg border bg-muted/20 p-4">
+                        <p className="text-xs text-muted-foreground">Custo acumulado</p>
+                        <p className="mt-1 flex items-center gap-2 text-xl font-semibold tabular-nums">
+                          {usage.runs > 0 && usage.unpricedRuns === usage.runs ? 'Indisponível' : `$${usage.costUsd.toFixed(usage.costUsd > 0 && usage.costUsd < 0.01 ? 4 : 2)}`}
+                          {agentWorking && <Spinner className="size-4" aria-label="Agente em execução; custo sendo atualizado" />}
+                        </p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">USD reportados pelo provedor</p>
+                      </section>
+                      <section className="rounded-lg border bg-muted/20 p-4">
+                        <p className="text-xs text-muted-foreground">Tempo em execução</p>
+                        <p className="mt-1 text-xl font-semibold tabular-nums">{formatAgentTime(elapsedAgentTime(usageBreakdown))}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">Soma dos períodos com agentes ativos; sobreposições contam uma vez</p>
+                      </section>
+                    </div>
+                    <section>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-medium">Execuções</h3>
+                        <div className="flex items-center gap-1" role="group" aria-label="Ordenar execuções">
+                          <Button type="button" size="xs" variant={usageSort === 'duration' ? 'secondary' : 'ghost'} aria-pressed={usageSort === 'duration'} onClick={() => setUsageSort('duration')}>Tempo ↓</Button>
+                          <Button type="button" size="xs" variant={usageSort === 'cost' ? 'secondary' : 'ghost'} aria-pressed={usageSort === 'cost'} onClick={() => setUsageSort('cost')}>Custo ↓</Button>
+                        </div>
+                      </div>
+                      {usageBreakdown.length ? (
+                        <ol className="divide-y divide-border/70">
+                          {sortedUsageBreakdown.map((entry) => (
+                            <li key={entry.id} className="py-4 first:pt-2 last:pb-0">
+                              <div className="flex min-w-0 flex-col gap-0.5">
+                                <div className="flex min-w-0 items-center justify-between gap-2">
+                                  <span className="min-w-0 truncate text-sm font-semibold" title={usageEntryTitle(entry)}>{usageEntryTitle(entry)}</span>
+                                  {entry.sessionId && <CopyId id={entry.sessionId} compact />}
+                                </div>
+                                <span className="text-xs text-muted-foreground">{formatUsageDate(entry.startedAt)}</span>
+                              </div>
+                              <div className="mt-3 grid grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] items-center gap-3">
+                                <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground">{formatAgentTime(entry.durationMs)}</p>
+                                <span className="h-7 bg-border" aria-hidden="true" />
+                                <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground">{entry.costUsd === undefined && !entry.finishedAt ? 'Em andamento' : formatUsageCost(entry.costUsd)}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      ) : <Placeholder>Nenhuma execução de agente registrada.</Placeholder>}
+                    </section>
+                  </div>
+                )}
+              </TabsContent>
               {FILE_TABS.map((tab) => {
                 const content = files?.[tab.file]
                 return (
-                  <TabsContent key={tab.file} value={tab.file} className="overflow-y-auto px-5 py-4">
-                    {content ? (
+                  <TabsContent key={tab.file} value={tab.file} className="min-h-0 overflow-y-auto px-5 py-4">
+                    {tab.checklist ? (
+                      checklist ? <TaskChecklist checklist={checklist} /> : <Placeholder>{artifactError ? 'Não foi possível carregar as tasks.' : checklistLoaded ? 'Nenhuma checklist disponível.' : 'Carregando tasks…'}</Placeholder>
+                    ) : content ? (
                       <Markdown text={content} outline={tab.outline} />
                     ) : files && Object.hasOwn(files, tab.file) ? (
                       <Placeholder>Sem {tab.file} na pasta.</Placeholder>

@@ -6,6 +6,8 @@ import { readCard } from './card-record'
 import { readAgentUsageDetails } from './agent-usage'
 import { repoDiff, worktreeRepoInfo, cardRepos } from './worktree-inspector'
 import { cardWorktreeRepos } from './worktree-lifecycle'
+import { readTaskChecklist } from '../../shared/storage/task-checklist'
+import { TASK_CHECKLIST_FILE } from '../../shared/domain/task-checklist'
 
 export interface CardFolderReference {
   name: string
@@ -21,9 +23,11 @@ export function inspectCard(
   file?: string | null,
 ) {
   const stored = readCard(card.path, card.name)
+  if (section === 'checklist') return { checklist: readTaskChecklist(card.path) }
   if (section === 'file') {
     if (!file || !CARD_FILES.includes(file as (typeof CARD_FILES)[number])) throw new Error('Arquivo de card inválido')
-    return { file, content: existsSync(join(card.path, file)) ? readFileSync(join(card.path, file), 'utf8') : null }
+    const checklist = file === TASK_CHECKLIST_FILE ? readTaskChecklist(card.path) : undefined
+    return { file, content: file === TASK_CHECKLIST_FILE ? (checklist ? JSON.stringify(checklist, null, 2) : null) : existsSync(join(card.path, file)) ? readFileSync(join(card.path, file), 'utf8') : null }
   }
   if (section === 'repos')
     return {
@@ -39,6 +43,7 @@ export function inspectCard(
   return {
     usage: usage.usage,
     usageBreakdown: usage.breakdown,
+    checklist: readTaskChecklist(card.path),
     files: Object.fromEntries(
       CARD_FILES.map((cardFile) => [
         cardFile,

@@ -3,7 +3,7 @@ import { BoundedCache } from '../../../../shared/lib/bounded-cache'
 import { DiffFile, DiffModeEnum, DiffView, highlighter } from '@git-diff-view/react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowDown01Icon, ArrowRight01Icon } from '@hugeicons/core-free-icons'
+import { ArrowDown01Icon, ArrowRight01Icon, Cancel01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
@@ -16,6 +16,8 @@ import {
 } from '../api/card-detail-api'
 import { fileLang, parseDiff, type FileDiff, type FileStatus } from '@/diff'
 import { useTheme, type Theme } from '@/theme'
+import type { AgentInfo } from '../../../../shared/domain/agents'
+import { SmartDiffIndicator } from './SmartDiffIndicator'
 import '@git-diff-view/react/styles/diff-view.css'
 
 const STATUS_BADGE: Partial<Record<FileStatus, { label: string; className: string }>> = {
@@ -303,6 +305,7 @@ export function DiffTab({ cardId }: { cardId: string }) {
   const [tick, setTick] = useState(0)
   const generationRequest = useRef<{ cardId: string; regenerate: boolean } | null>(null)
   const [steps, setSteps] = useState<string[]>([])
+  const [activity, setActivity] = useState<AgentInfo>()
   const [started, setStarted] = useState(false)
   const [standardRepos, setStandardRepos] = useState<(RepoDiff & { files: FileDiff[] })[] | null>(null)
   const [standardCollapsed, setStandardCollapsed] = useState<ReadonlySet<string>>(new Set())
@@ -320,6 +323,7 @@ export function DiffTab({ cardId }: { cardId: string }) {
         if (cancelled) return
         setStatus(state.status === 'error' && !state.started ? 'idle' : state.status)
         setSteps(state.steps ?? [])
+        setActivity(state.activity)
         setStarted(state.started)
         if (state.status === 'running') {
           setStandardRepos(null)
@@ -370,6 +374,7 @@ export function DiffTab({ cardId }: { cardId: string }) {
     setStatus(request ? 'running' : 'checking')
     setError(null)
     setSteps([])
+    setActivity(undefined)
     const begin = async () => {
       if (request) await startDiff(cardId, request.regenerate)
       if (!cancelled) await poll()
@@ -507,11 +512,24 @@ export function DiffTab({ cardId }: { cardId: string }) {
                     : 'text-muted-foreground',
                 )}
               >
-                <span aria-hidden="true">
-                  {index === visibleSteps.length - 1 ? (status === 'error' ? '✕' : '●') : '✓'}
-                </span>
-                {step}
-                {index === visibleSteps.length - 1 && loading ? '…' : ''}
+                {(index !== visibleSteps.length - 1 || status === 'error') && (
+                  <HugeiconsIcon
+                    icon={index === visibleSteps.length - 1 ? Cancel01Icon : Tick02Icon}
+                    strokeWidth={2}
+                    className="size-3.5 shrink-0"
+                    aria-hidden="true"
+                  />
+                )}
+                {index === visibleSteps.length - 1 && status === 'running' ? (
+                  <SmartDiffIndicator
+                    cardId={cardId}
+                    activity={
+                      activity ?? { stage: 'smart-diff-review', status: 'rodando', execution: 'script', phase: step }
+                    }
+                  />
+                ) : (
+                  step
+                )}
               </li>
             ))}
           </ol>
@@ -552,7 +570,9 @@ export function DiffTab({ cardId }: { cardId: string }) {
                         />
                         <span className="text-sm font-semibold">{row.title}</span>
                       </button>
-                      {!collapsedSections.has(row.key) && <p className="pl-5 text-xs text-muted-foreground">{row.summary}</p>}
+                      {!collapsedSections.has(row.key) && (
+                        <p className="pl-5 text-xs text-muted-foreground">{row.summary}</p>
+                      )}
                     </div>
                   )}
                   {row.kind === 'file' && (

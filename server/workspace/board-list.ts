@@ -1,10 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { readDevEnv } from '../modules/dev-environments/dev-env'
 import { prStates } from '../platform/pr-status'
 import type { ProcessRunner } from '../process'
 import type { AgentInfo, AgentSession } from '../../shared/domain/agents'
-import { countTasks } from '../../shared/domain/checklist-counts'
+import { countTasks, TASK_CHECKLIST_FILE, type TaskCounts } from '../../shared/domain/task-checklist'
+import { readTaskChecklist } from '../../shared/storage/task-checklist'
 import { readCard, type CardData } from './card-record'
 import { AGENT_FILE } from './stage-agent'
 import { canRetryStageWithOpus, readAgent, stageEndedDueToRateLimit } from './stage-agent-status'
@@ -35,6 +36,7 @@ export function listBoardCards(
   startStage: BoardStageStarter,
   sessions: readonly AgentSession[] = [],
   isSmartDiffRunning: (path: string) => boolean = () => false,
+  smartDiffActivity: (path: string) => AgentInfo | undefined = () => undefined,
 ) {
   mkdirSync(root, { recursive: true })
   const activeSessionsByCard = new Map<string, AgentSession[]>()
@@ -48,6 +50,7 @@ export function listBoardCards(
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
     .flatMap((entry) => {
       const path = join(root, entry.name)
+      const diffActivity = smartDiffActivity(path)
       const card = readCard(path, entry.name)
       if (expiredInProduction(path, card)) {
         deleteCard(path, worktreesRoot, git, runner)
@@ -79,7 +82,8 @@ export function listBoardCards(
       }
       const advanced = advanceStage(path, card, agent, startStage)
       if (advanced !== card) agent = readAgent(path)
-      const activeSessions = agent?.status === 'pausado' ? [] : activeSessionsByCard.get(entry.name) ?? []
+      const activeSessions = agent?.status === 'pausado' ? [] : (activeSessionsByCard.get(entry.name) ?? [])
+        .filter((session) => session.id !== diffActivity?.sessionId)
       const stageSession =
         agent?.status === 'rodando'
           ? activeSessions.find((session) => session.id === agent.sessionId || session.cwd === realpathSync(path))
@@ -96,20 +100,24 @@ export function listBoardCards(
         if (session === stageSession) continue
         const taskId = taskIdForSession(session)
         agents.push({
+          execution: 'agent',
           status: session.status,
           provider: session.provider,
           sessionControlId: session.id,
           ...(taskId ? { taskId, phase: `Iniciando ${taskId}` } : {}),
           startedAt: session.startedAt,
-          activity: session.activity,
+          activity: session.narration,
         })
       }
       const prUrls = Object.values(advanced.prs?.staging ?? {}).concat(Object.values(advanced.prs?.master ?? {}))
-      const taskCounts = Object.fromEntries(
-        (['TASK-CHECKLIST.md'] as const)
-          .filter((file) => existsSync(join(path, file)))
-          .map((file) => [file, countTasks(readFileSync(join(path, file), 'utf8'))]),
-      )
+      const taskCounts: Partial<Record<typeof TASK_CHECKLIST_FILE, TaskCounts>> = {}
+      let checklistError: string | undefined
+      try {
+        const checklist = readTaskChecklist(path)
+        if (checklist) taskCounts[TASK_CHECKLIST_FILE] = countTasks(checklist)
+      } catch (error) {
+        checklistError = error instanceof Error ? error.message : String(error)
+      }
       const cardFile = join(path, 'card.json')
       const updatedAt = existsSync(cardFile)
         ? new Date(statSync(cardFile).mtimeMs).toISOString()
@@ -122,7 +130,9 @@ export function listBoardCards(
         agents,
         lastStage: agent?.stage,
         smartDiffRunning: isSmartDiffRunning(path),
+        ...(diffActivity ? { smartDiffActivity: diffActivity } : {}),
         taskCounts,
+        ...(checklistError ? { checklistError } : {}),
         repoCount: repoNames.length,
         devEnv: readDevEnv(path),
         prStates: prUrls.length ? prStates(prUrls) : undefined,

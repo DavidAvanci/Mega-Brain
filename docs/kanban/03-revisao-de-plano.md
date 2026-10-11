@@ -10,13 +10,13 @@
 
 **Entrada:** o servidor pode gravar `status: 'revisao-de-plano'` em `card.json` por `advanceStage` quando `task-planning` conclui e `flow` é `medio` ou `dificil`. Uma movimentação manual envia `POST /api/workspace/update` com `{ name: CARD_ID, status: 'revisao-de-plano' }` e grava o mesmo campo.
 
-**Processo e entradas:** `stageFor('revisao-de-plano')` retorna `undefined`. Não há CLI, `spawn`, prompt ou arquivo de log desta etapa. A revisão usa os arquivos que o planejamento já produziu em `CARD_DIR`: `PLAN.md` e `TASK-CHECKLIST.md`. Abrir o modal consulta esses artefatos por `GET /api/workspace/detail`; a entrada na coluna não os relê para validá-los.
+**Processo e entradas:** `stageFor('revisao-de-plano')` retorna `undefined`. Não há CLI, `spawn`, prompt ou arquivo de log desta etapa. A revisão usa os arquivos que o planejamento já produziu em `CARD_DIR`: `PLAN.md` e `TASK-CHECKLIST.json`. Abrir o modal consulta esses artefatos por `GET /api/workspace/detail`; a entrada na coluna não os relê para validá-los.
 
 **Saída:** não há evento automático que leve a Desenvolvendo. Só uma movimentação de status inicia `run-task-checklist`. Nenhuma transição Jira é mapeada para esta coluna.
 
 ## Prompt enviado a agentes
 
-Nenhum ao entrar em Revisão de plano. `stageFor('revisao-de-plano')` não define agente nem script. Os arquivos `PLAN.md` e `TASK-CHECKLIST.md` podem ser lidos por uma pessoa no modal, mas não são enviados automaticamente a uma CLI nesta etapa.
+Nenhum ao entrar em Revisão de plano. `stageFor('revisao-de-plano')` não define agente nem script. Os arquivos `PLAN.md` e `TASK-CHECKLIST.json` podem ser lidos por uma pessoa no modal, mas não são enviados automaticamente a uma CLI nesta etapa.
 
 ## Desenho do card fechado
 

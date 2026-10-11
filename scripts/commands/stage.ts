@@ -12,18 +12,16 @@ import {
 import { runsAsCommand } from '../lib/env.ts'
 import { jiraEnv, jiraIssueUrl, jiraSiteForRepositories, prsCommentAdf, transitionTo, upsertComment } from '../lib/jira.ts'
 import { activity, finish } from '../lib/log.ts'
-import { planSection, readPlan } from '../lib/plan.ts'
+import { completedTaskSummary, readChecklist } from '../lib/checklist.ts'
 import { mergeCardPrs, repoLinks, taskInfo } from '../lib/workspace.ts'
 import { resolveCherryPickConflict } from '../lib/conflictResolver.ts'
 
 const wsPath = process.argv[2] ?? process.cwd()
 const draft = process.argv.includes('--draft')
 
-function prBody(planRaw: string, jiraKey?: string, jiraSite?: string): string {
-  const done = planSection(planRaw, /o que foi feito/i)
-  const before = planSection(planRaw, /o que acontecia/i)
+function prBody(checklistRaw: string, repo: string, jiraKey?: string, jiraSite?: string): string {
+  const done = completedTaskSummary(checklistRaw, repo)
   const parts = [
-    before ? `## O que acontecia\n${before}` : '',
     done ? `## O que foi feito\n${done}` : '',
     jiraKey && jiraIssueUrl(jiraKey, jiraSite) ? `Jira: ${jiraIssueUrl(jiraKey, jiraSite)}` : '',
   ].filter(Boolean)
@@ -121,7 +119,7 @@ async function stageRepo(
 
 export async function runStagingStage(): Promise<void> {
   const task = taskInfo(wsPath)
-  const plan = readPlan(wsPath)
+  const checklist = readChecklist(wsPath)
   const repos = repoLinks(wsPath)
   if (!repos.length) {
     finish(false, 'Nenhum repo (symlink) encontrado no workspace')
@@ -129,13 +127,12 @@ export async function runStagingStage(): Promise<void> {
   }
 
   const jiraSite = jiraSiteForRepositories(repos.map((repo) => repo.name))
-  const body = prBody(plan.raw, task.jiraKey, jiraSite)
   const prs: Record<string, string> = {}
   const errors: string[] = []
   for (const repo of repos) {
     activity('Staging PR', repo.name)
     try {
-      prs[repo.name] = await stageRepo(repo, task, body)
+      prs[repo.name] = await stageRepo(repo, task, prBody(checklist, repo.name, task.jiraKey, jiraSite))
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error))
     }
@@ -147,9 +144,7 @@ export async function runStagingStage(): Promise<void> {
     if (task.jiraKey && env) {
       activity('Jira', `Comentando PRs em ${task.jiraKey}`)
       const sections: [string, string][] = []
-      const before = planSection(plan.raw, /o que acontecia/i)
-      const done = planSection(plan.raw, /o que foi feito/i)
-      if (before) sections.push(['O que acontecia', before])
+      const done = completedTaskSummary(checklist)
       if (done) sections.push(['O que foi feito', done])
       await upsertComment(env, task.jiraKey, 'PRs Staging', prsCommentAdf('PRs Staging', prs, sections))
       try {

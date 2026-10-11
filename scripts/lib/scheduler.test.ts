@@ -1,3 +1,4 @@
+import { checklistJson } from "../../test/checklist-fixtures"
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,14 +9,14 @@ import { runChecklist } from './scheduler'
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function tempChecklist(content: string): string {
-  const file = join(mkdtempSync(join(tmpdir(), 'sched-')), 'TASK-CHECKLIST.md')
+  const file = join(mkdtempSync(join(tmpdir(), 'sched-')), 'TASK-CHECKLIST.json')
   writeFileSync(file, content)
   return file
 }
 
 test('runs items respecting deps and marks results', async () => {
   const file = tempChecklist(
-    '## repo-a\n- [ ] T1 Primeiro {files: a.ts}\n- [ ] T2 Segundo {files: b.ts; deps: T1}\n- [ ] T3 Independente {files: c.ts}\n',
+    checklistJson([{"id":"T1","title":"Primeiro","repo":"repo-a","files":["a.ts"]},{"id":"T2","title":"Segundo","repo":"repo-a","files":["b.ts"],"deps":["T1"]},{"id":"T3","title":"Independente","repo":"repo-a","files":["c.ts"]}]),
   )
   const order: string[] = []
   const summary = await runChecklist({
@@ -31,13 +32,12 @@ test('runs items respecting deps and marks results', async () => {
   expect(summary).toMatchObject({ done: 2, failed: 1, blocked: 0, total: 3, ok: false })
   expect(summary.failures).toEqual([{ id: 'T3', note: 'quebrou' }])
   const final = readFileSync(file, 'utf8')
-  expect(final).toContain('- [x] T1')
-  expect(final).toContain('- [!] T3')
-  expect(final).toContain('  > quebrou')
+  expect(parseChecklist(final).find((item) => item.id === 'T1')?.state).toBe('done')
+  expect(parseChecklist(final).find((item) => item.id === 'T3')).toMatchObject({ state: 'failed', notes: ['quebrou'] })
 })
 
 test('coordena dependências entre repositórios do mesmo workspace', async () => {
-  const file = tempChecklist('## takeat-platform\n- [ ] BE1 Criar contrato {files: src/api.ts}\n## external-api-docs\n- [ ] DOC1 Documentar contrato {files: content/api.mdx; deps: BE1}\n')
+  const file = tempChecklist(checklistJson([{"id":"BE1","title":"Criar contrato","repo":"takeat-platform","files":["src/api.ts"]},{"id":"DOC1","title":"Documentar contrato","repo":"external-api-docs","files":["content/api.mdx"],"deps":["BE1"]}]))
   const executed: string[] = []
   const summary = await runChecklist({ file, max: 4, execute: async item => {
     if (item.id === 'DOC1') expect(executed).toEqual(['takeat-platform:BE1'])
@@ -49,7 +49,7 @@ test('coordena dependências entre repositórios do mesmo workspace', async () =
 })
 
 test('marks dependents of failures as blocked', async () => {
-  const file = tempChecklist('## repo\n- [ ] T1 Base {files: a.ts}\n- [ ] T2 Dependente {files: b.ts; deps: T1}\n')
+  const file = tempChecklist(checklistJson([{"id":"T1","title":"Base","repo":"repo","files":["a.ts"]},{"id":"T2","title":"Dependente","repo":"repo","files":["b.ts"],"deps":["T1"]}]))
   const summary = await runChecklist({
     file,
     max: 2,
@@ -62,7 +62,7 @@ test('marks dependents of failures as blocked', async () => {
 
 test('serializes overlapping items and parallelizes disjoint ones', async () => {
   const file = tempChecklist(
-    '## repo\n- [ ] T1 Um {files: x/*}\n- [ ] T2 Dois {files: x/y.ts}\n- [ ] T3 Tres {files: z.ts}\n',
+    checklistJson([{"id":"T1","title":"Um","repo":"repo","files":["x/*"]},{"id":"T2","title":"Dois","repo":"repo","files":["x/y.ts"]},{"id":"T3","title":"Tres","repo":"repo","files":["z.ts"]}]),
   )
   let concurrent = 0
   let maxConcurrent = 0
@@ -87,7 +87,7 @@ test('serializes overlapping items and parallelizes disjoint ones', async () => 
 })
 
 test('afterDone can downgrade a result', async () => {
-  const file = tempChecklist('## repo\n- [ ] T1 Item {files: a.ts}\n')
+  const file = tempChecklist(checklistJson([{"id":"T1","title":"Item","repo":"repo","files":["a.ts"]}]))
   const summary = await runChecklist({
     file,
     max: 1,
@@ -99,7 +99,7 @@ test('afterDone can downgrade a result', async () => {
 })
 
 test('records cost and duration per item and totals in summary', async () => {
-  const file = tempChecklist('## repo\n- [ ] T1 Um {files: a.ts}\n- [ ] T2 Dois {files: b.ts}\n')
+  const file = tempChecklist(checklistJson([{"id":"T1","title":"Um","repo":"repo","files":["a.ts"]},{"id":"T2","title":"Dois","repo":"repo","files":["b.ts"]}]))
   const summary = await runChecklist({
     file,
     max: 2,
@@ -107,11 +107,11 @@ test('records cost and duration per item and totals in summary', async () => {
   })
   expect(summary.costUsd).toBeCloseTo(1)
   expect(summary.durationMs).toBe(130_000)
-  expect(readFileSync(file, 'utf8')).toContain('  > Tempo: 1min 5s · Custo: $0.50')
+  expect(parseChecklist(readFileSync(file, 'utf8'))[0].notes).toContain('Tempo: 1min 5s · Custo: $0.50')
 })
 
 test('empty checklist is not ok', async () => {
-  const file = tempChecklist('# vazio\n')
+  const file = tempChecklist(JSON.stringify({ schemaVersion: 1, items: [] }))
   const summary = await runChecklist({ file, max: 2, execute: async () => ({ status: 'done', note: '' }) })
   expect(summary.ok).toBe(false)
 })

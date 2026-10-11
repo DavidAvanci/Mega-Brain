@@ -90,6 +90,7 @@ export function createWorkspaceService(
             stages.start,
             agentSessions(),
             diffReview.isRunning,
+            diffReview.activity,
           )
         const card = folder(query.get('name'))
         if (path === '/dev-env') return readDevEnv(card.path)
@@ -112,6 +113,7 @@ export function createWorkspaceService(
           stages.start,
           agentSessions(),
           diffReview.isRunning,
+          diffReview.activity,
         )
       }
       if (method !== 'POST') throw new Error('Método não suportado')

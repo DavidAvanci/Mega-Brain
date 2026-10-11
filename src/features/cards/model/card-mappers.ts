@@ -22,10 +22,12 @@ export interface WorkspaceFolder {
   lastStage?: string
   agents?: AgentInfo[] | null
   smartDiffRunning?: boolean
+  smartDiffActivity?: AgentInfo
   devEnv?: DevEnvInfo | null
   prs?: PrLinks | null
   prStates?: Record<string, PrState> | null
   taskCounts?: Card['taskCounts']
+  checklistError?: string
   repoCount?: number
 }
 
@@ -48,10 +50,12 @@ export function toCards(folders: WorkspaceFolder[], jiraStatuses: Readonly<Recor
     jiraStatus: jiraStatuses[folder.name.toUpperCase()],
     agents: folder.agents ?? undefined,
     smartDiffRunning: folder.smartDiffRunning ?? false,
+    smartDiffActivity: folder.smartDiffActivity,
     devEnv: folder.devEnv ?? undefined,
     prs: folder.prs ?? undefined,
     prStates: folder.prStates ?? undefined,
     taskCounts: folder.taskCounts ?? undefined,
+    checklistError: folder.checklistError,
     repoCount: folder.repoCount,
   }))
 }

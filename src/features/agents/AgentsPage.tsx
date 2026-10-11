@@ -1,15 +1,17 @@
-import { useId, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   AiBrain01Icon,
-  ArrowDown01Icon,
-  ArrowRight01Icon,
+  ChatGptIcon,
+  ClaudeIcon,
   Clock01Icon,
   Task01Icon,
-  RefreshIcon,
+  Refresh01Icon,
   StopIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Button } from '@/components/ui/button'
+import { AppSelect } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -34,8 +36,8 @@ const STATUS_META: Record<AgentStatus, { label: string; dot: string }> = {
   morto: { label: 'Interrompida', dot: 'bg-muted-foreground' },
 }
 const PROVIDER_META = {
-  claude: { label: 'Claude' },
-  codex: { label: 'Codex' },
+  claude: { label: 'Claude', icon: ClaudeIcon },
+  codex: { label: 'Codex', icon: ChatGptIcon },
 } as const
 function isActive(session: AgentSession): boolean {
   return isAgentSessionActive(session)
@@ -48,6 +50,21 @@ function elapsed(startedAt: string): string {
   const hours = Math.floor(totalMinutes / 60)
   if (hours < 24) return `há ${hours}h`
   return `há ${Math.floor(hours / 24)}d`
+}
+
+function formatDuration(durationMs: number): string {
+  const totalSeconds = Math.floor(durationMs / 1000)
+  if (totalSeconds < 60) return `${totalSeconds}s`
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes < 60) return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`
+}
+
+function formatCost(costUsd: number): string {
+  return `$${costUsd < 0.01 ? costUsd.toFixed(4) : costUsd.toFixed(2)}`
 }
 
 function displayModel(model: string): string {
@@ -146,7 +163,7 @@ function AgentRow({ session, card, historical = false }: { session: AgentSession
         <span className="flex items-center gap-1 text-[10px] text-muted-foreground" title={meta.label}>
           <HugeiconsIcon icon={Clock01Icon} strokeWidth={1.8} className="size-3 shrink-0" />
           <span className="truncate">
-            {meta.label} · {elapsed(session.startedAt)}
+            {meta.label} · {session.usage ? formatDuration(session.usage.durationMs) : elapsed(session.startedAt)}
           </span>
         </span>
         {session.provider === 'codex' && session.codexProfileName ? (
@@ -163,12 +180,23 @@ function AgentRow({ session, card, historical = false }: { session: AgentSession
           </span>
         ) : null}
         <span
-          className="truncate text-[10px] text-muted-foreground"
-          title={session.model ? displayModel(session.model) : provider.label}
+          className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground"
+          title={[provider.label, session.model ? displayModel(session.model) : '', session.effort ?? ''].filter(Boolean).join(' · ')}
+          aria-label={[provider.label, session.model ? displayModel(session.model) : '', session.effort ?? ''].filter(Boolean).join(' · ')}
         >
-          {provider.label}
-          {session.model ? ` · ${displayModel(session.model)}` : ''}
-          {session.effort ? ` · ${session.effort[0]?.toUpperCase()}${session.effort.slice(1)}` : ''}
+          <HugeiconsIcon icon={provider.icon} strokeWidth={1.8} className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate">
+            {session.model ? displayModel(session.model) : ''}
+            {session.effort ? ` · ${session.effort[0]?.toUpperCase()}${session.effort.slice(1)}` : ''}
+          </span>
+          {session.usage ? (
+            <span
+              className="shrink-0 font-medium tabular-nums"
+              title={session.usage.costUsd === undefined ? 'Custo indisponível para esta sessão' : 'Custo estimado'}
+            >
+              {session.usage.costUsd === undefined ? '$—' : formatCost(session.usage.costUsd)}
+            </span>
+          ) : null}
         </span>
       </div>
     </article>
@@ -240,46 +268,34 @@ function AgentGroup({
   onOpenCard: (id: string) => void
   historical: boolean
 }) {
-  const [expanded, setExpanded] = useState(true)
-  const listId = useId()
-
   return (
     <div className="min-w-0 rounded-xl border bg-card p-3">
-      <div className={cn('flex flex-wrap items-center justify-between gap-2 px-1', expanded && 'mb-3')}>
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="mb-2 flex min-w-0 items-center justify-between gap-3 px-1">
+        {card ? (
           <button
             type="button"
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label={`${expanded ? 'Recolher' : 'Expandir'} ${card ? `${card.id}: ${card.title}` : 'Sem card'}`}
-            aria-expanded={expanded}
-            aria-controls={listId}
-            onClick={() => setExpanded((value) => !value)}
+            className="min-w-0 truncate text-left font-sans font-semibold text-primary hover:underline dark:text-chart-2"
+            onClick={() => onOpenCard(card.id)}
+            title={`Abrir ${card.id}: ${card.title}`}
           >
-            <HugeiconsIcon icon={expanded ? ArrowDown01Icon : ArrowRight01Icon} strokeWidth={2} className="size-4" />
+            {card.title}
           </button>
-          {card ? (
-            <button
-              type="button"
-              className="min-w-0 text-left font-sans font-semibold text-primary hover:underline dark:text-chart-2"
-              onClick={() => onOpenCard(card.id)}
-              title={`Abrir ${card.id}: ${card.title}`}
-            >
-              <span className="font-mono">{card.id}</span> · {card.title}
-            </button>
-          ) : (
-            <h3 className="font-sans font-semibold">Sem card</h3>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-          {card ? <span className="hidden max-w-28 truncate sm:inline">{STATUS_LABELS[card.status]}</span> : null}
-          <span>
-            {group.length} {group.length === 1 ? 'agente' : 'agentes'}
-          </span>
-        </div>
+        ) : (
+          <h3 className="min-w-0 truncate font-sans font-semibold">Sem card</h3>
+        )}
+        {card ? (
+          <Badge variant="outline" className="font-mono" aria-label={`ID do card: ${card.id}`}>
+            {card.id}
+          </Badge>
+        ) : null}
+      </div>
+      <div className="mb-3 flex items-center justify-between gap-2 px-1 text-xs text-muted-foreground">
+        {card ? <span className="truncate">{STATUS_LABELS[card.status]}</span> : <span />}
+        <span className="shrink-0">
+          {group.length} {group.length === 1 ? 'agente' : 'agentes'}
+        </span>
       </div>
       <div
-        id={listId}
-        hidden={!expanded}
         className={cn('grid grid-cols-2 gap-2 lg:grid-cols-4', group.length > 8 && 'max-h-96 overflow-y-auto pr-1')}
         tabIndex={group.length > 8 ? 0 : undefined}
         aria-label={`Agentes de ${card?.title ?? 'sessões sem card'}`}
@@ -339,7 +355,10 @@ export function AgentsPage({ cards, onOpenCard }: { cards: Card[]; onOpenCard: (
               Monitor local · Sessões do Claude e Codex detectadas nesta máquina.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2" aria-label="Resumo das sessões">
+          <div
+            className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-xl border bg-card/70 px-4 py-3 sm:grid-cols-4"
+            aria-label="Resumo das sessões"
+          >
             {[
               { label: 'Ativos', value: active.length, dot: 'bg-primary' },
               {
@@ -354,8 +373,8 @@ export function AgentsPage({ cards, onOpenCard }: { cards: Card[]; onOpenCard: (
               },
               { label: 'Recentes', value: recent.length, dot: 'bg-muted-foreground/60' },
             ].map((item) => (
-              <div key={item.label} className="flex flex-col gap-0.5">
-                <span className="text-lg font-semibold tabular-nums">{item.value}</span>
+              <div key={item.label} className="flex min-w-0 flex-col gap-1">
+                <span className="text-xl font-semibold leading-none tabular-nums">{item.value}</span>
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <span className={cn('size-1.5 rounded-full', item.dot)} />
                   {item.label}
@@ -365,19 +384,17 @@ export function AgentsPage({ cards, onOpenCard }: { cards: Card[]; onOpenCard: (
           </div>
           <div className="flex items-center gap-2">
             {profileOptions.length > 1 && (
-              <select
-                aria-label="Filtrar por perfil"
-                className="max-w-56 rounded-md border bg-background px-2 py-1.5 text-xs"
+              <AppSelect
+                ariaLabel="Filtrar por perfil"
+                className="w-auto min-w-40 max-w-56"
+                compact
                 value={profileFilter}
-                onChange={(event) => setSelectedProfile(event.target.value)}
-              >
-                <option value="">Todos os perfis</option>
-                {profileOptions.map(([id, label]) => (
-                  <option key={id} value={id}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+                onValueChange={setSelectedProfile}
+                options={[
+                  { value: '', label: 'Todos os perfis' },
+                  ...profileOptions.map(([value, label]) => ({ value, label })),
+                ]}
+              />
             )}
             <Tip label="Atualizar agentes">
               <Button
@@ -387,7 +404,11 @@ export function AgentsPage({ cards, onOpenCard }: { cards: Card[]; onOpenCard: (
                 disabled={refreshing}
                 onClick={() => void refreshAgentSessions(true)}
               >
-                <HugeiconsIcon icon={RefreshIcon} strokeWidth={2} className={cn(refreshing && 'animate-spin')} />
+                <HugeiconsIcon
+                  icon={Refresh01Icon}
+                  strokeWidth={2}
+                  className={cn('size-4', refreshing && 'animate-spin')}
+                />
               </Button>
             </Tip>
           </div>

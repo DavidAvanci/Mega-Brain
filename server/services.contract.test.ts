@@ -1,3 +1,4 @@
+import { checklistJson } from '../test/checklist-fixtures'
 import { EventEmitter } from 'node:events'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -199,14 +200,14 @@ test('automatic stage reset stops its owned process and restores the pre-run art
 
   await service.handle('/update', 'POST', new URLSearchParams(), { name: 'card', status: 'planejando' })
   writeFileSync(join(card, 'PLAN.md'), '# Plano parcial da execução\n')
-  writeFileSync(join(card, 'TASK-CHECKLIST.md'), '- [ ] T1 Parcial\n')
+  writeFileSync(join(card, 'TASK-CHECKLIST.json'), checklistJson([{"id":"T1","title":"Parcial","repo":"repo"}]))
 
   await expect(
     service.handle('/stage/reset', 'POST', new URLSearchParams(), { name: 'card', stage: 'task-planning' }),
   ).resolves.toEqual({ ok: true })
   expect(stopped).toBe(true)
   expect(readFileSync(join(card, 'PLAN.md'), 'utf8')).toBe('# Plano original\n')
-  expect(existsSync(join(card, 'TASK-CHECKLIST.md'))).toBe(false)
+  expect(existsSync(join(card, 'TASK-CHECKLIST.json'))).toBe(false)
   expect(existsSync(join(card, 'agent.json'))).toBe(false)
   expect(existsSync(join(card, 'task-planning.jsonl'))).toBe(false)
   expect(existsSync(join(card, 'task-planning.log'))).toBe(false)

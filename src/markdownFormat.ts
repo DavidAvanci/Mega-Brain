@@ -1,6 +1,6 @@
 import { Marked, type Tokens } from 'marked'
-import { TASK_LINE, TASK_STATES } from '../shared/domain/checklist-counts'
-export { countTasks, type TaskCounts, type TaskState } from '../shared/domain/checklist-counts'
+const TASK_LINE = /^(\s*[-*] )\[([ xX\-!])\] /
+const TASK_STATES: Record<string, string> = { ' ': 'open', x: 'done', X: 'done', '-': 'skipped', '!': 'failed' }
 
 export interface OutlineEntry {
   id: string

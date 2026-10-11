@@ -18,6 +18,7 @@ import {
 } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { AppSelect } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tip } from '@/Tip'
 import { Markdown } from '@/Markdown'
@@ -611,21 +612,21 @@ export function KnowledgePage() {
             </label>
             <label className="block space-y-1 text-xs">
               <span>Pasta</span>
-              <select
-                aria-label="Pasta de destino"
+              <AppSelect
+                ariaLabel="Pasta de destino"
                 value={destination}
-                onChange={(event) => setDestination(event.target.value)}
-                className="h-9 w-full rounded-md border bg-background px-2"
-              >
-                <option value="">Raiz do conhecimento</option>
-                {catalog.folders
-                  .filter((folder) => folder.id !== action?.ref?.id)
-                  .map((folder) => (
-                    <option key={folder.id} value={folder.id}>
-                      {[...ancestors(folder.parentId, catalog.folders), folder.title].join(' / ')}
-                    </option>
-                  ))}
-              </select>
+                onValueChange={setDestination}
+                options={[
+                  { value: '', label: 'Raiz do conhecimento' },
+                  ...catalog.folders
+                    .filter((folder) => folder.id !== action?.ref?.id)
+                    .map((folder) => ({
+                      value: folder.id,
+                      label: [...ancestors(folder.parentId, catalog.folders), folder.title].join(' / '),
+                    })),
+                ]}
+                className="h-9 w-full"
+              />
             </label>
             {error && (
               <p role="alert" className="text-xs text-destructive">

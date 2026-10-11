@@ -1,96 +1,72 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
+import {
+  activeChecklistItems,
+  parseTaskChecklist,
+  type ChecklistItem,
+  type TaskState,
+} from '../../shared/domain/task-checklist.ts'
+import { readTaskChecklist, writeTaskChecklist } from '../../shared/storage/task-checklist.ts'
 
-export type ItemState = 'pending' | 'done' | 'failed' | 'blocked'
+export type Item = ChecklistItem
+export type ItemState = Exclude<TaskState, 'discarded'>
 
-export interface Item {
-  id: string
-  explicitId: boolean
-  text: string
+export function parseChecklist(json: string): Item[] {
+  return activeChecklistItems(parseTaskChecklist(json))
+}
+
+/** Build PR text only from implementation items that the scheduler marked done. */
+export function completedTaskSummary(json: string, repo?: string): string {
+  const items = parseChecklist(json).filter((item) => item.state === 'done' && (!repo || item.repo === repo))
+  const grouped = new Map<string, string[]>()
+  for (const item of items) {
+    const tasks = grouped.get(item.repo) ?? []
+    tasks.push(item.title)
+    grouped.set(item.repo, tasks)
+  }
+  return [...grouped]
+    .map(([name, tasks]) => `${grouped.size > 1 ? `### ${name}\n` : ''}${tasks.map((task) => `- ${task}`).join('\n')}`)
+    .join('\n\n')
+}
+
+export function readChecklist(wsPath: string): string {
+  return JSON.stringify(readTaskChecklist(wsPath) ?? { schemaVersion: 1, items: [] })
+}
+
+export interface ChecklistRepair {
   repo: string
-  files: string[]
-  /** Files that must exist before an agent may start this item. */
-  requires: string[]
-  /** Files this item is expected to create; unlike requires, these may be absent. */
-  creates: string[]
-  timeoutMinutes?: number
-  maxAttempts?: number
-  deps: string[]
-  details: string[]
-  state: ItemState
+  check: string
+  summary: string
+  task: string
+  files?: string[]
 }
 
-const ITEM = /^(\s*[-*]\s*\[)([ xX!-])(\]\s*)(?:([A-Za-z]+\d+)\s+)?(.*?)\s*$/
-const META = /\{([^}]*)\}\s*$/
-const STRUCK = /^~~.*~~$/
-const STATES: Record<string, ItemState> = { ' ': 'pending', x: 'done', X: 'done', '!': 'failed', '-': 'blocked' }
-const MARKS: Record<ItemState, string> = { pending: ' ', done: 'x', failed: '!', blocked: '-' }
-
-export function stripMeta(text: string): string {
-  return text.replace(META, '').trim()
-}
-
-function parseLine(line: string) {
-  const match = ITEM.exec(line)
-  if (!match || !match[5]) return null
-  return match
-}
-
-export function parseChecklist(md: string): Item[] {
-  let repo = ''
-  let discardedSection = false
-  let skipping = false
-  const items: Item[] = []
-  for (const line of md.split('\n')) {
-    const heading = /^##\s+(.*)/.exec(line)
-    if (heading) {
-      const title = heading[1].trim()
-      discardedSection = STRUCK.test(title)
-      skipping = discardedSection
-      repo = title
-        .replace(/^~~|~~$/g, '')
-        .trim()
-        .replace(/^.*\//, '')
-      continue
-    }
-    const match = parseLine(line)
-    if (!match) {
-      const detail = /^\s+(?!>)(\S.*)$/.exec(line)
-      if (detail && !skipping && items.length) items[items.length - 1].details.push(detail[1].trim())
-      continue
-    }
-    skipping = discardedSection || match[5].startsWith('~~')
-    if (skipping) continue
-    const metaRaw = META.exec(match[5])?.[1] ?? ''
-    const meta: Record<string, string> = {}
-    for (const pair of metaRaw.split(';')) {
-      const idx = pair.indexOf(':')
-      if (idx !== -1) meta[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim()
-    }
-    const list = (key: string) =>
-      (meta[key] ?? '')
-        .split(',')
-        .map((value) => value.trim())
-        .filter((value) => value && value !== '-')
-    const positive = (key: string) => {
-      const value = Number(meta[key])
-      return Number.isInteger(value) && value > 0 ? value : undefined
-    }
-    items.push({
-      id: match[4] ?? `#${items.length + 1}`,
-      explicitId: Boolean(match[4]),
-      text: stripMeta(match[5]),
-      repo: meta.app ?? repo,
-      files: list('files'),
-      requires: list('requires'),
-      creates: list('creates'),
-      timeoutMinutes: positive('timeoutMin'),
-      maxAttempts: positive('attempts'),
-      deps: list('deps'),
-      details: [],
-      state: STATES[match[2]] ?? 'pending',
+export function appendChecklistRepairs(file: string, failures: ChecklistRepair[]): number {
+  const checklist = parseTaskChecklist(readFileSync(file, 'utf8'))
+  const existing = new Set(checklist.items.map((item) => item.id))
+  let next = 1
+  const clean = (value: string) => value.replace(/\s+/g, ' ').trim().slice(0, 500)
+  for (const failure of failures) {
+    while (existing.has(`VFY${next}`)) next++
+    const id = `VFY${next++}`
+    existing.add(id)
+    const title = clean(failure.task)
+    if (!title) throw new Error('A task de correção veio vazia')
+    checklist.items.push({
+      id,
+      title: `${title} (corrigir ${clean(failure.check)}: ${clean(failure.summary)})`,
+      repo: failure.repo,
+      files: failure.files ?? [],
+      requires: [],
+      creates: [],
+      deps: [],
+      context: failure.summary,
+      completionCriteria: [],
+      state: 'pending',
+      notes: [],
     })
   }
-  return items
+  if (failures.length) writeTaskChecklist(file, checklist)
+  return failures.length
 }
 
 export function matchesPattern(path: string, pattern: string): boolean {
@@ -116,9 +92,7 @@ export function createdByDeps(item: Item, items: Item[]): string[] {
 
 export function pendingRequires(item: Item, items: Item[], exists: (pattern: string) => boolean): string[] {
   const created = createdByDeps(item, items)
-  return item.requires.filter(
-    (pattern) => !exists(pattern) && !created.some((path) => matchesPattern(path, pattern)),
-  )
+  return item.requires.filter((pattern) => !exists(pattern) && !created.some((path) => matchesPattern(path, pattern)))
 }
 
 export function overlaps(a: Item, b: Item): boolean {
@@ -159,63 +133,34 @@ export function blockedByDeps(items: Item[]): Map<string, string> {
   return blocked
 }
 
-function locate(lines: string[], item: Item): number {
-  return lines.findIndex((line) => {
-    const match = parseLine(line)
-    if (!match) return false
-    return item.explicitId ? match[4] === item.id : !match[4] && stripMeta(match[5]) === item.text
-  })
-}
-
 export function markItem(file: string, item: Item, state: ItemState, note?: string): void {
-  const lines = readFileSync(file, 'utf8').split('\n')
-  const index = locate(lines, item)
-  if (index === -1) throw new Error(`Item ${item.id} não encontrado em ${file}`)
-  const match = parseLine(lines[index]) as RegExpExecArray
-  lines[index] = `${match[1]}${MARKS[state]}${match[3]}${match[4] ? `${match[4]} ` : ''}${match[5]}`
-  const inserted = note
-    ? note
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .map((line) => `  > ${line.trim().replace(/^>\s*/, '')}`)
-    : []
-  lines.splice(index + 1, 0, ...inserted)
-  writeFileSync(file, lines.join('\n'))
+  const checklist = parseTaskChecklist(readFileSync(file, 'utf8'))
+  const target = checklist.items.find((entry) => entry.id === item.id)
+  if (!target) throw new Error(`Item ${item.id} não encontrado em ${file}`)
+  if (target.state === 'discarded') throw new Error(`Item ${item.id} foi descartado`)
+  target.state = state
+  if (note?.trim()) target.notes.push(note.trim())
+  writeTaskChecklist(file, checklist)
 }
 
 export function resetUnfinished(file: string): void {
-  const lines = readFileSync(file, 'utf8').split('\n')
-  const next: string[] = []
-  let dropNotes = false
-  for (const line of lines) {
-    const match = parseLine(line)
-    if (match) {
-      dropNotes = match[2] === '!' || match[2] === '-'
-      next.push(dropNotes ? `${match[1]} ${match[3]}${match[4] ? `${match[4]} ` : ''}${match[5]}` : line)
-      continue
+  const checklist = parseTaskChecklist(readFileSync(file, 'utf8'))
+  for (const item of checklist.items) {
+    if (item.state === 'failed' || item.state === 'blocked') {
+      item.state = 'pending'
+      item.notes = []
     }
-    if (dropNotes && /^\s*>\s/.test(line)) continue
-    if (!/^\s*>\s/.test(line)) dropNotes = false
-    next.push(line)
   }
-  writeFileSync(file, next.join('\n'))
+  writeTaskChecklist(file, checklist)
 }
 
 export function widenFiles(file: string, item: Item, touched: string[]): string[] {
-  if (!item.files.length) return []
-  const added = touched.filter((path) => !item.files.some((pattern) => matchesPattern(path, pattern)))
+  const checklist = parseTaskChecklist(readFileSync(file, 'utf8'))
+  const target = checklist.items.find((entry) => entry.id === item.id)
+  if (!target || !target.files.length || target.state === 'discarded') return []
+  const added = [...new Set(touched)].filter((path) => !target.files.some((pattern) => matchesPattern(path, pattern)))
   if (!added.length) return []
-  const lines = readFileSync(file, 'utf8').split('\n')
-  const index = locate(lines, item)
-  if (index === -1) return []
-  const match = parseLine(lines[index]) as RegExpExecArray
-  const meta = META.exec(match[5])
-  if (!meta || !/(^|;)\s*files\s*:/.test(meta[1])) return []
-  const merged = [...item.files, ...added].join(', ')
-  const nextMeta = meta[1].replace(/(^|;)(\s*files\s*:)[^;]*/, `$1$2 ${merged}`)
-  const nextText = match[5].replace(META, `{${nextMeta}}`)
-  lines[index] = `${match[1]}${match[2]}${match[3]}${match[4] ? `${match[4]} ` : ''}${nextText}`
-  writeFileSync(file, lines.join('\n'))
+  target.files.push(...added)
+  writeTaskChecklist(file, checklist)
   return added
 }

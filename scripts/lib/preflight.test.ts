@@ -1,102 +1,80 @@
 import { expect, test } from 'vitest'
-import { parseChecklist } from './checklist'
+import { checklistItem } from '../../test/checklist-fixtures'
 import { preflight, type PreflightDeps } from './preflight'
-
 const allOk: PreflightDeps = { repoExists: () => true, pathExists: () => true }
 
-const errors = (md: string, deps: PreflightDeps = allOk) =>
-  preflight(parseChecklist(md), deps).filter((issue) => issue.level === 'error')
-
-test('heading que não é repo vira erro antes de gastar agente', () => {
-  const deps = { ...allOk, repoExists: (repo: string) => repo === 'api-core' }
-  const issues = errors(
-    '## api-core\n- [ ] T1 Fazer {files: a.ts}\n## infra (fora de repo)\n- [ ] T2 Outra {files: b.ts}\n',
-    deps,
-  )
-  expect(issues).toHaveLength(1)
-  expect(issues[0].where).toBe('## infra (fora de repo)')
-  expect(issues[0].message).toContain('~~infra (fora de repo)~~')
-})
-
-test('dep inexistente, id repetido e auto-dependência', () => {
-  const issues = errors('## repo\n- [ ] T1 A {deps: T9}\n- [ ] T2 B {deps: T2}\n- [ ] T1 C\n')
-  expect(issues.map((issue) => issue.message)).toEqual([
-    'Id repetido em 2 itens',
-    'deps: T9 não existe no checklist',
-    'Depende de si mesmo',
-  ])
-})
-
-test('preserva a causa do bloqueio de um checkout cadastrado', () => {
-  const issues = errors('## repo\n- [ ] T1 Fazer\n', {
+test('unknown repo is rejected before starting an agent', () => {
+  const issues = preflight([checklistItem('T1', { repo: 'api' }), checklistItem('T2', { repo: 'infra' })], {
     ...allOk,
-    repoExists: () => false,
-    repoIssue: () => 'Checkout de repo não está disponível: /checkout',
+    repoExists: (repo) => repo === 'api',
   })
-  expect(issues[0].message).toBe('Checkout de repo não está disponível: /checkout')
+  expect(issues).toHaveLength(1)
+  expect(issues[0].where).toBe('infra')
+  expect(issues[0].message).toContain('state=discarded')
 })
-
-test('ciclo em deps', () => {
-  const issues = errors('## repo\n- [ ] T1 A {deps: T3}\n- [ ] T2 B {deps: T1}\n- [ ] T3 C {deps: T2}\n')
-  expect(issues[0].message).toMatch(/^Ciclo em deps: T1 → T3 → T2 → T1$/)
-})
-
-test('item sem heading de repo', () => {
-  expect(errors('- [ ] T1 Solto {files: a.ts}\n')[0].message).toContain('Sem repo')
-})
-
-test('path inexistente em files é aviso, não erro', () => {
-  const issues = preflight(parseChecklist('## repo\n- [ ] T1 A {files: src/novo/x.ts}\n'), {
-    repoExists: () => true,
-    pathExists: () => false,
-  })
-  expect(issues).toEqual([
-    { level: 'warn', where: 'T1', message: 'files: src/novo/x.ts — nem o path nem o diretório pai existem' },
-  ])
-})
-
-test('requisito ausente bloqueia, mas arquivo declarado para criação não', () => {
-  const issues = preflight(parseChecklist('## repo\n- [ ] T1 A {requires: src/base.ts; creates: src/new.ts}\n'), {
-    repoExists: () => true,
-    pathExists: () => false,
-  })
-  expect(issues).toEqual([
-    { level: 'error', where: 'T1', message: 'requires: src/base.ts — requisito obrigatório não existe na base preparada' },
-  ])
-})
-
-test('requisito criado por dependência transitiva do mesmo repo não bloqueia', () => {
-  const md = [
-    '## repo',
-    '- [ ] T1 A {creates: src/routes/novo.tsx}',
-    '- [ ] T2 B {deps: T1}',
-    '- [ ] T3 C {requires: src/routes/novo.tsx; deps: T2}',
-  ].join('\n')
-  expect(errors(md, { repoExists: () => true, pathExists: () => false })).toEqual([])
-})
-
-test('requisito criado por item que não é dependência ou é de outro repo continua bloqueando', () => {
-  const md = [
-    '## repo',
-    '- [ ] T1 A {creates: src/novo.tsx}',
-    '- [ ] T2 B {requires: src/novo.tsx}',
-    '## outro',
-    '- [ ] T3 C {creates: src/outro.tsx}',
-    '## repo2',
-    '- [ ] T4 D {requires: src/outro.tsx; deps: T3}',
-  ].join('\n')
-  expect(errors(md, { repoExists: () => true, pathExists: () => false }).map((issue) => issue.where)).toEqual([
-    'T2',
-    'T4',
-  ])
-})
-
-test('checklist só com seções descartadas não é executável', () => {
-  expect(errors('## ~~descartados~~\n- [ ] T1 Nada {files: a.ts}\n')[0].message).toContain('Nenhum item executável')
-})
-
-test('checklist válido não gera nada', () => {
+test('missing dependency, repeated ID and self dependency are reported', () => {
   expect(
-    preflight(parseChecklist('## repo\n- [ ] T1 A {files: a.ts}\n- [ ] T2 B {files: b.ts; deps: T1}\n'), allOk),
-  ).toEqual([])
+    preflight(
+      [checklistItem('T1', { deps: ['T9'] }), checklistItem('T2', { deps: ['T2'] }), checklistItem('T1')],
+      allOk,
+    ).map((issue) => issue.message),
+  ).toEqual(['Id repetido em 2 itens', 'deps: T9 não existe no checklist', 'Depende de si mesmo'])
+})
+test('preserves the cause of an unavailable checkout', () => {
+  expect(
+    preflight([checklistItem('T1')], {
+      ...allOk,
+      repoExists: () => false,
+      repoIssue: () => 'Checkout não disponível',
+    })[0].message,
+  ).toBe('Checkout não disponível')
+})
+test('dependency cycles are reported', () => {
+  const items = [
+    checklistItem('T1', { deps: ['T3'] }),
+    checklistItem('T2', { deps: ['T1'] }),
+    checklistItem('T3', { deps: ['T2'] }),
+  ]
+  expect(preflight(items, allOk)[0].message).toMatch(/^Ciclo em deps: T1 → T3 → T2 → T1$/)
+})
+test('repo is explicit and mandatory', () => {
+  expect(preflight([checklistItem('T1', { repo: '' })], allOk)[0].message).toContain('Sem repo')
+})
+test('file scope may include files that do not yet exist', () => {
+  expect(preflight([checklistItem('T1', { files: ['src/new/x.ts'] })], { ...allOk, pathExists: () => false })).toEqual(
+    [],
+  )
+})
+test('missing prerequisites block work while planned new files do not', () => {
+  expect(
+    preflight([checklistItem('T1', { requires: ['src/base.ts'], creates: ['src/new.ts'] })], {
+      ...allOk,
+      pathExists: () => false,
+    }),
+  ).toEqual([
+    {
+      level: 'error',
+      where: 'T1',
+      message: 'requires: src/base.ts — requisito obrigatório não existe na base preparada',
+    },
+  ])
+})
+test('a transitive dependency in the same repo can create a prerequisite', () => {
+  const items = [
+    checklistItem('T1', { creates: ['src/new.tsx'] }),
+    checklistItem('T2', { deps: ['T1'] }),
+    checklistItem('T3', { requires: ['src/new.tsx'], deps: ['T2'] }),
+  ]
+  expect(preflight(items, { ...allOk, pathExists: () => false })).toEqual([])
+})
+test('files outside the dependency chain or in other repos cannot satisfy a prerequisite', () => {
+  const items = [
+    checklistItem('T1', { creates: ['src/new.ts'] }),
+    checklistItem('T2', { requires: ['src/new.ts'] }),
+    checklistItem('T3', { repo: 'other', requires: ['src/new.ts'], deps: ['T1'] }),
+  ]
+  expect(preflight(items, { ...allOk, pathExists: () => false }).map((issue) => issue.where)).toEqual(['T2', 'T3'])
+})
+test('an empty executable set cannot start work', () => {
+  expect(preflight([], allOk)[0].message).toContain('Nenhum item executável')
 })

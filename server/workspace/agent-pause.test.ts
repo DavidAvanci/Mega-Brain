@@ -1,3 +1,4 @@
+import { checklistJson } from "../../test/checklist-fixtures"
 import { ChildProcess, type SpawnOptions } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -19,7 +20,7 @@ function fixture(provider: 'claude' | 'chatgpt', stageName = 'task-planning') {
   const stage = STAGES.find((candidate) => candidate.name === stageName)!
   const card = { title: 'Continuar implementação', description: '', status: stage.status, flow: 'dificil' as const }
   writeFileSync(join(path, 'card.json'), JSON.stringify(card))
-  writeFileSync(join(path, 'TASK-CHECKLIST.md'), '- [x] T1 Pronto\n- [ ] T2 Pendente\n')
+  writeFileSync(join(path, 'TASK-CHECKLIST.json'), checklistJson([{"id":"T1","title":"Pronto","repo":"repo","state":"done"},{"id":"T2","title":"Pendente","repo":"repo"}]))
   const calls: { args: readonly string[]; options?: SpawnOptions; child: ChildProcess }[] = []
   const runner: ProcessRunner = {
     spawn(_command, args, options) {
@@ -78,7 +79,7 @@ test.each(['claude', 'chatgpt'] as const)(
     expect(f.signals).toEqual(['SIGTERM', 'SIGKILL'])
     expect(readAgent(f.path)).toMatchObject({ status: 'pausado', sessionId: 'saved-session', resumable: true })
     expect(readFileSync(join(f.path, 'PLAN.md'), 'utf8')).toBe('Plano parcial')
-    expect(readFileSync(join(f.path, 'TASK-CHECKLIST.md'), 'utf8')).toContain('[x] T1')
+    expect(JSON.parse(readFileSync(join(f.path, 'TASK-CHECKLIST.json'), 'utf8')).items[0].state).toBe('done')
     expect(advanceStage(f.path, f.card, readAgent(f.path))).toBe(f.card)
     expect(() => updateCard(f.path, 'CARD-1', { status: 'desenvolvendo' }, controller.start)).toThrow('pausada')
     expect(() => controller.clear(f.path, f.stage.name)).toThrow('Interrompa')
@@ -109,8 +110,8 @@ test('checklist pause preserves files and the original run settings without taki
   const original = readStageAgentRecord(f.path)!
   const snapshot = readFileSync(join(f.path, `.stage-snapshot-${f.stage.name}.json`), 'utf8')
   writeFileSync(
-    join(f.path, 'TASK-CHECKLIST.md'),
-    '- [x] T1 Pronto\n- [x] T2 Concluído antes da pausa\n- [ ] T3 Pendente\n',
+    join(f.path, 'TASK-CHECKLIST.json'),
+    checklistJson([{"id":"T1","title":"Pronto","repo":"repo","state":"done"},{"id":"T2","title":"Concluído antes da pausa","repo":"repo","state":"done"},{"id":"T3","title":"Pendente","repo":"repo"}]),
   )
   await controller.pause(f.path, f.stage.name)
   f.create().resume(f.path, f.stage.name)
@@ -119,7 +120,7 @@ test('checklist pause preserves files and the original run settings without taki
     MEGA_BRAIN_STAGE_RUN_ID: original.resume?.environment.MEGA_BRAIN_STAGE_RUN_ID,
     MEGA_BRAIN_RESUMING_STAGE: '1',
   })
-  expect(readFileSync(join(f.path, 'TASK-CHECKLIST.md'), 'utf8')).toContain('[x] T2')
+  expect(JSON.parse(readFileSync(join(f.path, 'TASK-CHECKLIST.json'), 'utf8')).items[1].state).toBe('done')
   expect(readFileSync(join(f.path, `.stage-snapshot-${f.stage.name}.json`), 'utf8')).toBe(snapshot)
   f.calls[1].child.emit('close', 0)
 })

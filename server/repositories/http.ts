@@ -34,6 +34,10 @@ export function repositoriesHttp(
         return json(200, Array.isArray(body.ids) ? await registry.verifyRemotes(body.ids.filter((id): id is string => typeof id === 'string')) : await registry.verifyRemote(String(body.id ?? '')))
       }
       if (request.path === '/api/repositories/pull' && request.method === 'POST') return json(200, await registry.pull(String(record(request.body).id ?? '')))
+      if (request.path === '/api/repositories/resolve-dirty' && request.method === 'POST') {
+        const body = record(request.body)
+        return json(200, await registry.resolveDirtyChanges(body.id, body.dirtyAction, body.commitMessage))
+      }
       if (request.path === '/api/repositories/migration' && request.method === 'GET') return json(200, registry.migrationResult(id))
       if (request.path === '/api/repositories/migration' && request.method === 'POST') {
         const body = record(request.body)

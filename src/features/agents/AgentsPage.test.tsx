@@ -76,19 +76,21 @@ test('shows profile badges and compact single rows for sessions with the same se
 })
 
 test('filters active and recent sessions by profile and provider', async () => {
-  const filter = host.querySelector<HTMLSelectElement>('[aria-label="Filtrar por perfil"]')!
-  await act(async () => {
-    filter.value = 'codex:work'
-    filter.dispatchEvent(new Event('change', { bubbles: true }))
-  })
+  const filter = host.querySelector<HTMLButtonElement>('[aria-label="Filtrar por perfil"]')!
+  await act(async () => filter.click())
+  const workOption = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) =>
+    option.textContent?.includes('Trabalho'),
+  )!
+  await act(async () => workOption.click())
   expect(host.querySelectorAll('article')).toHaveLength(1)
   expect(host.textContent).toContain('Tarefa de trabalho')
   expect(host.textContent).not.toContain('Tarefa pessoal')
   expect(host.textContent).not.toContain('Sessão do Claude')
-  await act(async () => {
-    filter.value = 'claude'
-    filter.dispatchEvent(new Event('change', { bubbles: true }))
-  })
+  await act(async () => filter.click())
+  const claudeOption = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) =>
+    option.textContent?.includes('Claude'),
+  )!
+  await act(async () => claudeOption.click())
   expect(host.querySelectorAll('article')).toHaveLength(1)
   expect(host.textContent).toContain('Sessão do Claude')
   expect(host.textContent).toContain('Nenhum agente rodando agora')

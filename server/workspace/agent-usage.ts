@@ -2,11 +2,13 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync,
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { AgentProvider, CardAgentUsage, CardAgentUsageEntry } from '../../shared/domain/agents'
+import { stageSessionId } from './agent-checkpoint'
 
 const DIRECTORY = 'agent-usage'
 
 interface Run {
   id: string
+  sessionId?: string
   label?: string
   provider?: AgentProvider
   model?: string
@@ -26,6 +28,27 @@ export interface AgentUsageMetadata {
 
 function validNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
+export function agentSessionIdFromEvent(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const event = value as Record<string, unknown>
+  if (event.type === 'thread.started' && typeof event.thread_id === 'string' && event.thread_id.trim())
+    return event.thread_id.trim()
+  if (typeof event.session_id === 'string' && event.session_id.trim()) return event.session_id.trim()
+  return undefined
+}
+
+export function agentSessionIdFromOutput(output: string): string | undefined {
+  for (const line of output.split('\n')) {
+    try {
+      const sessionId = agentSessionIdFromEvent(JSON.parse(line))
+      if (sessionId) return sessionId
+    } catch {
+      // Provider output can contain non-JSON lines.
+    }
+  }
+  return undefined
 }
 
 function fileFor(cardPath: string, id: string): string {
@@ -58,6 +81,16 @@ export function setAgentUsageProcess(cardPath: string, id: string, pid: number |
   try {
     const run = JSON.parse(readFileSync(file, 'utf8')) as Run
     save(cardPath, { ...run, pid, stream })
+  } catch {}
+}
+
+export function setAgentUsageSessionId(cardPath: string, id: string, sessionId: string | undefined): void {
+  if (!sessionId) return
+  const file = fileFor(cardPath, id)
+  try {
+    const run = JSON.parse(readFileSync(file, 'utf8')) as Run
+    if (run.sessionId === sessionId) return
+    save(cardPath, { ...run, sessionId })
   } catch {}
 }
 
@@ -94,6 +127,13 @@ export function readAgentUsageDetails(
   for (const name of names) {
     try {
       let run = JSON.parse(readFileSync(join(cardPath, DIRECTORY, name), 'utf8')) as Run
+      if (!run.sessionId && run.stream) {
+        const sessionId = stageSessionId(run.stream)
+        if (sessionId) {
+          run = { ...run, sessionId }
+          save(cardPath, run)
+        }
+      }
       if (!run.finishedAt && run.pid && run.stream) {
         let alive = false
         try {
@@ -122,6 +162,7 @@ export function readAgentUsageDetails(
       else usage.unpricedRuns++
       breakdown.push({
         id: run.id,
+        ...(run.sessionId ? { sessionId: run.sessionId } : {}),
         ...(typeof run.label === 'string' && run.label.trim() ? { label: run.label.trim() } : {}),
         ...(run.provider === 'claude' || run.provider === 'codex' ? { provider: run.provider } : {}),
         ...(typeof run.model === 'string' && run.model.trim() ? { model: run.model.trim() } : {}),

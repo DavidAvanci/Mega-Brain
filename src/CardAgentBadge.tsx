@@ -1,14 +1,6 @@
 import { useState } from 'react'
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
-import {
-  AiBrain01Icon,
-  BlueprintIcon,
-  ChatGptIcon,
-  ClaudeIcon,
-  CodeIcon,
-  FlaskConicalIcon,
-  GitPullRequestIcon,
-} from '@hugeicons/core-free-icons'
+import { AiBrain01Icon, BlueprintIcon, ChatGptIcon, ClaudeIcon, RoboticIcon } from '@hugeicons/core-free-icons'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -30,16 +22,21 @@ const BADGES: Record<AgentStatus, { label: string; className: string }> = {
 
 const KINDS: Record<string, { name: string; icon: IconSvgElement }> = {
   'task-planning': { name: 'plano', icon: BlueprintIcon },
-  'run-task-checklist': { name: 'dev', icon: CodeIcon },
-  'stage-task': { name: 'staging', icon: GitPullRequestIcon },
-  'master-pr-task': { name: 'master', icon: GitPullRequestIcon },
+  'run-task-checklist': { name: 'dev', icon: RoboticIcon },
+  'stage-task': { name: 'staging', icon: RoboticIcon },
+  'master-pr-task': { name: 'master', icon: RoboticIcon },
+  'smart-diff-review': { name: 'Smart Diff', icon: RoboticIcon },
 }
 
 const AUTONOMOUS = { name: 'autônomo', icon: AiBrain01Icon }
 
 function kindOf(agent: AgentInfo) {
   const kind = (agent.stage ? KINDS[agent.stage] : undefined) ?? AUTONOMOUS
-  if (agent.stage === 'stage-task' || agent.stage === 'master-pr-task') return kind
+  if (
+    agent.execution === 'script' ||
+    (agent.execution !== 'agent' && ['run-task-checklist', 'stage-task', 'master-pr-task'].includes(agent.stage ?? ''))
+  )
+    return { name: kind.name, icon: RoboticIcon }
   if (agent.provider === 'claude') return { name: agent.stage ? kind.name : 'Claude', icon: ClaudeIcon }
   if (agent.provider === 'codex') return { name: agent.stage ? kind.name : 'Codex', icon: ChatGptIcon }
   return kind
@@ -59,12 +56,14 @@ export function AgentBadge({
   iconOnly = false,
   muted = false,
   growText = false,
+  interactive = true,
 }: {
   agent: AgentInfo
   cardId: string
   iconOnly?: boolean
   muted?: boolean
   growText?: boolean
+  interactive?: boolean
 }) {
   const [showError, setShowError] = useState(false)
   const isStartingAgent = !agent.provider && agent.phase === 'Iniciando agente'
@@ -79,52 +78,58 @@ export function AgentBadge({
       : agent.status === 'erro' && error
         ? `erro · ${error.split('\n', 1)[0]}`
         : label
-  const text = agent.status === 'rodando' && agent.provider === 'claude' && agent.activity ? agent.activity : stageText
+  const hasNarration =
+    agent.execution !== 'script' &&
+    Boolean(agent.activity) &&
+    (agent.provider === 'claude' || agent.execution === 'agent')
+  const text = agent.status === 'rodando' && hasNarration ? agent.activity : stageText
   const showInlineText =
     !iconOnly ||
     (agent.stage === 'task-planning' && agent.status === 'rodando') ||
     isStartingAgent ||
     Boolean(agent.phase) ||
-    (agent.provider === 'claude' && Boolean(agent.activity)) ||
+    hasNarration ||
     agent.status === 'pausado'
-  const inlineText =
-    isStartingAgent
-      ? 'Iniciando agente...'
-      : text
+  const inlineText = isStartingAgent ? 'Iniciando agente...' : text
   const tip = isStartingAgent
     ? 'Iniciando agente...'
     : iconOnly
-    ? `${name}${agent.sessionId ? ' · Abrir no terminal' : ''}`
-    : agent.status === 'erro'
-      ? `Ver erro completo de ${name}`
-      : [name, agent.sessionId ? 'Abrir no terminal' : ''].filter(Boolean).join(' · ')
-  const hasClaudeActivity = agent.provider === 'claude' && Boolean(agent.activity)
-  const tooltipLabel = hasClaudeActivity ? (
+      ? `${name}${interactive && agent.sessionId ? ' · Abrir no terminal' : ''}`
+      : agent.status === 'erro'
+        ? `Ver erro completo de ${name}`
+        : [name, interactive && agent.sessionId ? 'Abrir no terminal' : ''].filter(Boolean).join(' · ')
+  const tooltipLabel = hasNarration ? (
     <div className="max-h-[min(60vh,24rem)] w-[min(32rem,calc(100vw_-_2rem))] overflow-y-auto pr-1">
       <Markdown text={agent.activity ?? ''} />
       <div className="mt-2 border-t border-border/60 pt-1.5 text-[10px] text-muted-foreground">
-        {name}{agent.sessionId ? ' · Abrir no terminal' : ''}
+        {name}
+        {interactive && agent.sessionId ? ' · Abrir no terminal' : ''}
       </div>
     </div>
-  ) : tip
+  ) : (
+    tip
+  )
+  const Element = interactive ? 'button' : 'span'
   return (
     <>
       <Tip
         label={tooltipLabel}
-        arrowClassName={hasClaudeActivity ? 'bg-popover fill-popover' : undefined}
+        arrowClassName={hasNarration ? 'bg-popover fill-popover' : undefined}
         contentClassName={
-          hasClaudeActivity
+          hasNarration
             ? 'w-[min(32rem,calc(100vw_-_1rem))] max-w-none items-start gap-0 bg-popover p-3 text-popover-foreground shadow-md'
             : undefined
         }
       >
-        <button
-          type="button"
+        <Element
+          type={interactive ? 'button' : undefined}
           aria-label={
             iconOnly
               ? isStartingAgent
                 ? 'Iniciando agente...'
-                : agent.status === 'pausado' ? `Agente ${name} pausado` : `Agente ${name} trabalhando`
+                : agent.status === 'pausado'
+                  ? `Agente ${name} pausado`
+                  : `Agente ${name} trabalhando`
               : agent.status === 'erro'
                 ? `Ver erro completo do agente ${name}`
                 : undefined
@@ -136,11 +141,15 @@ export function AgentBadge({
             className,
             muted && 'text-muted-foreground',
           )}
-          onClick={(event) => {
-            event.stopPropagation()
-            if (agent.status === 'erro') setShowError(true)
-            else if (agent.sessionId) openTerminal(cardId)
-          }}
+          onClick={
+            interactive
+              ? (event) => {
+                  event.stopPropagation()
+                  if (agent.status === 'erro') setShowError(true)
+                  else if (agent.sessionId) openTerminal(cardId)
+                }
+              : undefined
+          }
         >
           {isStartingAgent ? (
             <Spinner className="size-3.5 shrink-0" aria-label="Iniciando agente..." />
@@ -148,7 +157,15 @@ export function AgentBadge({
             <HugeiconsIcon
               icon={icon}
               strokeWidth={2}
-              aria-label={agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : undefined}
+              aria-label={
+                icon === RoboticIcon
+                  ? 'Script em execução'
+                  : agent.provider === 'claude'
+                    ? 'Claude'
+                    : agent.provider === 'codex'
+                      ? 'Codex'
+                      : undefined
+              }
               className="size-3.5 shrink-0"
             />
           )}
@@ -164,11 +181,14 @@ export function AgentBadge({
               {inlineText}
             </span>
           )}
-        </button>
+        </Element>
       </Tip>
       {agent.status === 'erro' && (
         <Dialog open={showError} onOpenChange={setShowError}>
-          <DialogContent className="w-[calc(100%-2rem)] max-w-2xl sm:max-w-2xl" onClick={(event) => event.stopPropagation()}>
+          <DialogContent
+            className="w-[calc(100%-2rem)] max-w-2xl sm:max-w-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
             <DialogHeader>
               <DialogTitle>Erro do agente {name}</DialogTitle>
               <DialogDescription>Card {cardId}</DialogDescription>

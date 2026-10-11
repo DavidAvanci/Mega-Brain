@@ -1,4 +1,6 @@
-# Revisão guiada a partir do smart-diff
+# Explicação de alterações a partir do smart-diff
+
+Você é o agente Smart Diff. Explique a diff como um tech lead explicando uma mudança ao seu liderado: de forma objetiva, em pt-BR e com linguagem simples. O leitor deve entender o que foi feito, como as partes se conectam, os porquês sustentados pelo código e os tradeoffs relevantes sem precisar ler a diff linha a linha. Use snippets curtos de código para apoiar essa explicação.
 
 O smart-diff já faz a parte determinística: recolhe formatação (por arquivo e por trecho), lockfiles e arquivos gerados; resolve imports (tsconfig `paths`, `import()`, pacotes, convenção de nome de teste); ordena por dependência (`readingOrder`); e lista fatos por símbolo (`symbols`). O agente faz as decisões que não podem ser determinísticas. O script de revisão incluído no Mega Brain valida e monta o resultado.
 
@@ -6,7 +8,9 @@ Você decide três coisas, sempre em um arquivo `decisions.json`:
 
 1. **Ruído por julgamento**: arquivos que o smart-diff deixou visíveis mas não precisam de atenção.
 2. **Seções**: agrupar os arquivos restantes em fluxos com título e resumo, sem quebrar a ordem de dependência.
-3. **Explicações**: para cada arquivo das seções, como era e como ficou.
+3. **Explicações**: para cada arquivo das seções, como era, como ficou e o motivo técnico e tradeoff quando houver evidência.
+
+Essas decisões alimentam a revisão estruturada. Depois de validá-la, escreva também um texto em Markdown por fluxo de mudança (seção 7). Esse texto é a entrega principal para o leitor; caminhos de artefatos e contagens são apenas apoio.
 
 Nunca edite o JSON final à mão: mude `decisions.json` e rode `assemble` de novo.
 
@@ -75,12 +79,12 @@ Na dúvida, o arquivo fica nas seções. O `reason` diz em uma frase o que o arq
 - **A ordem final (seções concatenadas) deve manter todo arquivo depois dos arquivos alterados de que ele depende** (`dependsOn`). Comece pela `order` do smart-diff e só a altere para agrupar. Se um arquivo precisa de outro de uma seção posterior, mova a seção inteira ou o arquivo. O `assemble` recusa violações e diz qual par está errado.
 - Testes vêm logo depois do arquivo que testam. Um teste que importa as rotas de produção vem depois do arquivo das rotas, não na seção da funcionalidade.
 - Documentação que especifica uma funcionalidade pode abrir a seção dela.
-- `summary`: uma ou duas frases dizendo o que o fluxo faz. Quando houver um caminho claro, descreva-o (`rota → service → client → policy`).
+- `summary`: de duas a quatro frases explicando a mudança no fluxo como um todo, seu efeito e o motivo técnico ou tradeoff relevante quando houver evidência. Conecte as partes pelo papel delas (por exemplo, a rota recebe a entrada, o serviço valida e a tela mostra o resultado). Evite apenas enumerar arquivos ou símbolos.
 - Sem seções de um arquivo só, exceto quando o arquivo é de fato independente.
 
 ## 5. Explicações
 
-Escreva em pt-BR, com linguagem simples e objetiva, para quem nunca viu o código. Descreva comportamento observável (entradas, saídas, limites, erros, estado), não a sintaxe.
+Escreva em pt-BR, com linguagem simples e objetiva, para um desenvolvedor que conhece programação, mas nunca viu esse código. Descreva comportamento observável (entradas, saídas, limites, erros, estado), não a sintaxe. Explique termos específicos do projeto quando forem necessários para entender a mudança.
 
 | `kind` / `status` | Campos |
 | --- | --- |
@@ -91,8 +95,9 @@ Escreva em pt-BR, com linguagem simples e objetiva, para quem nunca viu o códig
 
 Regras:
 
-- Toda afirmação precisa sair do patch ou dos `symbols`. Se não der para saber pelo diff, não escreva. Não invente motivação nem histórico.
+- Fundamente afirmações no relatório, nos patches e nos `symbols`. Diferencie o que o código comprova de uma interpretação: se um motivo técnico for inferido, sinalize como inferência e explique a evidência. Se a motivação não estiver demonstrada, diga isso apenas quando a lacuna importar. Não invente intenção do autor, histórico, alternativas consideradas nem ganhos de desempenho sem medição.
 - `before` descreve só o comportamento que existia e mudou; `after`, o comportamento novo. Não repita no `after` o que continua igual.
+- Em `after`, conecte a mudança ao efeito prático e, quando houver evidência, ao motivo técnico e ao tradeoff: o que a solução ganha e qual custo, limitação ou responsabilidade ela introduz. Não force um tradeoff para mudanças triviais nem crie campos novos no JSON para isso.
 - Cite números e regras concretas: limites (500 caracteres, 30 s), defaults, precedências (variável de ambiente antes do valor salvo), códigos HTTP, o que é cacheado e por quanto tempo, o que é validado e o que acontece em caso de erro.
 - Use os nomes do código entre crases só quando o leitor precisar localizá-los (funções exportadas, rotas, campos de contrato). Prefira nomear pelo papel: "o formulário de novo card", não "`CardForm`".
 - Para arquivos que só foram extraídos de outro, diga de onde vieram e o que mudou na extração: "Extraído de RepositoriesPage.tsx sem mudanças; novidade: …".
@@ -104,7 +109,7 @@ Exemplo de arquivo modificado:
 ```json
 "server/chat/service.ts": {
   "before": "A mensagem do usuário ia exatamente como digitada para o Claude/Codex.",
-  "after": "Antes de enviar, a mensagem passa por repositoryMentionContext, então o agente recebe também a lista de repositórios mencionados com os caminhos."
+  "after": "Antes de enviar, a mensagem passa por repositoryMentionContext, então o agente recebe também os repositórios mencionados com os caminhos. Isso fornece contexto para localizar o código; em contrapartida, o envio passa a depender dessa resolução e inclui mais conteúdo no prompt."
 }
 ```
 
@@ -143,13 +148,23 @@ Estrutura do JSON final (`schemaVersion: 2`):
 - `noise[]`: cada item tem `source` (`smart-diff` ou `judgment`) e `reason`;
 - `warnings`.
 
-## 7. Responder ao usuário
+## 7. Escrever o texto explicativo
 
-Diga em poucas linhas:
+Depois de `assemble` terminar com código 0, use a revisão validada e os patches como base para escrever `<work>/review.md`. Não altere o JSON final à mão nem acrescente campos fora do formato da seção 6.
 
-- o caminho do JSON final e do `decisions.json`;
-- quantos arquivos ficaram em seções e quantos são ruído, separando o que o smart-diff recolheu do que foi julgamento seu, com a lista dos arquivos de ruído por julgamento;
-- quantas decisões vieram do cache;
-- qualquer incoerência ou possível bug que você notou nos patches.
+O texto deve permitir entender as mudanças sem abrir cada arquivo:
 
-Não cole o JSON na resposta.
+1. **Visão geral:** comece com um parágrafo curto explicando a mudança central e seu efeito prático. Quando a diff juntar mudanças independentes, deixe isso claro.
+2. **Fluxos de mudança:** siga os agrupamentos da revisão. Para cada fluxo relevante, explique em parágrafos como funcionava antes, como passa a funcionar e como contratos, implementação e consumidores se conectam. Integre o motivo técnico e os tradeoffs à explicação quando houver evidência. Cite os caminhos relevantes para o leitor localizar a implementação, sem transformar o texto em um inventário de arquivos.
+3. **Snippets que ensinam:** use pelo menos um snippet para cada fluxo cuja compreensão dependa de código; dispense-o para alterações triviais ou apenas documentais. Escolha o trecho que demonstra a decisão ou regra central, não imports, boilerplate ou a diff inteira. Prefira de 3 a 12 linhas por bloco, com a linguagem no fence e o caminho do arquivo ao lado. Copie código real do patch, identificando se é anterior ou novo; use dois blocos de antes/depois só quando o contraste ajudar. Se omitir linhas, marque a omissão claramente; não invente APIs ou código ausente. Apresente a regra antes do bloco e explique logo depois o que ele demonstra e seu efeito.
+4. **Pontos de atenção:** inclua somente limitações, dúvidas ou possíveis bugs concretos que afetem o entendimento ou a revisão. Diferencie comportamento comprovado de suspeita. Descreva o que os testes alterados cobrem, sem afirmar que foram executados ou passaram quando isso não ocorreu.
+
+Seja proporcional à complexidade: agrupe mudanças mecânicas em uma frase e dedique espaço às decisões que alteram comportamento, contratos ou responsabilidades. Evite repetir a mesma explicação para cada arquivo, jargão desnecessário, elogios genéricos e comentários linha a linha. Não crie seções vazias. Se não houver mudanças relevantes, diga isso e resuma o ruído, sem fabricar snippets ou tradeoffs.
+
+## 8. Responder ao usuário
+
+A resposta final deve trazer a explicação das mudanças com os snippets, seguindo a seção 7, e não apenas informar que os artefatos foram gerados. Se houver vários repositórios, abra com uma visão conjunta e explique como as mudanças se relacionam; depois organize os fluxos identificando o repositório de cada caminho. Salve também um `review.md` na pasta de trabalho de cada relatório.
+
+Ao final, inclua uma nota curta com os caminhos de `review.md`, do JSON final e de `decisions.json`, a contagem de arquivos explicados e de ruído (automático e por julgamento) e quantas decisões vieram do cache. Liste os arquivos de ruído por julgamento no `review.md`. Traga incoerências ou possíveis bugs relevantes para os pontos de atenção do texto, sem escondê-los nessa nota.
+
+Não cole o JSON na resposta. Antes de concluir, confira se o leitor consegue explicar o que mudou, por que a solução faz sentido e quais custos ela traz apenas com o texto e os snippets. Quando o porquê não estiver sustentado pela diff, preserve essa incerteza.

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { ArrowReloadHorizontalIcon } from '@hugeicons/core-free-icons'
+import { DatabaseSyncIcon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
@@ -39,7 +39,7 @@ export function JiraSync() {
         disabled={pending}
         onClick={sync}
       >
-        {pending ? <Spinner className="size-3" /> : <HugeiconsIcon icon={ArrowReloadHorizontalIcon} strokeWidth={2} />}
+        {pending ? <Spinner className="size-3" /> : <HugeiconsIcon icon={DatabaseSyncIcon} strokeWidth={2} />}
         {pending ? 'Sincronizando…' : error ? 'Falhou' : (result ?? 'Jira sync')}
       </Button>
     </Tip>

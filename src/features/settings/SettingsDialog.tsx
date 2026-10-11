@@ -246,12 +246,12 @@ const FLOW_SUMMARIES = [
   {
     title: 'Simples',
     path: 'Planejamento → Desenvolvimento → Code Review',
-    artifacts: 'Gera somente TASK-CHECKLIST.md',
+    artifacts: 'Gera somente TASK-CHECKLIST.json',
   },
   {
     title: 'Médio',
     path: 'Planejamento → Revisão de plano → Desenvolvimento → Code Review',
-    artifacts: 'Gera PLAN.md e TASK-CHECKLIST.md',
+    artifacts: 'Gera PLAN.md e TASK-CHECKLIST.json',
   },
   {
     title: 'Difícil',

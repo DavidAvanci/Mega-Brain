@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { FolderOpenIcon } from '@hugeicons/core-free-icons'
+import { FolderOpenIcon, Refresh01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -17,12 +17,15 @@ import type {
   RepositoryMigrationResult,
 } from '../../../shared/domain/repositories'
 import { RepositoryToolbar } from './RepositoryToolbar'
+import type { RepositoryScope } from './RepositoryToolbar'
 import { RepositoryRow } from './RepositoryRow'
 import { RepositorySettingsDialog } from './RepositorySettingsDialog'
-import { matchesRepositoryFilter, type RepositoryFilter } from './repository-view-model'
+import { matchesRepositoryFilter, repositoryNeedsAttention, type RepositoryFilter } from './repository-view-model'
+import './repositories.css'
 
 type Preview = { path: string; displayName: string; alias: string; origin?: string; duplicateId?: string }
 type Discovery = { path: string; repositories: { preview: Preview; alias: string }[] }
+type DirtyDecisionContext = 'master' | 'sync'
 
 export function RepositoriesPage() {
   const [repositories, setRepositories] = useState<Repository[]>([])
@@ -36,13 +39,16 @@ export function RepositoriesPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<RepositoryFilter>('all')
+  const [scope, setScope] = useState<RepositoryScope>('all')
+  const [addingOpen, setAddingOpen] = useState(false)
   const [preview, setPreview] = useState<Preview | null>(null)
   const [discovery, setDiscovery] = useState<Discovery | null>(null)
   const [workspaceAlias, setWorkspaceAlias] = useState('')
   const [busy, setBusy] = useState(false)
   const [decisionId, setDecisionId] = useState<string | null>(null)
+  const [decisionContext, setDecisionContext] = useState<DirtyDecisionContext>('master')
   const [decisionAction, setDecisionAction] = useState<RepositoryDirtyAction | null>(null)
-  const [commitMessage, setCommitMessage] = useState('chore: salvar alterações antes de ir para master')
+  const [commitMessage, setCommitMessage] = useState('chore: salvar alterações locais')
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [switchingId, setSwitchingId] = useState<string | null>(null)
   const editing = repositories.find((repository) => repository.id === editingId)
@@ -54,10 +60,21 @@ export function RepositoriesPage() {
         (repo) =>
           `${repo.displayName} ${repo.alias} ${repo.path}`
             .toLocaleLowerCase('pt-BR')
-            .includes(query.toLocaleLowerCase('pt-BR')) && matchesRepositoryFilter(statuses[repo.id], filter),
+            .includes(query.toLocaleLowerCase('pt-BR')) &&
+          (scope === 'all' ||
+            (scope === 'active' && repo.active) ||
+            (scope === 'inactive' && !repo.active) ||
+            (scope === 'attention' && repo.active && repositoryNeedsAttention(statuses[repo.id]))) &&
+          matchesRepositoryFilter(statuses[repo.id], filter),
       ),
-    [repositories, statuses, query, filter],
+    [repositories, statuses, query, filter, scope],
   )
+  const attentionCount = repositories.filter(
+    (repo) => repo.active && repositoryNeedsAttention(statuses[repo.id]),
+  ).length
+  const activeCount = repositories.filter((repo) => repo.active).length
+  const inactiveCount = repositories.length - activeCount
+  const hasLocalChanges = repositories.some((repo) => statuses[repo.id]?.dirty)
   const setOperation = useCallback(
     (id: string, action: string | null) =>
       setOperations((current) => {
@@ -274,6 +291,7 @@ export function RepositoriesPage() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         setDecisionId(repo.id)
+        setDecisionContext('master')
         setDecisionAction(null)
         setConfirmDiscard(false)
         await refreshStatus(repo.id)
@@ -285,6 +303,38 @@ export function RepositoriesPage() {
       setSwitchingId(null)
       setOperation(repo.id, null)
     }
+  }
+
+  const resolveDirtyAndVerify = async (repo: Repository, action: RepositoryDirtyAction) => {
+    setSwitchingId(repo.id)
+    setOperation(repo.id, 'resolve-dirty')
+    try {
+      await requestJson<RepositoryStatus>('/api/repositories/resolve-dirty', 'Falha ao tratar alterações locais', {
+        method: 'POST',
+        body: { id: repo.id, dirtyAction: action, commitMessage: action === 'commit' ? commitMessage : undefined },
+      })
+      const status = await requestJson<RepositoryStatus>('/api/repositories/verify', 'Falha ao verificar remoto', {
+        method: 'POST',
+        body: { id: repo.id },
+      })
+      setStatuses((current) => ({ ...current, [repo.id]: status }))
+      setDecisionId(null)
+      if (status.state === 'remote-failed') toast.error(status.error ?? 'Não foi possível verificar o remoto')
+      else toast.success('Alterações locais tratadas e remoto verificado')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+      await refreshStatus(repo.id)
+    } finally {
+      setSwitchingId(null)
+      setOperation(repo.id, null)
+    }
+  }
+
+  const openDirtyResolution = (id: string) => {
+    setDecisionId(id)
+    setDecisionContext('sync')
+    setDecisionAction(null)
+    setConfirmDiscard(false)
   }
 
   const verifyRemote = async (id: string) => {
@@ -316,6 +366,7 @@ export function RepositoriesPage() {
   }
 
   const verifyAll = async () => {
+    if (pendingStatuses || hasLocalChanges) return
     setVerifyingAll(true)
     try {
       const results = await requestJson<Record<string, RepositoryStatus>>(
@@ -389,6 +440,7 @@ export function RepositoriesPage() {
     verifyRemote,
     pull,
     goToMaster,
+    openDirtyResolution,
     migrate,
     toggleActive,
     openEditor,
@@ -400,6 +452,7 @@ export function RepositoriesPage() {
     verifyRemote,
     pull,
     goToMaster,
+    openDirtyResolution,
     migrate,
     toggleActive,
     openEditor,
@@ -412,6 +465,9 @@ export function RepositoriesPage() {
   }, [])
   const onRowPull = useCallback((id: string) => {
     if (!rowActions.current.operations[id]) void rowActions.current.pull(id)
+  }, [])
+  const onRowResolveDirty = useCallback((id: string) => {
+    if (!rowActions.current.operations[id]) rowActions.current.openDirtyResolution(id)
   }, [])
   const onRowSwitchMaster = useCallback((id: string) => {
     const selected = rowActions.current.repositories.find((item) => item.id === id)
@@ -433,120 +489,185 @@ export function RepositoriesPage() {
   )
 
   return (
-    <main className="min-h-0 min-w-0 flex-1 overflow-auto bg-background p-5 md:p-8" aria-label="Página Repositórios">
-      <div className="w-full space-y-6">
-        <header>
-          <p className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">Catálogo local</p>
-          <h2 className="mt-1 text-2xl font-semibold">Repositórios</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Checkouts locais e configuração de cada ambiente.</p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            disabled={verifyingAll || repositories.length === 0}
-            onClick={() => void verifyAll()}
-          >
-            {verifyingAll ? 'Verificando…' : 'Verificar remoto de todos'}
-          </Button>
+    <main className="repositories-page min-h-0 min-w-0 flex-1 overflow-auto" aria-label="Página Repositórios">
+      <div className="repositories-shell">
+        <header className="repo-page-header">
+          <div className="repo-heading">
+            <h2>Repositórios</h2>
+            <p>
+              {repositories.length} {repositories.length === 1 ? 'repositório' : 'repositórios'} · {attentionCount}{' '}
+              {attentionCount === 1 ? 'precisa' : 'precisam'} de atenção
+            </p>
+          </div>
+          <div className="repo-header-actions">
+            {!pendingStatuses && !hasLocalChanges && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={verifyingAll || repositories.length === 0}
+                onClick={() => void verifyAll()}
+              >
+                <HugeiconsIcon icon={Refresh01Icon} strokeWidth={2} />
+                {verifyingAll ? 'Verificando…' : 'Verificar todos'}
+              </Button>
+            )}
+            <Button
+              type="button"
+              onClick={() => setAddingOpen((value) => !value)}
+              aria-expanded={addingOpen}
+              aria-controls="add-repository-panel"
+            >
+              <span aria-hidden="true">+</span>Adicionar
+              <svg
+                className={`repo-chevron-icon ${addingOpen ? 'is-expanded' : ''}`}
+                aria-hidden="true"
+                viewBox="0 0 20 20"
+                fill="none"
+              >
+                <path
+                  d="m5 7.5 5 5 5-5"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </Button>
+          </div>
         </header>
 
-        <section className="rounded-lg border bg-card p-4">
-          <h3 className="font-medium">Adicionar repositório</h3>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {isTauriDesktop() && (
-              <>
-                <Button type="button" variant="outline" disabled={busy} onClick={() => void chooseDirectory()}>
-                  <HugeiconsIcon icon={FolderOpenIcon} strokeWidth={2} />
-                  Escolher repositório
-                </Button>
-                <Button type="button" variant="outline" disabled={busy} onClick={() => void chooseParentDirectory()}>
-                  <HugeiconsIcon icon={FolderOpenIcon} strokeWidth={2} />
-                  Escolher pasta com repositórios
-                </Button>
-              </>
-            )}
-          </div>
-          {discovery && (
-            <div className="mt-4 space-y-3" aria-label="Repositórios encontrados na pasta">
-              <p className="break-all text-xs text-muted-foreground">Pasta: {discovery.path}</p>
-              <div className="flex items-center gap-2">
-                <Input aria-label="Alias do workspace" value={workspaceAlias} onChange={event => setWorkspaceAlias(event.target.value)} placeholder="takeat-core" />
-                <Button size="sm" disabled={busy || !discovery.repositories.length || !/^[a-z0-9][a-z0-9._-]{0,62}$/.test(workspaceAlias)} onClick={() => void addWorkspace()}>Cadastrar workspace</Button>
-              </div>
-              <p className="text-xs text-muted-foreground">Agrupa os repositórios encontrados, incluindo links, para mencionar todos com um único @alias.</p>
-              {discovery.repositories.length === 0 && (
-                <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  Nenhum checkout Git válido nas pastas e links do workspace.
+        {addingOpen && (
+          <section id="add-repository-panel" className="repo-add-panel" aria-label="Adicionar repositório">
+            <div className="repo-add-heading">
+              <h3>Adicionar repositório</h3>
+              <p>Cadastre um checkout existente ou agrupe uma pasta de repositórios.</p>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {isTauriDesktop() && (
+                <>
+                  <Button type="button" variant="outline" disabled={busy} onClick={() => void chooseDirectory()}>
+                    <HugeiconsIcon icon={FolderOpenIcon} strokeWidth={2} />
+                    Escolher repositório
+                  </Button>
+                  <Button type="button" variant="outline" disabled={busy} onClick={() => void chooseParentDirectory()}>
+                    <HugeiconsIcon icon={FolderOpenIcon} strokeWidth={2} />
+                    Escolher pasta com repositórios
+                  </Button>
+                </>
+              )}
+              {!isTauriDesktop() && (
+                <p className="text-sm text-muted-foreground">
+                  A adição de repositórios está disponível no aplicativo para desktop.
                 </p>
               )}
-              {discovery.repositories.map((item) => {
-                const problem = discoveredProblem(item)
-                return (
-                  <div
-                    key={item.preview.path}
-                    className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 p-3 text-sm"
+            </div>
+            {discovery && (
+              <div className="mt-4 space-y-3" aria-label="Repositórios encontrados na pasta">
+                <p className="break-all text-xs text-muted-foreground">Pasta: {discovery.path}</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    aria-label="Alias do workspace"
+                    value={workspaceAlias}
+                    onChange={(event) => setWorkspaceAlias(event.target.value)}
+                    placeholder="takeat-core"
+                  />
+                  <Button
+                    size="sm"
+                    disabled={
+                      busy || !discovery.repositories.length || !/^[a-z0-9][a-z0-9._-]{0,62}$/.test(workspaceAlias)
+                    }
+                    onClick={() => void addWorkspace()}
                   >
-                    <div className="min-w-48 flex-1">
-                      <p className="font-medium">{item.preview.displayName}</p>
-                      <p className="break-all text-xs text-muted-foreground">{item.preview.path}</p>
-                      <p className="break-all text-xs text-muted-foreground">
-                        origin: {item.preview.origin ?? 'não configurado'}
-                      </p>
-                      {problem && <p className="text-xs text-destructive">{problem}</p>}
+                    Cadastrar workspace
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Agrupa os repositórios encontrados, incluindo links, para mencionar todos com um único @alias.
+                </p>
+                {discovery.repositories.length === 0 && (
+                  <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                    Nenhum checkout Git válido nas pastas e links do workspace.
+                  </p>
+                )}
+                {discovery.repositories.map((item) => {
+                  const problem = discoveredProblem(item)
+                  return (
+                    <div
+                      key={item.preview.path}
+                      className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/20 p-3 text-sm"
+                    >
+                      <div className="min-w-48 flex-1">
+                        <p className="font-medium">{item.preview.displayName}</p>
+                        <p className="break-all text-xs text-muted-foreground">{item.preview.path}</p>
+                        <p className="break-all text-xs text-muted-foreground">
+                          origin: {item.preview.origin ?? 'não configurado'}
+                        </p>
+                        {problem && <p className="text-xs text-destructive">{problem}</p>}
+                      </div>
+                      <label className="grid gap-1 text-xs text-muted-foreground">
+                        Alias
+                        <Input
+                          aria-label={`Alias de ${item.preview.displayName}`}
+                          value={item.alias}
+                          disabled={busy || !!item.preview.duplicateId}
+                          onChange={(event) =>
+                            setDiscovery(
+                              (current) =>
+                                current && {
+                                  ...current,
+                                  repositories: current.repositories.map((candidate) =>
+                                    candidate.preview.path === item.preview.path
+                                      ? { ...candidate, alias: event.target.value }
+                                      : candidate,
+                                  ),
+                                },
+                            )
+                          }
+                          className="w-44 bg-background text-foreground"
+                        />
+                      </label>
+                      <Button type="button" disabled={busy || !!problem} onClick={() => void addDiscovered(item)}>
+                        Adicionar
+                      </Button>
                     </div>
-                    <label className="grid gap-1 text-xs text-muted-foreground">
-                      Alias
-                      <Input
-                        aria-label={`Alias de ${item.preview.displayName}`}
-                        value={item.alias}
-                        disabled={busy || !!item.preview.duplicateId}
-                        onChange={(event) =>
-                          setDiscovery(
-                            (current) =>
-                              current && {
-                                ...current,
-                                repositories: current.repositories.map((candidate) =>
-                                  candidate.preview.path === item.preview.path
-                                    ? { ...candidate, alias: event.target.value }
-                                    : candidate,
-                                ),
-                              },
-                          )
-                        }
-                        className="w-44 bg-background text-foreground"
-                      />
-                    </label>
-                    <Button type="button" disabled={busy || !!problem} onClick={() => void addDiscovered(item)}>
-                      Adicionar
-                    </Button>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-          {preview && (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3 text-sm">
-              <span>
-                <b>{preview.displayName}</b> · alias <code>{preview.alias}</code> · {preview.origin ?? 'sem origin'}
-                {preview.duplicateId ? ' · já cadastrado' : ''}
-              </span>
-              <Button type="button" disabled={!!preview.duplicateId || busy} onClick={() => void add()}>
-                Adicionar
-              </Button>
-            </div>
-          )}
-        </section>
+                  )
+                })}
+              </div>
+            )}
+            {preview && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3 text-sm">
+                <span>
+                  <b>{preview.displayName}</b> · alias <code>{preview.alias}</code> · {preview.origin ?? 'sem origin'}
+                  {preview.duplicateId ? ' · já cadastrado' : ''}
+                </span>
+                <Button type="button" disabled={!!preview.duplicateId || busy} onClick={() => void add()}>
+                  Adicionar
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
 
-        <section className="w-full space-y-3" aria-label="Lista de repositórios">
+        <section className="repo-catalog" aria-label="Lista de repositórios">
           <RepositoryToolbar
             query={query}
             filter={filter}
+            scope={scope}
             count={visible.length}
             total={repositories.length}
+            attentionCount={attentionCount}
+            activeCount={activeCount}
+            inactiveCount={inactiveCount}
             onQueryChange={setQuery}
             onFilterChange={setFilter}
+            onScopeChange={setScope}
           />
+          <div className="repo-column-headings" aria-hidden="true">
+            <span>Repositório</span>
+            <span>Branch</span>
+            <span>Remoto</span>
+            <span>Ações</span>
+          </div>
           {loading && (
             <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground" role="status">
               Carregando catálogo de repositórios…
@@ -587,22 +708,27 @@ export function RepositoriesPage() {
               Nenhum repositório corresponde à busca ou ao filtro.
             </p>
           )}
-          {visible.map((repo) => (
-            <RepositoryRow
-              key={repo.id}
-              repository={repo}
-              status={statuses[repo.id]}
-              migration={migrations[repo.id]}
-              operation={verifyingAll ? 'verify' : operations[repo.id]}
-              onVerify={onRowVerify}
-              onPull={onRowPull}
-              onSwitchMaster={onRowSwitchMaster}
-              onMigrate={onRowMigrate}
-              onToggleActive={onRowToggleActive}
-              onSettings={onRowSettings}
-              onOpenEditor={onRowOpenEditor}
-            />
-          ))}
+          {visible.length > 0 && (
+            <div className="repo-rows">
+              {visible.map((repo) => (
+                <RepositoryRow
+                  key={repo.id}
+                  repository={repo}
+                  status={statuses[repo.id]}
+                  migration={migrations[repo.id]}
+                  operation={verifyingAll ? 'verify' : operations[repo.id]}
+                  onVerify={onRowVerify}
+                  onPull={onRowPull}
+                  onResolveDirty={onRowResolveDirty}
+                  onSwitchMaster={onRowSwitchMaster}
+                  onMigrate={onRowMigrate}
+                  onToggleActive={onRowToggleActive}
+                  onSettings={onRowSettings}
+                  onOpenEditor={onRowOpenEditor}
+                />
+              ))}
+            </div>
+          )}
         </section>
       </div>
 
@@ -615,9 +741,11 @@ export function RepositoriesPage() {
         {deciding && (
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>Ir para master em {deciding.displayName}</DialogTitle>
+              <DialogTitle>{decisionContext === 'master' ? `Ir para master em ${deciding.displayName}` : `Preparar sincronização de ${deciding.displayName}`}</DialogTitle>
               <DialogDescription>
-                A branch atual tem alterações não commitadas. Escolha como tratá-las antes de trocar para master.
+                {decisionContext === 'master'
+                  ? 'A branch atual tem alterações não commitadas. Escolha como tratá-las antes de trocar para master.'
+                  : 'Há alterações locais neste repositório. Escolha como tratá-las antes de verificar o remoto novamente.'}
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-2" role="radiogroup" aria-label="Destino das alterações locais">
@@ -631,7 +759,7 @@ export function RepositoriesPage() {
                 <label key={value} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm">
                   <input
                     type="radio"
-                    name="master-dirty-action"
+                    name="repository-dirty-action"
                     value={value}
                     checked={decisionAction === value}
                     onChange={() => {
@@ -676,10 +804,14 @@ export function RepositoriesPage() {
                   (decisionAction === 'discard' && !confirmDiscard)
                 }
                 onClick={() => {
-                  if (decisionAction) void goToMaster(deciding, decisionAction)
+                  if (!decisionAction) return
+                  if (decisionContext === 'master') void goToMaster(deciding, decisionAction)
+                  else void resolveDirtyAndVerify(deciding, decisionAction)
                 }}
               >
-                {switchingId ? 'Trocando…' : 'Confirmar e ir para master'}
+                {switchingId
+                  ? decisionContext === 'master' ? 'Trocando…' : 'Tratando alterações…'
+                  : decisionContext === 'master' ? 'Confirmar e ir para master' : 'Tratar e verificar remoto'}
               </Button>
             </div>
           </DialogContent>

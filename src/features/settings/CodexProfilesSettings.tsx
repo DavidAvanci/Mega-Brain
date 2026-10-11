@@ -2,6 +2,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { Add01Icon, Delete02Icon, FloppyDiskIcon, Refresh01Icon } from '@hugeicons/core-free-icons'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { AppSelect } from '@/components/ui/select'
 import { Tip } from '@/Tip'
 import { requestJson } from '@/shared/api/request-json'
 import type { CodexProfile, CodexProfiles, CodexProfilesResponse } from '../../../shared/domain/codex-profiles'
@@ -202,25 +203,22 @@ export function CodexProfilesSettings({ compact = false, island }: { compact?: b
             </Button>
           </Tip>
           {discovered.some((found) => !value.profiles.some((profile) => profile.home === found.home)) && (
-            <select
-              aria-label="Adicionar perfil encontrado"
-              className="min-w-0 flex-1 rounded-md border bg-background p-2 text-xs"
+            <AppSelect
+              ariaLabel="Adicionar perfil encontrado"
               value=""
               disabled={value.profiles.length >= 20}
-              onChange={(event) => {
-                const found = discovered.find((entry) => entry.home === event.target.value)
+              options={[
+                { value: '', label: 'Adicionar pasta encontrada…' },
+                ...discovered
+                  .filter((found) => !value.profiles.some((profile) => profile.home === found.home))
+                  .map((found) => ({ value: found.home, label: `${found.name} · ${found.home}` })),
+              ]}
+              onValueChange={(home) => {
+                const found = discovered.find((entry) => entry.home === home)
                 if (found) add(found)
               }}
-            >
-              <option value="">Adicionar pasta encontrada…</option>
-              {discovered
-                .filter((found) => !value.profiles.some((profile) => profile.home === found.home))
-                .map((found) => (
-                  <option key={found.home} value={found.home}>
-                    {found.name} · {found.home}
-                  </option>
-                ))}
-            </select>
+              className="min-w-0 flex-1"
+            />
           )}
           <Tip label="Salvar perfis">
             <Button

@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countTasks, render } from './markdownFormat'
-
-describe('countTasks', () => {
-  it('counts only top-level items by state', () => {
-    const text = ['- [x] a', '- [ ] b', '- [-] c', '- [!] d', '  - [x] nested', '- plain'].join('\n')
-    expect(countTasks(text)).toEqual({ total: 4, done: 1, skipped: 1, failed: 1 })
-  })
-})
+import { render } from './markdownFormat'
 
 describe('render', () => {
   it('renders task states as icons', () => {

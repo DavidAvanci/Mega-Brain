@@ -3,7 +3,13 @@ import { continuationArgs } from '../../server/workspace/agent-checkpoint.ts'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
-import { finishAgentUsage, startAgentUsage } from '../../server/workspace/agent-usage.ts'
+import {
+  agentSessionIdFromEvent,
+  agentSessionIdFromOutput,
+  finishAgentUsage,
+  setAgentUsageSessionId,
+  startAgentUsage,
+} from '../../server/workspace/agent-usage.ts'
 import { appendConversation, executionEntries, pendingTaskMessages, taskMessageContext } from '../../server/chat/task-conversation.ts'
 
 export interface ItemResult {
@@ -157,7 +163,6 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
     const startedAt = Date.now()
     const settle = (result: ItemResult) => resolve({ ...result, durationMs: Date.now() - startedAt })
     const provider = process.env.MEGA_BRAIN_LLM_PROVIDER === 'chatgpt' ? 'chatgpt' : 'claude'
-    const cardId = process.env.MEGA_BRAIN_CARD_ID?.trim()
     const itemId = options.prompt.match(/(?:^|\n)(?:Item:|Cenário:|Correção orientada por teste que falhou:)\s*([^\s—]+)/)?.[1]
     const stageScript = process.env.MEGA_BRAIN_STAGE_SCRIPT ?? ''
     const stageLabel = stageScript.includes('test-stage')
@@ -169,7 +174,11 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
       provider === 'chatgpt' && ['fable', 'opus', 'sonnet', 'haiku', 'default'].includes(options.model.toLowerCase())
         ? undefined
         : options.model
-    const sessionName = [cardId, itemId ?? process.env.MEGA_BRAIN_STAGE_SCRIPT].filter(Boolean).join(' · ')
+    const sessionName = itemId?.startsWith('VFY')
+      ? 'Verificador'
+      : stageScript === 'stage-task' || stageScript === 'master-pr-task'
+        ? 'Criador de PR'
+        : 'Executor'
     const cardPath = process.env.MEGA_BRAIN_CARD_PATH?.trim()
     const usageId = cardPath
       ? startAgentUsage(cardPath, new Date(startedAt), {
@@ -185,7 +194,7 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
       finishAgentUsage(cardPath, usageId, cost)
     }
     const messages = cardPath ? taskMessageContext(cardPath) : undefined
-    const prompt = `${options.prompt}${process.env.MEGA_BRAIN_KNOWLEDGE_CONTEXT ?? ''}${messages?.prompt ?? ''}`
+    const prompt = `${sessionName}\n\n${options.prompt}${process.env.MEGA_BRAIN_KNOWLEDGE_CONTEXT ?? ''}${messages?.prompt ?? ''}`
     const fastModeArgs =
       process.env.MEGA_BRAIN_CLAUDE_FAST_MODE === '1' ? ['--settings', JSON.stringify({ fastMode: true })] : []
     const claudeArgs = [
@@ -229,6 +238,7 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
     const previous = process.env.MEGA_BRAIN_RESUMING_STAGE === '1' ? checkpoint.read() : undefined
     const providerName = provider === 'chatgpt' ? 'codex' : 'claude'
     const saved = previous?.provider === providerName ? previous : undefined
+    if (cardPath && usageId && saved?.sessionId) setAgentUsageSessionId(cardPath, usageId, saved.sessionId)
     const originalArgs = saved?.args ?? args
     checkpoint.save({ provider: providerName, args: originalArgs, sessionId: saved?.sessionId })
     const launchArgs = saved ? continuationArgs(providerName, originalArgs, saved.sessionId, messages?.prompt ?? '') : args
@@ -250,8 +260,11 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
       buffer = lines.pop() ?? ''
       for (const line of lines) {
         const event = (() => { try { return record(JSON.parse(line)) } catch { return undefined } })()
-        const sessionId = event?.type === 'thread.started' ? event.thread_id : event?.session_id
-        if (typeof sessionId === 'string') checkpoint.save({ provider: providerName, args: originalArgs, sessionId })
+        const sessionId = agentSessionIdFromEvent(event)
+        if (typeof sessionId === 'string') {
+          checkpoint.save({ provider: providerName, args: originalArgs, sessionId })
+          if (cardPath && usageId) setAgentUsageSessionId(cardPath, usageId, sessionId)
+        }
       }
       if (cardPath) for (const line of lines) for (const entry of executionEntries(line)) appendConversation(cardPath, { ...entry, source: sessionName })
     })
@@ -273,6 +286,7 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
     child.on('close', (code, signal) => {
       if (!signal || timedOut) checkpoint.clear()
       clearTimeout(timer)
+      if (cardPath && usageId) setAgentUsageSessionId(cardPath, usageId, agentSessionIdFromOutput(stdout))
       if (cardPath && buffer.trim()) for (const entry of executionEntries(buffer)) appendConversation(cardPath, { ...entry, source: sessionName })
       if (timedOut) {
         finishUsage()
