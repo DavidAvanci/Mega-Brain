@@ -53,5 +53,5 @@ test('workspace resolve múltiplos checkouts ativos e elimina menções duplicad
   writeFileSync(file, JSON.stringify(catalog))
   expect(repositoryMentions(catalog.repositories).filter(item => item.alias === 'takeat-core')).toHaveLength(1)
   expect(resolveRepositoryMentions('Use @takeat-core. e @api', settingsFile).map(repo => repo.alias)).toEqual(['api', 'nota'])
-  expect(repositoryMentionContext('@takeat-core', settingsFile)).toContain('uma seção ## <alias> por repositório')
+  expect(repositoryMentionContext('@takeat-core', settingsFile)).toContain('declare repo: <alias> em cada item do TASK-CHECKLIST.json')
 })

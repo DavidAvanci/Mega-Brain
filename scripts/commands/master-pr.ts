@@ -12,7 +12,7 @@ import {
 import { runsAsCommand } from '../lib/env.ts'
 import { jiraEnv, jiraIssueUrl, jiraSiteForRepositories, prsCommentAdf, textCommentAdf, transitionTo, upsertComment } from '../lib/jira.ts'
 import { activity, finish } from '../lib/log.ts'
-import { planSection, readPlan } from '../lib/plan.ts'
+import { completedTaskSummary, readChecklist } from '../lib/checklist.ts'
 import { mergeCardPrs, repoLinks, taskInfo } from '../lib/workspace.ts'
 import { resolveRebaseConflict } from '../lib/conflictResolver.ts'
 
@@ -118,28 +118,28 @@ async function masterPr(
 
 export async function runMasterPrStage(): Promise<void> {
   const task = taskInfo(wsPath)
-  const plan = readPlan(wsPath)
+  const checklist = readChecklist(wsPath)
   const repos = repoLinks(wsPath)
   if (!repos.length) {
     finish(false, 'Nenhum repo (symlink) encontrado no workspace')
     process.exit(1)
   }
 
-  const done = planSection(plan.raw, /o que foi feito/i)
   const jiraSite = jiraSiteForRepositories(repos.map((repo) => repo.name))
-  const body = [
-    done ? `## O que foi feito\n${done}` : 'Alterações da task (ver commits).',
-    task.jiraKey && jiraIssueUrl(task.jiraKey, jiraSite) ? `Jira: ${jiraIssueUrl(task.jiraKey, jiraSite)}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+  const bodyForRepo = (repo: string) => {
+    const done = completedTaskSummary(checklist, repo)
+    return [
+      done ? `## O que foi feito\n${done}` : 'Alterações da task (ver commits).',
+      task.jiraKey && jiraIssueUrl(task.jiraKey, jiraSite) ? `Jira: ${jiraIssueUrl(task.jiraKey, jiraSite)}` : '',
+    ].filter(Boolean).join('\n\n')
+  }
 
   const prs: Record<string, string> = {}
   const errors: string[] = []
   for (const repo of repos) {
     activity('Master PR', repo.name)
     try {
-      prs[repo.name] = await masterPr(repo, task, body)
+      prs[repo.name] = await masterPr(repo, task, bodyForRepo(repo.name))
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error))
     }
@@ -151,6 +151,7 @@ export async function runMasterPrStage(): Promise<void> {
     const env = jiraEnv(jiraSite)
     if (task.jiraKey && env) {
       activity('Jira', `Comentando PRs em ${task.jiraKey}`)
+      const done = completedTaskSummary(checklist)
       const sections: [string, string][] = done ? [['O que foi feito', done]] : []
       await upsertComment(env, task.jiraKey, 'PRs Master', prsCommentAdf('PRs Master', prs, sections))
       try {

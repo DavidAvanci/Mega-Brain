@@ -83,7 +83,7 @@ export function PromptsSettings({
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={disabled || value[key] === DEFAULT_PROMPTS[key]}
+                disabled={disabled || value[key].trim() === DEFAULT_PROMPTS[key].trim()}
                 onClick={() => onChange({ ...value, [key]: DEFAULT_PROMPTS[key] })}
               >
                 Restaurar padrão

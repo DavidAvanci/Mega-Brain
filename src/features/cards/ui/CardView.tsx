@@ -7,6 +7,7 @@ import {
   Folder01Icon,
   GitMergeIcon,
   GitPullRequestArrowIcon,
+  RoboticIcon,
   TriangleAlertIcon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ import { relativeTime } from '@/relativeTime'
 import { attentionReason } from '@/boardFilters'
 import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 import { FlowIndicator } from './FlowIndicator'
+import { SmartDiffIndicator } from './SmartDiffIndicator'
 export { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 
 export function StageResetButton({
@@ -249,6 +251,12 @@ function DevelopmentProgress({
   const percentage = Math.round((progress.done / progress.total) * 100)
   return (
     <div className="flex items-center gap-1.5">
+      <HugeiconsIcon
+        icon={RoboticIcon}
+        strokeWidth={2}
+        className="size-3.5 shrink-0 text-primary dark:text-chart-2"
+        aria-label="Script de desenvolvimento"
+      />
       <Progress
         value={progress.done}
         max={progress.total}
@@ -306,8 +314,7 @@ export function CardBody({
   const isDevelopment = card.status === 'desenvolvendo'
   const developmentStageAgent = isDevelopment
     ? card.agents?.find(
-        (agent) =>
-          agent.stage === 'run-task-checklist' && ['rodando', 'aguardando'].includes(agent.status),
+        (agent) => agent.stage === 'run-task-checklist' && ['rodando', 'aguardando'].includes(agent.status),
       )
     : undefined
   const agents = isDevelopment ? runningAgents.filter((agent) => agent.taskId) : runningAgents
@@ -327,9 +334,7 @@ export function CardBody({
 
   return (
     <>
-      <div
-        className="mb-1 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground"
-      >
+      <div className="mb-1 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
         <FolderName name={card.id} />
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {attention && (
@@ -378,10 +383,13 @@ export function CardBody({
           ))}
           {developmentStageAgent && agents.length === 0 && (
             <span className="inline-flex min-w-0 items-center gap-1.5 text-[11px] text-primary dark:text-chart-2">
-              <Spinner className="size-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">
-                Iniciando {initialTaskId(developmentStageAgent) ?? 'tarefa'}...
-              </span>
+              <HugeiconsIcon
+                icon={RoboticIcon}
+                strokeWidth={2}
+                className="size-3.5 shrink-0"
+                aria-label="Script de desenvolvimento"
+              />
+              <span className="truncate">Iniciando {initialTaskId(developmentStageAgent) ?? 'tarefa'}...</span>
             </span>
           )}
           {developmentStageAgent && (
@@ -391,16 +399,7 @@ export function CardBody({
               onPendingChange={setStoppingAllDevelopmentAgents}
             />
           )}
-          {card.smartDiffRunning && (
-            <span
-              role="status"
-              aria-label="Smart Diff em execução"
-              className="inline-flex min-w-0 max-w-full items-center gap-1 text-[11px] text-primary dark:text-chart-2"
-            >
-              <Spinner className="size-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">Smart Diff em execução</span>
-            </span>
-          )}
+          {card.smartDiffRunning && <SmartDiffIndicator cardId={card.id} activity={card.smartDiffActivity} />}
         </div>
       )}
       <div className="mt-2.5 flex items-center gap-1.5 border-t pt-2 text-[10px] text-muted-foreground">

@@ -49,5 +49,5 @@ export function resolveRepositoryMentions(text: string, settingsFile?: string): 
 export function repositoryMentionContext(text: string, settingsFile?: string): string {
   const repositories = resolveRepositoryMentions(text, settingsFile)
   if (!repositories.length) return text
-  return `${text}\n\nRepositórios mencionados (identidades verificadas no catálogo ativo):\n${repositories.map(({ id, alias, path }) => `- ${JSON.stringify({ id, alias, path })}`).join('\n')}\nWorkspaces agrupam repositórios independentes. Planeje alterações em todos os repositórios necessários; use uma seção ## <alias> por repositório no TASK-CHECKLIST.md e deps entre itens para coordenar mudanças. Execute instalação, Git e testes dentro de cada checkout, com seu próprio gerenciador de pacotes.`
+  return `${text}\n\nRepositórios mencionados (identidades verificadas no catálogo ativo):\n${repositories.map(({ id, alias, path }) => `- ${JSON.stringify({ id, alias, path })}`).join('\n')}\nWorkspaces agrupam repositórios independentes. Planeje alterações em todos os repositórios necessários; declare repo: <alias> em cada item do TASK-CHECKLIST.json e deps como array de IDs para coordenar mudanças. Execute instalação, Git e testes dentro de cada checkout, com seu próprio gerenciador de pacotes.`
 }

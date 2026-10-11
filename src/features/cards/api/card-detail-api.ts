@@ -3,7 +3,8 @@ import { ApiError, apiClient } from '@/shared/api/api-client'
 import { requestJson } from '@/shared/api/request-json'
 import { DEFAULT_PROMPTS, type EditorDiscovery, type MegaBrainSettings } from '../../../../shared/domain/settings'
 import type { ChatAgentSettings, ChatEntry, ChatEvent, ChatModelSelection } from '../../../../shared/contracts/chat'
-import type { CardAgentUsage, CardAgentUsageEntry } from '../../../../shared/domain/agents'
+import type { AgentInfo, CardAgentUsage, CardAgentUsageEntry } from '../../../../shared/domain/agents'
+import type { TaskChecklist } from '../../../../shared/domain/task-checklist'
 
 export interface WorktreeRepoInfo {
   name: string
@@ -19,6 +20,7 @@ export interface WorktreeRepoInfo {
 
 export interface CardDetail {
   files: Record<string, string | null>
+  checklist: TaskChecklist | null
   repos: WorktreeRepoInfo[]
   usage: CardAgentUsage
   usageBreakdown: CardAgentUsageEntry[]
@@ -49,6 +51,7 @@ export interface DiffState {
   result?: CardDiffDocument
   error?: string
   steps?: string[]
+  activity?: AgentInfo
   started: boolean
 }
 
@@ -88,7 +91,12 @@ export async function saveMegaBrainSettings(settings: MegaBrainSettings): Promis
       'O backend não confirmou a configuração do Jev. Reinicie o Mega Brain com o backend atualizado e salve novamente.',
     )
   }
-  if (Object.keys(settings.prompts).some((key) => saved.prompts?.[key as keyof typeof settings.prompts] !== settings.prompts[key as keyof typeof settings.prompts])) {
+  if (
+    (Object.keys(settings.prompts) as (keyof typeof settings.prompts)[]).some((key) => {
+      const confirmed = saved.prompts?.[key]
+      return typeof confirmed !== 'string' || confirmed.trim() !== settings.prompts[key].trim()
+    })
+  ) {
     throw new Error('O backend não confirmou os prompts. Reinicie o Mega Brain com o backend atualizado e salve novamente.')
   }
   return saved

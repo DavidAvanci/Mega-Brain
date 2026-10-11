@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({ fetchDiff: vi.fn(), fetchStandardDiff: vi.fn()
 vi.mock('../api/card-detail-api', () => mocks)
 vi.mock('@/theme', () => ({ useTheme: () => 'light' }))
 vi.mock('@/components/ui/button', () => ({ Button: 'button' }))
+vi.mock('@/Tip', () => ({ Tip: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock('@git-diff-view/react', () => ({
   DiffFile: {},
   DiffModeEnum: { Split: 1, Unified: 2 },
@@ -70,4 +71,50 @@ test('opening a completed review only reads it; its button explicitly regenerate
   await clickButton('Gerar novo Smart Diff')
   expect(mocks.startDiff).toHaveBeenCalledOnce()
   expect(mocks.startDiff).toHaveBeenCalledWith('card-1', true)
+})
+
+test.each(['claude', 'codex'] as const)(
+  'shows %s narration with its icon and keeps completed steps',
+  async (provider) => {
+    mocks.fetchDiff.mockResolvedValue({
+      status: 'running',
+      started: true,
+      steps: [
+        'Identificando repositórios do card',
+        'Rodando a ferramenta Smart Diff em api',
+        'Rodando o agente de revisão',
+      ],
+      activity: {
+        stage: 'smart-diff-review',
+        execution: 'agent',
+        status: 'rodando',
+        provider,
+        phase: 'Rodando o agente de revisão',
+        activity: 'Vou explicar a mudança de contrato e seu impacto.',
+      },
+    })
+    await openDiff()
+    const steps = host.querySelector('[aria-label="Etapas da revisão Smart Diff"]')!
+    expect(steps.textContent).toContain('Rodando a ferramenta Smart Diff em api')
+    expect(steps.textContent).toContain('Vou explicar a mudança de contrato e seu impacto.')
+    expect(steps.querySelector(`[aria-label="${provider === 'claude' ? 'Claude' : 'Codex'}"]`)).not.toBeNull()
+    expect(steps.querySelector('button')).toBeNull()
+  },
+)
+
+test('shows the current script step with the robot icon', async () => {
+  mocks.fetchDiff.mockResolvedValue({
+    status: 'running',
+    started: true,
+    steps: ['Rodando a ferramenta Smart Diff em api'],
+    activity: {
+      stage: 'smart-diff-review',
+      execution: 'script',
+      status: 'rodando',
+      phase: 'Rodando a ferramenta Smart Diff em api',
+    },
+  })
+  await openDiff()
+  expect(host.querySelector('[aria-label="Script em execução"]')).not.toBeNull()
+  expect(host.textContent).toContain('Rodando a ferramenta Smart Diff em api')
 })

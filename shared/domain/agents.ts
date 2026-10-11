@@ -4,6 +4,7 @@ import type { DevEnvStartOptions } from './dev-environments'
 export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'morto' | 'pausado'
 
 export interface AgentInfo {
+  execution?: 'script' | 'agent'
   provider?: AgentProvider
   sessionId?: string
   sessionControlId?: string
@@ -35,6 +36,7 @@ export interface CardAgentUsage {
 
 export interface CardAgentUsageEntry {
   id: string
+  sessionId?: string
   label?: string
   provider?: AgentProvider
   model?: string
@@ -57,12 +59,14 @@ export interface AgentSession {
   startedAt: string
   updatedAt: string
   activity?: string
+  narration?: string
   visualState?: IslandVisualState
   question?: string
   codexProfileId?: string
   codexProfileName?: string
   codexProfileColor?: string
   pid?: number
+  usage?: { durationMs: number; costUsd?: number }
 }
 
 export interface AgentSessionsResponse {

@@ -432,7 +432,7 @@
 
 .markdown h2 {
   position: sticky;
-  top: -16px;
+  top: calc(var(--spacing) * -4);
   z-index: 1;
   margin: 22px 0 8px;
   padding: 8px 0 6px;

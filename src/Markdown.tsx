@@ -6,11 +6,26 @@ const OUTLINE_MIN_SECTIONS = 3
 
 export function Markdown({ text, outline = false }: { text: string; outline?: boolean }) {
   const rendered = useMemo(() => render(text), [text])
+  const html = useMemo(() => ({ __html: rendered.html }), [rendered.html])
   const body = useRef<HTMLDivElement>(null)
   const showOutline = outline && rendered.outline.length >= OUTLINE_MIN_SECTIONS
 
   const jump = (id: string) => {
-    body.current?.querySelector(`[id="${id}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    const target = body.current?.querySelector<HTMLElement>(`[id="${id}"]`)
+    if (!target) return
+
+    const scroller = body.current?.closest<HTMLElement>('[data-slot="tabs-content"]')
+    if (scroller) {
+      // A sticky heading's visible position no longer matches its place in the
+      // document. Measure its normal flow position before starting the scroll.
+      const position = target.style.position
+      target.style.position = 'static'
+      const top = target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+      target.style.position = position
+      scroller.scrollTo({ top, behavior: 'smooth' })
+    } else {
+      target.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    }
   }
 
   return (
@@ -34,7 +49,7 @@ export function Markdown({ text, outline = false }: { text: string; outline?: bo
           </ol>
         </nav>
       )}
-      <div ref={body} className="markdown min-w-0 flex-1" dangerouslySetInnerHTML={{ __html: rendered.html }} />
+      <div ref={body} className="markdown min-w-0 flex-1" dangerouslySetInnerHTML={html} />
     </div>
   )
 }

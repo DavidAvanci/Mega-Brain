@@ -55,7 +55,7 @@ export async function runChecklist(options: SchedulerOptions): Promise<Scheduler
   const start = (item: Item) => {
     runningIds.add(item.id)
     runningItems.set(item.id, item)
-    activity('Item', `${item.id} ${item.text}`.slice(0, 120))
+    activity('Item', `${item.id} ${item.title}`.slice(0, 120))
     const promise = (async () => {
       let result: ItemOutcome
       let costUsd = 0

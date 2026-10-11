@@ -28,7 +28,7 @@ export function RepositorySettingsDialog({
       }}
     >
       {repository && (
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="repo-settings-drawer" overlayClassName="repo-settings-overlay">
           <DialogHeader>
             <DialogTitle>Configurações de {repository.displayName}</DialogTitle>
             <DialogDescription className="break-all">{repository.path}</DialogDescription>

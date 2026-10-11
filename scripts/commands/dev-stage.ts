@@ -1,14 +1,17 @@
-import { appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { TASK_CHECKLIST_FILE } from '../../shared/domain/task-checklist.ts'
+import { readTaskChecklist } from '../../shared/storage/task-checklist.ts'
 import { dirname, join, posix, resolve } from 'node:path'
 import { runsAsCommand } from '../lib/env.ts'
-import { markItem, matchesPattern, parseChecklist, pendingRequires, resetUnfinished, type Item } from '../lib/checklist.ts'
+import { appendChecklistRepairs, markItem, matchesPattern, parseChecklist, pendingRequires, resetUnfinished, type Item } from '../lib/checklist.ts'
 import { CmdError, changedFiles, defaultBranch, git, hasRef } from '../lib/git.ts'
 import { activity, finish } from '../lib/log.ts'
-import { itemContext, readPlan } from '../lib/plan.ts'
+import { readPlan } from '../lib/plan.ts'
 import { preflight } from '../lib/preflight.ts'
 import { formatDuration, runChecklist, type ItemOutcome } from '../lib/scheduler.ts'
 import { runClaudeItem } from '../lib/executor.ts'
 import { megaBrainPrompt } from '../lib/prompts.ts'
+import { taskItemPrompt } from '../lib/task-item-prompt.ts'
 import {
   assertFeatureBranch,
   dropItemWorktree,
@@ -32,7 +35,7 @@ import {
 } from '../lib/workspace.ts'
 
 const wsPath = resolve(process.argv[2] ?? process.cwd())
-const file = join(wsPath, 'TASK-CHECKLIST.md')
+const file = join(wsPath, TASK_CHECKLIST_FILE)
 
 function repoPath(repo: string): string {
   return repoLinkPath(wsPath, repo)
@@ -58,18 +61,10 @@ function limitsFor(item: Item): { timeoutMs: number; maxAttempts: number } {
 }
 
 function buildPrompt(item: Item, planRaw: string): string {
-  const context = itemContext(planRaw, item.id)
-  return [
-    megaBrainPrompt('taskItem'),
-    '',
-    `Item: ${item.id} — ${item.text}`,
-    item.files.length ? `Arquivos permitidos: ${item.files.join(', ')}` : 'Arquivos permitidos: (não especificado)',
-    `Workspace da tarefa (vários repositórios): ${[...new Set(parseChecklist(readFileSync(file, 'utf8')).map(entry => entry.repo))].filter(repo => repo && existsSync(repoPath(repo))).map(repo => `${repo}: ${repoPath(repo)}`).join('; ')}`,
-    `Implemente este item somente na worktree atual de ${item.repo}. Consulte os demais repositórios para entender contratos; mudanças neles devem ser feitas por seus próprios itens do checklist. Dependências entre itens coordenam a execução entre repositórios.`,
-    context ? `\nContexto do plano:\n${context}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n')
+  const repositories = [...new Set(parseChecklist(readFileSync(file, 'utf8')).map((entry) => entry.repo))]
+    .filter((repo) => existsSync(repoPath(repo)))
+    .map((repo) => ({ repo, path: repoPath(repo) }))
+  return taskItemPrompt(item, megaBrainPrompt('taskItem'), repositories, planRaw)
 }
 
 const itemCwd = new Map<string, string>()
@@ -87,7 +82,7 @@ function withRepoLock<T>(repo: string, fn: () => T): Promise<T> {
 }
 
 function commitMessage(task: ReturnType<typeof taskInfo>, item: Item): string[] {
-  const subject = item.text.charAt(0).toLowerCase() + item.text.slice(1)
+  const subject = item.title.charAt(0).toLowerCase() + item.title.slice(1)
   const args = ['commit', '--no-verify', '-m', `${task.type === 'fix' ? 'fix' : 'feat'}: ${subject}`.slice(0, 100)]
   if (task.jiraKey) args.push('-m', `Refs: ${task.jiraKey}`)
   return args
@@ -157,7 +152,7 @@ function verificationPrompt(projects: { repo: string; path: string; files: strin
   return [
     `Item: VFY${round} — Verificar os projetos após a execução dos agentes`,
     'Você é o agente de verificação final. Em cada projeto, execute os checks relevantes (lint, formatação em modo check, typecheck, testes e hooks Husky) somente contra os arquivos listados para aquele projeto. Use argumentos de arquivo para limitar os checks. Se uma verificação não aceitar escopo por arquivo, registre-a como skipped; nunca rode um comando global do projeto.',
-    'Descubra os comandos pelos manifests e configurações do projeto. Use scripts e binários que já estejam instalados localmente; não instale dependências nem use npx para baixar ferramentas. Não corrija arquivos, não faça commits e não altere TASK-CHECKLIST.md. Execute apenas comandos de verificação; não use modos que formatem ou modifiquem arquivos. Se um hook modificar arquivos ou não puder ser executado sem mudanças, registre-o como skipped com a razão. Projetos sem arquivos alterados também devem ser registrados com uma verificação skipped.',
+    'Descubra os comandos pelos manifests e configurações do projeto. Use scripts e binários que já estejam instalados localmente; não instale dependências nem use npx para baixar ferramentas. Não corrija arquivos, não faça commits e não altere TASK-CHECKLIST.json. Execute apenas comandos de verificação; não use modos que formatem ou modifiquem arquivos. Se um hook modificar arquivos ou não puder ser executado sem mudanças, registre-o como skipped com a razão. Projetos sem arquivos alterados também devem ser registrados com uma verificação skipped.',
     'Rode cada verificação relevante em cada projeto e registre resultado, comando e resumo. Para cada verificação que falhar, crie uma correção implementável, específica, em linguagem pt-BR, indicando os arquivos preferenciais quando identificáveis. Não crie correções para verificações skipped.',
     'Grave somente o relatório JSON no caminho indicado. Use exatamente este formato: {"checks":[{"repo":"alias","name":"lint","command":"comando executado","status":"passed|failed|skipped","summary":"resumo curto"}],"failures":[{"repo":"alias","check":"nome exato da verificação","command":"comando","summary":"erro observado","task":"ação de correção","files":["caminho/relativo"]}]}. Toda verificação failed deve ter pelo menos uma entrada correspondente em failures. Use arrays vazios quando não houver registros.',
     `Projetos, paths e lista exata de arquivos alterados pelo card: ${JSON.stringify(projects)}`,
@@ -219,25 +214,6 @@ function readVerificationReport(path: string, repos: Set<string>): VerificationR
   return { checks, failures }
 }
 
-function appendVerificationTasks(report: VerificationReport): number {
-  const existing = new Set(parseChecklist(readFileSync(file, 'utf8')).map((item) => item.id))
-  let next = 1
-  const additions: string[] = []
-  for (const failure of report.failures) {
-    while (existing.has('VFY' + next)) next++
-    const id = 'VFY' + next++
-    existing.add(id)
-    const clean = (value: string) => value.replace(/[\r\n{}]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500)
-    const task = clean(failure.task)
-    if (!task) throw new Error('A task de correção veio vazia')
-    const description = task + ' (corrigir ' + clean(failure.check) + ': ' + clean(failure.summary) + ')'
-    const meta = failure.files?.length ? ' {files: ' + failure.files.join(', ') + '}' : ''
-    additions.push('## ' + failure.repo, '- [ ] ' + id + ' ' + description + meta)
-  }
-  if (additions.length) appendFileSync(file, (readFileSync(file, 'utf8').endsWith('\n') ? '' : '\n') + '\n' + additions.join('\n') + '\n')
-  return report.failures.length
-}
-
 function existsInRef(real: string, ref: string, path: string): boolean {
   if (path === '.') return true
   try {
@@ -284,7 +260,7 @@ function reportPreflight(items: Item[], branch: string): boolean {
   finish(
     false,
     [
-      `Preflight reprovou o TASK-CHECKLIST.md (${errors.length} erro(s)) — nenhum agente foi gasto:`,
+      `Preflight reprovou o TASK-CHECKLIST.json (${errors.length} erro(s)) — nenhum agente foi gasto:`,
       ...errors.map((issue) => `${issue.where}: ${issue.message}`),
       'Corrija o checklist e rode de novo (ou CHECKLIST_SKIP_PREFLIGHT=1 para ignorar).',
     ].join('\n'),
@@ -326,8 +302,8 @@ function recoverOrphans(task: ReturnType<typeof taskInfo>, repos: string[]): voi
 }
 
 export async function runDevStage(): Promise<void> {
-  if (!existsSync(file)) {
-    finish(false, 'TASK-CHECKLIST.md não encontrado no workspace')
+  if (!readTaskChecklist(wsPath)) {
+    finish(false, 'TASK-CHECKLIST.json não encontrado no workspace')
     return
   }
   const task = taskInfo(wsPath)
@@ -396,9 +372,9 @@ export async function runDevStage(): Promise<void> {
     max: 4,
     execute: async (item) => {
       const skipReason = skippedRepos.get(item.repo)
-      if (skipReason) return { status: 'blocked' as const, note: `Heading "${item.repo}" pulada: ${skipReason}` }
+      if (skipReason) return { status: 'blocked' as const, note: `Repositório "${item.repo}" indisponível: ${skipReason}` }
       if (!item.repo || !existsSync(repoPath(item.repo))) {
-        return { status: 'blocked' as const, note: `Repo desconhecido: ${item.repo || '(sem heading ## repo)'}` }
+        return { status: 'blocked' as const, note: `Repo desconhecido: ${item.repo || '(sem repo)'}` }
       }
       const pending = unrecovered.get(item.id)
       if (pending) {
@@ -538,8 +514,8 @@ export async function runDevStage(): Promise<void> {
     verificationSummary = `${report.checks.filter((check) => check.status === 'passed').length} aprovadas, ${report.checks.filter((check) => check.status === 'failed').length} falhas, ${report.checks.filter((check) => check.status === 'skipped').length} ignoradas`
     if (!report.failures.length) break
 
-    const added = appendVerificationTasks(report)
-    activity('Verificação', `${added} task(s) de correção adicionadas à TASK-CHECKLIST.md`)
+    const added = appendChecklistRepairs(file, report.failures)
+    activity('Verificação', `${added} task(s) de correção adicionadas à TASK-CHECKLIST.json`)
     if (repairWaves >= maxRepairWaves) {
       verificationOk = false
       verificationSummary += ` · limite de ${maxRepairWaves} levas de correção atingido; tasks pendentes foram preservadas`

@@ -1,12 +1,14 @@
 import { EventEmitter } from 'node:events'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { ProcessChild, ProcessRunner } from '../process'
 import { createWorkspaceService } from './service'
 import { reviewPrompt } from './smart-diff-review'
+import type { AgentSession } from '../../shared/domain/agents'
+import type { listBoardCards } from './board-list'
 
 afterEach(() => vi.unstubAllEnvs())
 
@@ -123,3 +125,133 @@ test('completed reviews are read from disk without keeping a stale document or r
   expect(runner.spawn).not.toHaveBeenCalled()
   expect(runner.execFile).not.toHaveBeenCalled()
 })
+
+test.each(['claude', 'chatgpt'] as const)(
+  'publishes script steps and %s narration on the board and diff without tool calls or duplicate sessions',
+  async (llmProvider) => {
+    const root = mkdtempSync(join(tmpdir(), 'smart-diff-activity-'))
+    const card = join(root, 'card')
+    const repo = join(root, 'repo')
+    const smartDiffRoot = join(root, 'smart-diff')
+    const bin = join(smartDiffRoot, 'packages', 'cli', 'bin')
+    mkdirSync(card)
+    mkdirSync(repo)
+    mkdirSync(bin, { recursive: true })
+    writeFileSync(join(bin, 'smart-diff.cjs'), '')
+    writeFileSync(join(card, 'card.json'), JSON.stringify({ title: 'Review', status: 'code-review' }))
+    writeFileSync(join(repo, '.git'), 'gitdir: /fixture/.git/worktrees/card')
+    symlinkSync(repo, join(card, 'api'), process.platform === 'win32' ? 'junction' : 'dir')
+    vi.stubEnv('SMART_DIFF_DIR', smartDiffRoot)
+    const provider = llmProvider === 'chatgpt' ? 'codex' : 'claude'
+    const sessions: AgentSession[] = []
+    let reportReady!: () => void
+    let child!: ProcessChild
+    const spawn = vi.fn<ProcessRunner['spawn']>(() => {
+      child = new EventEmitter() as ProcessChild
+      return child
+    })
+    const runner = {
+      spawn,
+      execFileSync: vi.fn(),
+      execFile(_command, args, _options, callback) {
+        if (args[0] === 'repo') return callback(null, 'main', '')
+        if (args[0] === 'fetch') return callback(null, '', '')
+        reportReady = () => callback(null, JSON.stringify({ schemaVersion: 1, readingOrder: [] }), '')
+      },
+    } as ProcessRunner
+    const service = createWorkspaceService(
+      {
+        workspaceDir: root,
+        executables: {},
+        preferences: {
+          llmProvider,
+          settingsFile: join(root, 'settings.json'),
+          editor: 'cursor',
+          editorCommand: '',
+          onboardingCompleted: true,
+        },
+      },
+      runner,
+      undefined,
+      () => sessions,
+    )
+    const query = new URLSearchParams({ name: 'card' })
+    await service.handle('/diff', 'POST', query, { name: 'card' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(await service.handle('/diff', 'GET', query, undefined)).toMatchObject({
+      activity: { execution: 'script', phase: 'Rodando a ferramenta Smart Diff em api' },
+    })
+    const board = async () =>
+      ((await service.handle('/', 'GET', new URLSearchParams(), undefined)) as ReturnType<typeof listBoardCards>).find(
+        (entry) => entry.name === 'card',
+      )!
+    expect(await board()).toMatchObject({ smartDiffRunning: true, smartDiffActivity: { execution: 'script' } })
+    reportReady()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(spawn.mock.calls[0][1]).toEqual(
+      expect.arrayContaining(provider === 'codex' ? ['--json'] : ['--output-format', 'stream-json', '--verbose']),
+    )
+    expect(await board()).toMatchObject({
+      smartDiffActivity: { execution: 'agent', provider, phase: 'Rodando o agente de revisão' },
+    })
+    const work = join(card, '.smart-diff-review')
+    const log = join(work, 'agent.log')
+    const narration = 'Vou comparar o contrato com os consumidores antes de explicar os tradeoffs.'
+    const events =
+      provider === 'claude'
+        ? [
+            { type: 'system', session_id: 'review-session' },
+            {
+              type: 'assistant',
+              message: {
+                content: [
+                  { type: 'text', text: narration },
+                  { type: 'thinking', thinking: 'Privado' },
+                ],
+              },
+            },
+            {
+              type: 'assistant',
+              message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'segredo' } }] },
+            },
+          ]
+        : [
+            { type: 'thread.started', thread_id: 'review-session' },
+            { type: 'item.completed', item: { type: 'agent_message', text: narration } },
+            {
+              type: 'item.completed',
+              item: { type: 'command_execution', command: 'segredo', aggregated_output: 'Privado' },
+            },
+          ]
+    appendFileSync(log, events.map((event) => JSON.stringify(event)).join('\n') + '\n{"incomplete":')
+    sessions.push({
+      id: 'review-session',
+      provider,
+      status: 'rodando',
+      cardId: 'card',
+      cwd: card,
+      title: 'Smart Diff',
+      startedAt: '',
+      updatedAt: '',
+      activity: 'Bash: segredo',
+    })
+    const diff = await service.handle('/diff', 'GET', query, undefined)
+    expect(diff).toMatchObject({ activity: { provider, activity: narration, sessionId: 'review-session' } })
+    expect(JSON.stringify(diff)).not.toMatch(/segredo|Privado/)
+    expect(await board()).toMatchObject({ agents: [], smartDiffActivity: { activity: narration } })
+    appendFileSync(
+      log,
+      '\n' + Array.from({ length: 2500 }, () => JSON.stringify({ type: 'tool_use', input: 'x'.repeat(80) })).join('\n'),
+    )
+    expect(await board()).toMatchObject({ smartDiffActivity: { activity: narration } })
+    sessions.length = 0
+    writeFileSync(
+      join(work, createHash('sha256').update('api').digest('hex').slice(0, 16), 'review.json'),
+      JSON.stringify({ schemaVersion: 2, sections: [], noise: [] }),
+    )
+    child.emit('close', 0)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(await board()).toMatchObject({ smartDiffRunning: false })
+    expect((await board()).smartDiffActivity).toBeUndefined()
+  },
+)

@@ -12,6 +12,73 @@ function jsonl(path: string, events: unknown[], modifiedAt = new Date('2026-09-2
 }
 
 describe('agent session service', () => {
+  test.each(['claude', 'codex'] as const)(
+    'keeps %s informative text separate from subsequent tool activity',
+    (provider) => {
+      const root = mkdtempSync(join(tmpdir(), 'agent-narration-'))
+      const cwd = join(root, 'project')
+      mkdirSync(cwd)
+      const file =
+        provider === 'claude'
+          ? join(root, '.claude', 'projects', 'project', 'review.jsonl')
+          : join(root, '.codex', 'sessions', 'review.jsonl')
+      const narration = 'Vou explicar a mudança de contrato e os tradeoffs.'
+      const tool =
+        provider === 'claude'
+          ? {
+              type: 'assistant',
+              message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'cd /tmp; grep segredo' } }] },
+            }
+          : {
+              type: 'response_item',
+              payload: {
+                type: 'function_call',
+                name: 'functions.exec_command',
+                arguments: JSON.stringify({ command: 'cd /tmp; grep segredo' }),
+              },
+            }
+      const start =
+        provider === 'claude'
+          ? { type: 'user', cwd, sessionId: 'review', message: { content: 'Revisar a diff' } }
+          : { type: 'session_meta', payload: { id: 'review', cwd } }
+      const service = createAgentSessionService({
+        home: root,
+        claudeProjects: join(root, '.claude', 'projects'),
+        now: () => new Date('2026-09-20T12:01:00Z'),
+        processes: () => [{ pid: 42, provider, cwd }],
+      })
+      jsonl(file, [start, tool])
+      expect(service.list().sessions[0].narration).toBeUndefined()
+      const message =
+        provider === 'claude'
+          ? {
+              type: 'assistant',
+              message: {
+                content: [
+                  { type: 'text', text: narration },
+                  { type: 'thinking', thinking: 'private-reasoning-canary' },
+                  ...(tool.message?.content ?? []),
+                ],
+              },
+            }
+          : {
+              type: 'response_item',
+              payload: {
+                type: 'message',
+                role: 'assistant',
+                phase: 'commentary',
+                content: [{ type: 'output_text', text: narration }],
+              },
+            }
+      jsonl(file, [start, message, tool])
+      const session = service.list().sessions[0]
+      expect(session.narration).toBe(narration)
+      expect(session.activity).toContain('segredo')
+      expect(session.narration).not.toMatch(/segredo|Bash|exec_command/)
+      expect(JSON.stringify(session)).not.toContain('private-reasoning-canary')
+    },
+  )
+
   test('shows explicit Claude questions and returns to reading after user input without exposing private reasoning', () => {
     const root = mkdtempSync(join(tmpdir(), 'mega-brain-agent-question-'))
     const cwd = join(root, 'project')
@@ -219,7 +286,7 @@ describe('agent session service', () => {
     const cwd = join(root, 'cards', 'MB-123')
     const codexHome = join(root, '.codex')
     mkdirSync(cwd, { recursive: true })
-    symlinkSync(join(root, 'cards'), workspaceDir, 'dir')
+    symlinkSync(join(root, 'cards'), workspaceDir, process.platform === 'win32' ? 'junction' : 'dir')
     jsonl(join(codexHome, 'sessions', '2026', '09', '20', 'card.jsonl'), [
       { type: 'session_meta', payload: { id: 'card-session', cwd } },
       { type: 'event_msg', payload: { type: 'task_complete' } },
@@ -259,7 +326,7 @@ describe('agent session service', () => {
     const removedNestedCwd = join(worktreesDir, 'MB-12', 'items', 'removed', 'api')
     const escapedCwd = join(worktreesDir, 'MB-123', 'escaped', 'api')
     for (const cwd of [activeCwd, historicalCwd, unknownCwd, outsideCwd]) mkdirSync(cwd, { recursive: true })
-    symlinkSync(join(root, 'worktrees-other'), join(worktreesDir, 'MB-123', 'escaped'))
+    symlinkSync(join(root, 'worktrees-other'), join(worktreesDir, 'MB-123', 'escaped'), process.platform === 'win32' ? 'junction' : 'dir')
     for (const [id, cwd] of [
       ['historical', historicalCwd],
       ['unknown', unknownCwd],

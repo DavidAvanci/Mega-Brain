@@ -1,7 +1,8 @@
 import { closeSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type { AgentProvider, AgentSession, AgentSessionsResponse, AgentStatus } from '../../shared/domain/agents'
+import type { AgentProvider, AgentSession, AgentSessionsResponse, AgentStatus, CardAgentUsageEntry } from '../../shared/domain/agents'
 import { agentProcesses, externalAgentCwd, type RunningAgentProcess } from '../agent-process'
+import { readAgentUsageDetails } from '../workspace/agent-usage'
 import { assistantText, parseJsonRecord, readTail, record, summarizeAgentInput, toolUse } from '../agent-log'
 import { activityVisualState, questionFromInput, questionFromText } from './activity'
 import type { IslandVisualState } from '../../shared/domain/activity-island'
@@ -162,6 +163,7 @@ function sessionFromFile(
   let title: string | undefined
   let startedAt: string | undefined
   let activity: string | undefined
+  let narration: string | undefined
   let model: string | undefined
   let effort: string | undefined
   let failed = false
@@ -188,6 +190,8 @@ function sessionFromFile(
 
     if (file.provider === 'claude') {
       if (event.type === 'assistant') {
+        const text = assistantText(event)
+        if (text) narration = text
         if (typeof message?.model === 'string') model = message.model
         if (typeof event.effort === 'string') effort = event.effort
       }
@@ -284,6 +288,7 @@ function sessionFromFile(
         if (payload.type === 'reasoning') visualState = 'thinking'
         if (payload.type === 'message' && payload.role === 'assistant') {
           const text = eventText(payload.content)
+          if (text?.trim() && payload.channel !== 'analysis') narration = text.trim()
           if (payload.phase !== 'commentary') {
             question = questionFromText(text)
             waiting = Boolean(question)
@@ -340,6 +345,10 @@ function sessionFromFile(
         questionAskedAt = Number.isFinite(eventTime) ? eventTime : file.mtimeMs
         if (waiting) visualState = 'waiting'
       }
+      if (event.type === 'event_msg' && payload?.type === 'agent_message' && typeof payload.message === 'string') {
+        const text = payload.message.trim()
+        if (text && payload.channel !== 'analysis') narration = text
+      }
     }
   }
   const freshOpenCodexTurn = file.provider === 'codex' && codexTurnOpen && nowMs - file.mtimeMs < ACTIVE_CODEX_WINDOW_MS
@@ -361,6 +370,7 @@ function sessionFromFile(
     startedAt: startedAt ?? fallbackStartedAt,
     updatedAt: new Date(file.mtimeMs).toISOString(),
     activity,
+    narration,
     visualState:
       status === 'aguardando'
         ? 'waiting'
@@ -530,6 +540,7 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
     const cardIds = existingCardIds(options.workspaceDir)
     const worktreesRoot = realWorktreesRoot(options.worktreesDir)
     const cardByCwd = cardIdsByCwd(options.workspaceDir, running, cardIds)
+    const usageByCard = new Map<string, CardAgentUsageEntry[]>()
     const activeByProviderAndCwd = new Map<string, RunningAgentProcess[]>()
     for (const process of running) {
       const key = `${process.provider}:${process.cwd}`
@@ -646,7 +657,29 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
             canonicalCardId(namedCardId, cardIds) ??
             canonicalCardId(worktreeCardId, cardIds)
           const displayName = name ?? (session.provider === 'codex' ? cardId : undefined)
-          return [{ ...session, ...(displayName ? { name: displayName } : {}), ...(cardId ? { cardId } : {}) }]
+          let usage: AgentSession['usage']
+          if (cardId && options.workspaceDir) {
+            let entries = usageByCard.get(cardId)
+            if (!entries) {
+              entries = readAgentUsageDetails(join(options.workspaceDir, cardId), now).breakdown
+              usageByCard.set(cardId, entries)
+            }
+            const matching = entries.filter((entry) => entry.sessionId === session.id)
+            if (matching.length) {
+              usage = {
+                durationMs: matching.reduce((total, entry) => total + entry.durationMs, 0),
+                ...(matching.every((entry) => entry.costUsd !== undefined)
+                  ? { costUsd: matching.reduce((total, entry) => total + (entry.costUsd ?? 0), 0) }
+                  : {}),
+              }
+            }
+          }
+          return [{
+            ...session,
+            ...(displayName ? { name: displayName } : {}),
+            ...(cardId ? { cardId } : {}),
+            ...(usage ? { usage } : {}),
+          }]
         }),
       scannedAt: now.toISOString(),
     }

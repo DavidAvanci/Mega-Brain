@@ -2,11 +2,13 @@ import { validCheckpoint, stageSessionId } from './agent-checkpoint'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { AgentInfo } from '../../shared/domain/agents'
-import { assistantText, parseJsonRecord, readTail, record } from '../agent-log'
+import { agentNarration, parseJsonRecord, readTail, record } from '../agent-log'
 import { readFlow } from './card-folder'
 import { readCard } from './card-record'
 import { AGENT_FILE, settingsForStage } from './stage-agent'
 import { STAGES, type Stage } from './stage-catalog'
+import { readTaskChecklist } from '../../shared/storage/task-checklist'
+import { activeChecklistItems, TASK_CHECKLIST_FILE } from '../../shared/domain/task-checklist'
 
 const STREAM_TAIL_BYTES = 128 * 1024
 
@@ -68,7 +70,12 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
     meta = JSON.parse(readFileSync(metaFile, 'utf8'))
   } catch {}
   const stage = STAGES.find((candidate) => candidate.name === meta.stage) ?? STAGES[0]
-  const info: AgentInfo = { stage: stage.name, status: 'rodando', startedAt: meta.startedAt }
+  const info: AgentInfo = {
+    stage: stage.name,
+    execution: stage.script ? 'script' : 'agent',
+    status: 'rodando',
+    startedAt: meta.startedAt,
+  }
   if (meta.provider === 'claude' || meta.provider === 'codex') info.provider = meta.provider
   if (meta.provider === 'codex') {
     info.codexProfileId = meta.codexProfileId
@@ -115,10 +122,17 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
         const detail = record(event.error)?.message ?? event.message ?? 'O ChatGPT não concluiu a execução'
         info.error = String(detail).trim().replace(/\s+/g, ' ').slice(0, 300)
       }
-      if (event?.type === 'assistant') {
-        const narration = assistantText(event)
-        if (narration) info.activity = narration
-      }
+      const narration = agentNarration(event)
+      if (narration && !stage.script) info.activity = narration
+    }
+  }
+  if (info.status === 'concluido' && stage.name === 'task-planning' && readCard(path, basename(path)).status === 'planejando') {
+    try {
+      const checklist = readTaskChecklist(path)
+      if (!checklist || !activeChecklistItems(checklist).length) throw new Error(`${TASK_CHECKLIST_FILE}: nenhum item executável`)
+    } catch (error) {
+      info.status = 'erro'
+      info.error = error instanceof Error ? error.message : String(error)
     }
   }
   info.resumable = validCheckpoint(meta.resume)

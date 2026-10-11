@@ -5,6 +5,8 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { claudeBin, codexBin } from '../agent-executable'
+import { agentNarration, parseJsonRecord, readTail } from '../agent-log'
+import type { AgentInfo } from '../../shared/domain/agents'
 import type { ProcessOwner, ProcessRunner } from '../process'
 import type { MegaBrainConfig } from '../config'
 import { DEFAULT_PROMPTS } from '../../shared/domain/settings'
@@ -17,6 +19,7 @@ type DiffState = {
   result?: DiffDocument
   error?: string
   steps?: string[]
+  activity?: AgentInfo
   started: boolean
 }
 
@@ -91,9 +94,39 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
   const states = new Map<string, DiffState>()
   const errors = new BoundedCache<string, DiffState>(100)
 
-  function step(cardPath: string, message: string): void {
+  function step(cardPath: string, message: string, provider?: AgentInfo['provider']): void {
     const current = states.get(cardPath)
-    if (current?.status === 'running') states.set(cardPath, { ...current, steps: [...(current.steps ?? []), message] })
+    if (current?.status === 'running')
+      states.set(cardPath, {
+        ...current,
+        steps: [...(current.steps ?? []), message],
+        activity: {
+          status: 'rodando',
+          stage: 'smart-diff-review',
+          execution: provider ? 'agent' : 'script',
+          provider,
+          phase: message,
+        },
+      })
+  }
+
+  function activity(cardPath: string): AgentInfo | undefined {
+    const current = states.get(cardPath)
+    if (current?.status !== 'running') return undefined
+    if (current.activity?.execution !== 'agent') return current.activity
+    const log = join(cardPath, '.smart-diff-review', 'agent.log')
+    if (!existsSync(log)) return current.activity
+    const latest = { ...current.activity }
+    for (const line of readTail(log, 128 * 1024).split('\n')) {
+      const event = parseJsonRecord(line)
+      if (!event) continue
+      if (typeof event.session_id === 'string') latest.sessionId = event.session_id
+      if (event.type === 'thread.started' && typeof event.thread_id === 'string') latest.sessionId = event.thread_id
+      const narration = agentNarration(event)
+      if (narration) latest.activity = narration
+    }
+    current.activity = latest
+    return latest
   }
 
   async function generate(cardPath: string): Promise<void> {
@@ -136,18 +169,18 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
       jobs.push({ name: repo.name, baseBranch, report, output, cache })
     }
     if (jobs.length) {
-      step(cardPath, 'Rodando o agente de revisão')
+      const codex = config.preferences.llmProvider === 'chatgpt'
+      step(cardPath, 'Rodando o agente de revisão', codex ? 'codex' : 'claude')
       const prompt = reviewPrompt(
         cardPath,
         jobs,
         config.preferences.prompts?.smartDiffReview || DEFAULT_PROMPTS.smartDiffReview,
         reviewScript,
       )
-      const codex = config.preferences.llmProvider === 'chatgpt'
       const command = codex ? codexBin(config.executables.codex) : claudeBin(config.executables.claude)
       const args = codex
-        ? ['exec', '--dangerously-bypass-approvals-and-sandbox', prompt]
-        : ['-p', prompt, '--dangerously-skip-permissions']
+        ? ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', prompt]
+        : ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'stream-json', '--verbose']
       const out = openSync(join(work, 'agent.log'), 'w')
       const err = openSync(join(work, 'agent-error.log'), 'w')
       try {
@@ -180,12 +213,13 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
   }
 
   return {
+    activity,
     isRunning(cardPath: string): boolean {
       return states.get(cardPath)?.status === 'running'
     },
     read(cardPath: string): DiffState {
       const current = states.get(cardPath) ?? errors.get(cardPath)
-      if (current) return current
+      if (current) return current.status === 'running' ? { ...current, activity: activity(cardPath) } : current
       const result = readDocument(cardPath)
       if (result) return { status: 'ready', result, started: true }
       if (existsSync(join(cardPath, '.smart-diff-review', 'started.json')))

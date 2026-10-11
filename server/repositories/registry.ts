@@ -18,7 +18,7 @@ const emptyRegistry = (): RepositoryRegistryFile => ({ version: 1, repositories:
 
 export class RepositoryDirtyError extends Error {
   constructor() {
-    super('O repositório tem alterações não commitadas. Escolha commit, stash ou descarte antes de ir para master.')
+    super('O repositório tem alterações não commitadas. Escolha commit, stash ou descarte antes de continuar.')
   }
 }
 
@@ -249,6 +249,30 @@ export class RepositoryRegistry {
       } catch (error) {
         return { ...await this.status(id), source: 'remote', error: message(error) }
       }
+    })
+  }
+
+  async resolveDirtyChanges(id: unknown, dirtyAction: unknown, commitMessage?: unknown): Promise<RepositoryStatus> {
+    if (typeof id !== 'string' || !id) throw new Error('Repositório não encontrado')
+    if (dirtyAction !== 'commit' && dirtyAction !== 'stash' && dirtyAction !== 'discard') {
+      throw new Error('Ação inválida para alterações locais')
+    }
+    return this.exclusive(id, async () => {
+      const repository = await this.getRepository(id)
+      const dirty = Boolean(await this.git(repository.path, ['status', '--porcelain']))
+      if (dirty) {
+        if (dirtyAction === 'commit') {
+          if (typeof commitMessage !== 'string' || !commitMessage.trim()) throw new Error('Informe a mensagem do commit')
+          await this.git(repository.path, ['add', '--all'])
+          await this.git(repository.path, ['commit', '-m', commitMessage.trim()], 60_000)
+        } else if (dirtyAction === 'stash') {
+          await this.git(repository.path, ['stash', 'push', '--include-untracked', '-m', 'Mega Brain: antes de sincronizar remoto'], 30_000)
+        } else {
+          await this.git(repository.path, ['reset', '--hard', 'HEAD'])
+          await this.git(repository.path, ['clean', '-fd'])
+        }
+      }
+      return this.status(id)
     })
   }
 

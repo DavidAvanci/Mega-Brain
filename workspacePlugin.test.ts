@@ -1,3 +1,4 @@
+import { checklistJson } from "./test/checklist-fixtures"
 import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -59,7 +60,7 @@ test('readAgent', () => {
   expect(readAgent(dir, () => true)).toMatchObject({
     status: 'rodando',
     phase: 'Iniciando agente',
-    progress: { done: 0, total: 3 },
+    progress: { done: 0, total: 2 },
   })
 
   writeFileSync(
@@ -81,16 +82,16 @@ test('readAgent', () => {
     startedAt: '2026-01-01T00:00:00.000Z',
     activity: 'Read: /repo/a.ts',
     phase: 'Iniciando plano',
-    progress: { done: 0, total: 3 },
+    progress: { done: 0, total: 2 },
   })
   expect(readAgent(dir, () => false)).toMatchObject({ status: 'morto' })
 
   writeFileSync(join(dir, 'PLAN.md'), '# plano')
   expect(readAgent(dir, () => true)).toMatchObject({
     phase: 'Criando tasks',
-    progress: { done: 1, total: 3 },
+    progress: { done: 1, total: 2 },
   })
-  writeFileSync(join(dir, 'TASK-CHECKLIST.md'), '- [ ] task')
+  writeFileSync(join(dir, 'TASK-CHECKLIST.json'), checklistJson([{"id":"T1","title":"task","repo":"repo"}]))
   expect(readAgent(dir, () => true)).toMatchObject({
     phase: 'Finalizando',
     progress: { done: 2, total: 2 },
@@ -135,18 +136,18 @@ test('readAgent com stage de checklist', () => {
   expect(readAgent(dir, () => true)).toMatchObject({
     stage: 'run-task-checklist',
     status: 'rodando',
-    phase: 'Aguardando TASK-CHECKLIST.md',
+    phase: 'Aguardando TASK-CHECKLIST.json',
   })
 
-  writeFileSync(join(dir, 'TASK-CHECKLIST.md'), '- [x] criar rota\n- [ ] ajustar tela\n- [ ] validar fluxo\n')
+  writeFileSync(join(dir, 'TASK-CHECKLIST.json'), checklistJson([{"id":"T1","title":"criar rota","repo":"repo","state":"done"},{"id":"T2","title":"ajustar tela","repo":"repo"},{"id":"T3","title":"validar fluxo","repo":"repo"}]))
   expect(readAgent(dir, () => true)).toMatchObject({
     phase: 'ajustar tela',
     progress: { done: 1, total: 3 },
   })
 
   writeFileSync(
-    join(dir, 'TASK-CHECKLIST.md'),
-    '- [x] criar rota\n- [-] ajustar tela\n- [!] validar fluxo\n- [ ] revisar\n',
+    join(dir, 'TASK-CHECKLIST.json'),
+    checklistJson([{"id":"T1","title":"criar rota","repo":"repo","state":"done"},{"id":"T2","title":"ajustar tela","repo":"repo","state":"blocked"},{"id":"T3","title":"validar fluxo","repo":"repo","state":"failed"},{"id":"T4","title":"revisar","repo":"repo"}]),
   )
   expect(readAgent(dir, () => true)).toMatchObject({
     phase: 'revisar',
@@ -359,10 +360,10 @@ test('perfis compartilham modelos e restringem os artefatos do planejamento', ()
   expect(Object.values(FLOW_PROFILES).every((profile) => !('stages' in profile))).toBe(true)
   const planning = STAGES.find((stage) => stage.name === 'task-planning')
   expect(planning?.prompt?.({ title: 'Ajuste', description: '', status: 'planejando', flow: 'simples' })).toContain(
-    'gere somente TASK-CHECKLIST.md',
+    'gere somente TASK-CHECKLIST.json',
   )
   expect(planning?.prompt?.({ title: 'Ajuste', description: '', status: 'planejando', flow: 'medio' })).toContain(
-    'gere somente PLAN.md e TASK-CHECKLIST.md',
+    'gere somente PLAN.md e TASK-CHECKLIST.json',
   )
   for (const flow of ['simples', 'medio', 'dificil'] as const) {
     const prompt = planning?.prompt?.({ title: 'Ajuste', description: '', status: 'planejando', flow })
@@ -384,7 +385,7 @@ test('progresso de planejamento espera apenas os artefatos do fluxo', () => {
     phase: 'Criando tasks',
     progress: { done: 0, total: 1 },
   })
-  writeFileSync(join(dir, 'TASK-CHECKLIST.md'), '- [ ] implementar')
+  writeFileSync(join(dir, 'TASK-CHECKLIST.json'), checklistJson([{"id":"T1","title":"implementar","repo":"repo"}]))
   expect(readAgent(dir, () => true)).toMatchObject({
     phase: 'Finalizando',
     progress: { done: 1, total: 1 },

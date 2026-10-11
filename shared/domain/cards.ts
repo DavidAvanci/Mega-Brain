@@ -1,5 +1,6 @@
 import type { KnowledgeRef } from './knowledge'
 import type { AgentInfo, DevEnvInfo } from './agents'
+import type { TaskCounts } from './task-checklist'
 
 export const STATUSES = [
   'a-fazer',
@@ -47,12 +48,7 @@ export interface PrLinks {
 
 export type PrState = 'open' | 'merged' | 'closed'
 
-export interface CardTaskCounts {
-  total: number
-  done: number
-  skipped: number
-  failed: number
-}
+export type CardTaskCounts = TaskCounts
 
 export interface Card {
   knowledgeRefs?: KnowledgeRef[]
@@ -68,9 +64,11 @@ export interface Card {
   jiraStatus?: string
   agents?: AgentInfo[]
   smartDiffRunning?: boolean
+  smartDiffActivity?: AgentInfo
   devEnv?: DevEnvInfo
   prs?: PrLinks
   prStates?: Record<string, PrState>
-  taskCounts?: Partial<Record<'TASK-CHECKLIST.md', CardTaskCounts>>
+  taskCounts?: Partial<Record<'TASK-CHECKLIST.json', CardTaskCounts>>
+  checklistError?: string
   repoCount?: number
 }

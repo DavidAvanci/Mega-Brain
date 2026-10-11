@@ -48,3 +48,11 @@ export function assistantText(event: Record<string, unknown>): string | undefine
     .trim()
   return text || undefined
 }
+
+export function agentNarration(event: Record<string, unknown>): string | undefined {
+  if (event.type === 'assistant') return assistantText(event)
+  const item = record(event.item)
+  if (event.type === 'item.completed' && item?.type === 'agent_message' && typeof item.text === 'string')
+    return item.text.trim() || undefined
+  return undefined
+}

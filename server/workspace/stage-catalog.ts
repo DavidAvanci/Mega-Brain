@@ -2,6 +2,7 @@ import type { FlowLevel } from '../../shared/domain/cards'
 import { CARD_FILES, checklistProgress, planningProgress, type StageProgress } from './card-artifacts'
 import type { CardData } from './card-record'
 import { DEFAULT_PROMPTS } from '../../shared/domain/settings'
+import { TASK_CHECKLIST_CONTRACT } from '../../shared/domain/task-checklist'
 
 export interface Stage {
   name: string
@@ -15,12 +16,13 @@ export interface Stage {
 }
 
 const TASK_CHECKLIST_SCOPE = [
-  'Regra obrigatória para TASK-CHECKLIST.md: inclua somente ações de implementação.',
+  'Regra obrigatória para TASK-CHECKLIST.json: inclua somente ações de implementação.',
   'Não crie tasks de testes de qualquer tipo, criação ou alteração de arquivos de teste, validação, conferência, QA, smoke test, revisão visual, screenshots ou verificações manuais/automatizadas.',
   'Não inclua tarefas de teste ou verificação na checklist de implementação.',
-  'Cada item deve ser uma entrega pequena e verificável. Divida páginas extensas em estrutura, filtros, ações e integração; dê a cada parte um critério de conclusão próprio e deps explícitas. Itens substituídos devem ser riscados, com os novos itens dependentes preservando o histórico.',
-  'Declare arquivos compartilhados (helpers, exports e rotas) em files para serializar itens que os alterem. Para pré-condições use requires: e para arquivos novos use creates:, nunca trate uma criação prevista como requisito existente.',
-  'Quando uma migração ou base for obrigatória, registre em card.json requiredBases por repositório e use deps no item; não dependa só da descrição. Limites específicos podem ser declarados como timeoutMin: e attempts:.',
+  'Cada item deve ser uma entrega pequena e verificável. Divida páginas extensas em estrutura, filtros, ações e integração; dê a cada parte completionCriteria próprios e deps explícitas. Preserve itens substituídos com state=discarded e atualize deps.',
+  'Declare arquivos compartilhados (helpers, exports e rotas) em files para serializar itens que os alterem. Para pré-condições use requires e para arquivos novos use creates, nunca trate uma criação prevista como requisito existente.',
+  'Quando uma migração ou base for obrigatória, registre em card.json requiredBases por repositório e use deps no item; não dependa só da descrição. Limites específicos podem ser declarados como timeoutMinutes e maxAttempts.',
+  TASK_CHECKLIST_CONTRACT,
 ]
 
 export function planningPrompt(card: CardData, instructions = DEFAULT_PROMPTS.taskPlanning): string {
@@ -30,9 +32,9 @@ export function planningPrompt(card: CardData, instructions = DEFAULT_PROMPTS.ta
       instructions,
       `Tarefa: ${task}`,
       '',
-      'Fluxo SIMPLES (obrigatório): gere somente TASK-CHECKLIST.md.',
+      'Fluxo SIMPLES (obrigatório): gere somente TASK-CHECKLIST.json.',
       'Não crie nem altere PLAN.md.',
-      'A TASK-CHECKLIST.md deve ser autocontida e trazer em cada item todo o contexto necessário para a implementação.',
+      'A TASK-CHECKLIST.json deve ser autocontida e trazer em cada item todo o contexto necessário para a implementação.',
       ...TASK_CHECKLIST_SCOPE,
     ].join('\n')
   }
@@ -41,7 +43,7 @@ export function planningPrompt(card: CardData, instructions = DEFAULT_PROMPTS.ta
       instructions,
       `Tarefa: ${task}`,
       '',
-      'Fluxo MÉDIO (obrigatório): gere somente PLAN.md e TASK-CHECKLIST.md.',
+      'Fluxo MÉDIO (obrigatório): gere somente PLAN.md e TASK-CHECKLIST.json.',
       ...TASK_CHECKLIST_SCOPE,
     ].join('\n')
   }
@@ -62,7 +64,7 @@ export const STAGES: Stage[] = [
     status: 'desenvolvendo',
     next: 'code-review',
     script: 'scripts/commands/dev-stage.ts',
-    progress: checklistProgress('TASK-CHECKLIST.md'),
+    progress: checklistProgress(),
   },
   {
     name: 'stage-task',
@@ -80,7 +82,7 @@ export const STAGES: Stage[] = [
 
 export function stageOwnedFiles(stage: Stage): string[] {
   if (stage.name === 'task-planning') return CARD_FILES
-  if (stage.name === 'run-task-checklist') return ['TASK-CHECKLIST.md']
+  if (stage.name === 'run-task-checklist') return ['TASK-CHECKLIST.json']
   return []
 }
 

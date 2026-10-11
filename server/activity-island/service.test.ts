@@ -13,6 +13,7 @@ import { taskConversation } from '../chat/task-conversation'
 import type { IslandActivity } from '../../shared/domain/activity-island'
 import { createProductionRouteTable } from '../production-routes'
 import type { CodexProfiles } from '../../shared/domain/codex-profiles'
+import { checklistJson } from '../../test/checklist-fixtures'
 
 const directories: string[] = []
 const servers: StandaloneServer[] = []
@@ -513,6 +514,7 @@ test('uses card chat for a question from an exact owned session after the stage 
   const folder = join(config.workspaceDir, 'card-1')
   mkdirSync(folder, { recursive: true })
   writeFileSync(join(folder, 'card.json'), JSON.stringify({ title: 'Card', status: 'planejando' }))
+  writeFileSync(join(folder, 'TASK-CHECKLIST.json'), checklistJson([{ id: 'T1', title: 'Implementar card', repo: 'app' }]))
   writeFileSync(join(folder, 'agent.json'), JSON.stringify({ stage: 'task-planning', pid: process.pid }))
   writeFileSync(
     join(folder, 'task-planning.jsonl'),
