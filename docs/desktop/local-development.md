@@ -22,5 +22,9 @@ mensagem explícita em vez de abrir uma WebView incorreta.
 O modo web (`npm run dev`) continua em `5173`. A porta exclusiva `15173` evita
 que o shell desktop concorra com os ambientes Vite iniciados pelos cards.
 
+Depois de alterar o backend, execute `npm run server:build`. O Tauri observa
+`dist/server` e recompila e reinicia o app para carregar o bundle atualizado.
+Alterações no frontend continuam sendo carregadas pelo Vite.
+
 O script rejeita a execução no Linux/WSLg. Isso evita criar por engano uma janela
 WebKitGTK com identidade visual do Ubuntu em vez do aplicativo Windows/WebView2.

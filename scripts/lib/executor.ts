@@ -53,6 +53,7 @@ export interface ClaudeItemOptions {
   prompt: string
   model: string
   effort?: string
+  fastMode?: boolean
   tools: string
   timeoutMs: number
   env?: Record<string, string>
@@ -196,7 +197,7 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
     const messages = cardPath ? taskMessageContext(cardPath) : undefined
     const prompt = `${sessionName}\n\n${options.prompt}${process.env.MEGA_BRAIN_KNOWLEDGE_CONTEXT ?? ''}${messages?.prompt ?? ''}`
     const fastModeArgs =
-      process.env.MEGA_BRAIN_CLAUDE_FAST_MODE === '1' ? ['--settings', JSON.stringify({ fastMode: true })] : []
+      (options.fastMode ?? process.env.MEGA_BRAIN_CLAUDE_FAST_MODE === '1') ? ['--settings', JSON.stringify({ fastMode: true })] : []
     const claudeArgs = [
       '-p',
       ...fastModeArgs,

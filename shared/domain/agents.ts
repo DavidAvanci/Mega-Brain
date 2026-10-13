@@ -4,6 +4,8 @@ import type { DevEnvStartOptions } from './dev-environments'
 export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'morto' | 'pausado'
 
 export interface AgentInfo {
+  model?: string
+  effort?: string
   execution?: 'script' | 'agent'
   provider?: AgentProvider
   sessionId?: string

@@ -9,6 +9,8 @@ import { createWorkspaceService } from './service'
 import { reviewPrompt } from './smart-diff-review'
 import type { AgentSession } from '../../shared/domain/agents'
 import type { listBoardCards } from './board-list'
+import { completeWorkspaceConfig } from './workspace-config'
+import { writeStageSettings } from './stage-settings'
 
 afterEach(() => vi.unstubAllEnvs())
 
@@ -21,7 +23,7 @@ test('converts the old skill wording in saved Smart Diff prompts', () => {
   expect(prompt).not.toMatch(/\.claude\/skills|dir-da-skill|Esta skill/)
 })
 
-test('opening diff runs Smart Diff against the GitHub default branch, reviews the report, and saves diff.json', async () => {
+test.each(['claude', 'chatgpt'] as const)('opening diff uses the configured %s model, reviews the report, and saves diff.json', async (provider) => {
   const root = mkdtempSync(join(tmpdir(), 'mega-brain-smart-diff-'))
   const card = join(root, 'card')
   const repo = join(root, 'repo')
@@ -51,6 +53,16 @@ test('opening diff runs Smart Diff against the GitHub default branch, reviews th
       calls.agent.push([command, ...args])
       const child = new EventEmitter() as ProcessChild
       queueMicrotask(() => {
+        if (calls.agent.length === 1)
+          writeFileSync(
+            join(
+              card,
+              '.smart-diff-review',
+              createHash('sha256').update('api').digest('hex').slice(0, 16),
+              'review.md',
+            ),
+            '# Mudança no contrato\n\n```ts\nconst enabled = true\n```',
+          )
         writeFileSync(
           join(
             card,
@@ -65,7 +77,11 @@ test('opening diff runs Smart Diff against the GitHub default branch, reviews th
       return child
     },
   } as ProcessRunner
-  const service = createWorkspaceService({ workspaceDir: root, executables: {} }, runner)
+  const config = completeWorkspaceConfig({ workspaceDir: root, executables: {} })
+  config.preferences.llmProvider = provider
+  const model = provider === 'claude' ? 'sonnet' : 'gpt-6-luna'
+  writeStageSettings(root, { 'smart-diff-review': { model, effort: 'high', fastMode: false } }, provider)
+  const service = createWorkspaceService(config, runner)
   const query = new URLSearchParams({ name: 'card' })
 
   expect(await service.handle('/diff', 'POST', query, { name: 'card' })).toMatchObject({
@@ -85,6 +101,8 @@ test('opening diff runs Smart Diff against the GitHub default branch, reviews th
   expect(calls.smartDiff).toHaveLength(1)
   expect(calls.smartDiff[0]).toContain('FETCH_HEAD...HEAD')
   expect(calls.agent).toHaveLength(1)
+  expect(calls.agent[0]).toContain(model)
+  expect(calls.agent[0]).toContain(provider === 'claude' ? 'high' : 'model_reasoning_effort="high"')
   const prompt = calls.agent[0].join(' ')
   expect(prompt).toContain('O script de revisão incluído no Mega Brain valida e monta o resultado.')
   expect(prompt).toContain('smart-diff-review-cli.mjs')
@@ -92,7 +110,13 @@ test('opening diff runs Smart Diff against the GitHub default branch, reviews th
   expect(existsSync(join(card, 'diff.json'))).toBe(true)
   expect(JSON.parse(readFileSync(join(card, 'diff.json'), 'utf8'))).toMatchObject({
     schemaVersion: 1,
-    repositories: [{ name: 'api', review: { schemaVersion: 2 } }],
+    repositories: [
+      {
+        name: 'api',
+        review: { schemaVersion: 2 },
+        explanation: '# Mudança no contrato\n\n```ts\nconst enabled = true\n```',
+      },
+    ],
   })
   expect(await service.handle('/diff', 'GET', query, undefined)).toMatchObject({ status: 'ready', started: true })
   expect(await service.handle('/diff', 'POST', query, { name: 'card' })).toMatchObject({ status: 'ready' })
@@ -102,6 +126,11 @@ test('opening diff runs Smart Diff against the GitHub default branch, reviews th
   })
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(calls.smartDiff).toHaveLength(2)
+  const regenerated = await service.handle('/diff', 'GET', query, undefined)
+  expect(regenerated).toMatchObject({ status: 'ready', result: { repositories: [{ name: 'api' }] } })
+  expect(
+    (regenerated as { result: { repositories: { explanation?: string }[] } }).result.repositories[0].explanation,
+  ).toBeUndefined()
   const restarted = createWorkspaceService({ workspaceDir: root, executables: {} }, runner)
   expect(await restarted.handle('/diff', 'POST', query, { name: 'card' })).toMatchObject({ status: 'ready' })
   expect(calls.smartDiff).toHaveLength(2)
@@ -124,6 +153,39 @@ test('completed reviews are read from disk without keeping a stale document or r
   expect(await service.handle('/diff', 'POST', query, { name: 'card' })).toMatchObject({ status: 'ready' })
   expect(runner.spawn).not.toHaveBeenCalled()
   expect(runner.execFile).not.toHaveBeenCalled()
+})
+
+test('includes existing Markdown explanations when reading reviews generated before they were embedded', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mega-brain-smart-diff-explanation-'))
+  const card = join(root, 'card')
+  const work = join(card, '.smart-diff-review', createHash('sha256').update('api').digest('hex').slice(0, 16))
+  mkdirSync(work, { recursive: true })
+  writeFileSync(join(work, 'review.md'), '# Explicação existente\n\nTexto com snippets.')
+  const review = { schemaVersion: 2, sections: [], noise: [] }
+  writeFileSync(
+    join(card, 'diff.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      generatedAt: '',
+      repositories: [
+        { name: 'api', review },
+        { name: 'web', review },
+      ],
+    }),
+  )
+  const runner = { spawn: vi.fn(), execFile: vi.fn() } as unknown as ProcessRunner
+  const service = createWorkspaceService({ workspaceDir: root, executables: {} }, runner)
+  const result = await service.handle('/diff', 'GET', new URLSearchParams({ name: 'card' }), undefined)
+  expect(result).toMatchObject({
+    status: 'ready',
+    result: {
+      repositories: [
+        { name: 'api', explanation: '# Explicação existente\n\nTexto com snippets.' },
+        { name: 'web', explanation: undefined },
+      ],
+    },
+  })
+  expect(runner.spawn).not.toHaveBeenCalled()
 })
 
 test.each(['claude', 'chatgpt'] as const)(

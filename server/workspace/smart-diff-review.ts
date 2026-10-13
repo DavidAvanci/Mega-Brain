@@ -11,9 +11,15 @@ import type { ProcessOwner, ProcessRunner } from '../process'
 import type { MegaBrainConfig } from '../config'
 import { DEFAULT_PROMPTS } from '../../shared/domain/settings'
 import { cardRepos } from './worktree-inspector'
+import { readStageSettings } from './stage-settings'
+import { agentModelArgs } from '../agent-model-args'
 
 type Review = { schemaVersion: 2; sections: unknown[]; noise: unknown[] }
-type DiffDocument = { schemaVersion: 1; generatedAt: string; repositories: { name: string; review: Review }[] }
+type DiffDocument = {
+  schemaVersion: 1
+  generatedAt: string
+  repositories: { name: string; review: Review; explanation?: string }[]
+}
 type DiffState = {
   status: 'running' | 'error' | 'ready'
   result?: DiffDocument
@@ -31,11 +37,27 @@ const REVIEW_INTRO =
 function readDocument(cardPath: string): DiffDocument | undefined {
   try {
     const value = JSON.parse(readFileSync(join(cardPath, 'diff.json'), 'utf8')) as DiffDocument
-    if (value.schemaVersion === 1 && Array.isArray(value.repositories)) return value
+    if (value.schemaVersion === 1 && Array.isArray(value.repositories))
+      return {
+        ...value,
+        repositories: value.repositories.map((repo) => ({
+          ...repo,
+          explanation: repo.explanation ?? readExplanation(cardPath, repo.name),
+        })),
+      }
   } catch {
     /* No completed review yet. */
   }
   return undefined
+}
+
+function readExplanation(cardPath: string, repoName: string): string | undefined {
+  const repoKey = createHash('sha256').update(repoName).digest('hex').slice(0, 16)
+  try {
+    return readFileSync(join(cardPath, '.smart-diff-review', repoKey, 'review.md'), 'utf8').trim() || undefined
+  } catch {
+    return undefined
+  }
 }
 
 function validatedReview(path: string): Review {
@@ -156,6 +178,7 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
       const output = join(dir, 'review.json')
       const cache = join(dir, 'cache.json')
       rmSync(output, { force: true })
+      rmSync(join(dir, 'review.md'), { force: true })
       const result = await exec(
         runner,
         process.execPath,
@@ -178,9 +201,11 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
         reviewScript,
       )
       const command = codex ? codexBin(config.executables.codex) : claudeBin(config.executables.claude)
+      const settings = readStageSettings(config.workspaceDir, config.preferences.llmProvider)['smart-diff-review']
+      const modelArgs = agentModelArgs(config.preferences.llmProvider, settings)
       const args = codex
-        ? ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', prompt]
-        : ['-p', prompt, '--dangerously-skip-permissions', '--output-format', 'stream-json', '--verbose']
+        ? ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', ...modelArgs, prompt]
+        : ['-p', prompt, ...modelArgs, '--dangerously-skip-permissions', '--output-format', 'stream-json', '--verbose']
       const out = openSync(join(work, 'agent.log'), 'w')
       const err = openSync(join(work, 'agent-error.log'), 'w')
       try {
@@ -203,7 +228,11 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
     const document: DiffDocument = {
       schemaVersion: 1,
       generatedAt: new Date().toISOString(),
-      repositories: jobs.map((job) => ({ name: job.name, review: validatedReview(job.output) })),
+      repositories: jobs.map((job) => ({
+        name: job.name,
+        review: validatedReview(job.output),
+        explanation: readExplanation(cardPath, job.name),
+      })),
     }
     const temporary = join(cardPath, 'diff.json.tmp')
     writeFileSync(temporary, `${JSON.stringify(document, null, 2)}\n`)

@@ -1,16 +1,27 @@
 import { readStageAgentRecord, validCheckpoint, writeStageAgentRecord } from './agent-checkpoint'
 import { readCard } from './card-record'
-import { rmSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { existsSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { basename, dirname, join } from 'node:path'
 import type { MegaBrainConfig } from '../config'
 import { type ProcessChild, type ProcessOwner, type ProcessRunner } from '../process'
 import type { CardData } from './card-record'
-import { AGENT_FILE, runStageAgent } from './stage-agent'
+import { AGENT_FILE, runStageAgent, settingsForStage } from './stage-agent'
 import { readAgent } from './stage-agent-status'
-import { stageOwnedFiles, STAGES, type Stage } from './stage-catalog'
+import { stageFor, stageOwnedFiles, STAGES, type Stage } from './stage-catalog'
 import { discardStageSnapshot, restoreStageSnapshot } from './stage-snapshot'
+import { createPlanningSelectionService, type PlanningSelector } from '../planning-selection/service'
+import {
+  JEV_PLANNING_MODEL,
+  PLANNING_SELECTION_FILE,
+  type PlanningSelection,
+} from '../../shared/domain/planning-selection'
+import type { CodexModelCatalog } from '../../shared/domain/codex-models'
+import { readStageSettings } from './stage-settings'
+import { codexProfileEnvironment } from '../codex-profiles/service'
 
-type StageControllerConfig = Pick<MegaBrainConfig, 'executables' | 'worktreesDir' | 'preferences'>
+type StageControllerConfig = Pick<MegaBrainConfig, 'executables' | 'worktreesDir' | 'preferences'> &
+  Partial<Pick<MegaBrainConfig, 'jev'>>
 
 export interface StageController {
   start(path: string, stage: Stage, card: CardData, model?: string): void
@@ -25,9 +36,18 @@ export function createStageController(
   config: StageControllerConfig,
   runner: ProcessRunner,
   owner?: ProcessOwner,
+  codexModels?: () => Promise<CodexModelCatalog>,
+  selectPlanning: PlanningSelector = createPlanningSelectionService(
+    {
+      ...config,
+      jev: config.jev ?? { enabled: false },
+    },
+    codexModels,
+  ),
 ): StageController {
   const pausing = new Set<string>()
   const runningStages = new Map<string, { stage: string; child: ProcessChild }>()
+  const selecting = new Map<string, { id: string; controller: AbortController }>()
 
   const start = (
     path: string,
@@ -35,14 +55,84 @@ export function createStageController(
     card: CardData,
     model?: string,
     resume?: { record: import('./agent-checkpoint').StageAgentRecord; sessionId?: string },
+    selection?: PlanningSelection,
   ) => {
     // Duas execuções no mesmo card disputam as worktrees dos itens e uma apaga a da outra
     if (
       pausing.has(path) ||
       runningStages.has(path) ||
+      selecting.has(path) ||
       ['rodando', 'aguardando', ...(resume ? [] : ['pausado'])].includes(readAgent(path)?.status ?? '')
     )
       return
+    if (
+      !resume &&
+      !selection &&
+      model === undefined &&
+      stage.name === 'task-planning' &&
+      settingsForStage(path, stage, config.preferences.llmProvider).model === JEV_PLANNING_MODEL
+    ) {
+      const saved = settingsForStage(path, stage, config.preferences.llmProvider)
+      const provider = config.preferences.llmProvider
+      const request = { id: randomUUID(), controller: new AbortController() }
+      selecting.set(path, request)
+      writeStageAgentRecord(path, {
+        stage: stage.name,
+        startedAt: new Date().toISOString(),
+        pid: process.pid,
+        provider: provider === 'chatgpt' ? 'codex' : 'claude',
+        selectingWithJev: request.id,
+      })
+      void selectPlanning(card, saved, request.controller.signal)
+        .then((result) => {
+          if (
+            request.controller.signal.aborted ||
+            selecting.get(path) !== request ||
+            !existsSync(join(path, 'card.json')) ||
+            readStageAgentRecord(path)?.selectingWithJev !== request.id
+          )
+            return
+          selecting.delete(path)
+          rmSync(join(path, AGENT_FILE), { force: true })
+          const current = readCard(path, basename(path))
+          const currentStage = stageFor(current.status)
+          if (!currentStage) return
+          const currentSettings = readStageSettings(dirname(path), config.preferences.llmProvider)[stage.name]
+          if (
+            current.status !== card.status ||
+            current.title !== card.title ||
+            current.description !== card.description ||
+            provider !== config.preferences.llmProvider ||
+            JSON.stringify(saved) !== JSON.stringify(currentSettings) ||
+            (result.source === 'jev' && !config.jev?.enabled) ||
+            (result.profileId &&
+              result.profileId !== codexProfileEnvironment(config.preferences.settingsFile).MEGA_BRAIN_CODEX_PROFILE_ID)
+          ) {
+            start(path, currentStage, current)
+            return
+          }
+          writeFileSync(join(path, PLANNING_SELECTION_FILE), `${JSON.stringify(result, null, 2)}\n`)
+          start(path, stage, current, undefined, undefined, result)
+        })
+        .catch(() => {
+          // Cancellation, deletion and an unavailable folder must never start a late agent.
+          if (request.controller.signal.aborted || !existsSync(path)) return
+          try {
+            if (readStageAgentRecord(path)?.selectingWithJev === request.id)
+              writeStageAgentRecord(path, {
+                stage: stage.name,
+                pid: null,
+                selectionError: 'Não foi possível preparar o planejamento.',
+              })
+          } catch {
+            /* The card folder may have been removed or become unwritable. */
+          }
+        })
+        .finally(() => {
+          if (selecting.get(path) === request) selecting.delete(path)
+        })
+      return
+    }
     runStageAgent(
       path,
       stage,
@@ -67,6 +157,7 @@ export function createStageController(
       undefined,
       config.preferences.settingsFile,
       resume,
+      selection,
     )
   }
 
@@ -119,7 +210,12 @@ export function createStageController(
       throw new Error('Não há uma execução pausada para retomar')
     if (typeof record.pid === 'number') {
       let alive = false
-      try { process.kill(record.pid, 0); alive = true } catch { /* The previous process has exited. */ }
+      try {
+        process.kill(record.pid, 0)
+        alive = true
+      } catch {
+        /* The previous process has exited. */
+      }
       if (alive) throw new Error('A execução anterior ainda está encerrando; aguarde antes de retomar')
     }
     if (card.status !== stage.status)
@@ -135,6 +231,14 @@ export function createStageController(
     const stageName = String(requestedStage ?? '')
     const stage = STAGES.find((candidate) => candidate.name === stageName)
     if (!stage) throw new Error('Etapa automática inválida')
+    const selection = selecting.get(cardPath)
+    if (selection && stage.name === 'task-planning') {
+      selection.controller.abort()
+      selecting.delete(cardPath)
+      if (readStageAgentRecord(cardPath)?.selectingWithJev === selection.id)
+        rmSync(join(cardPath, AGENT_FILE), { force: true })
+      return
+    }
     const agent = readAgent(cardPath)
     if (agent?.stage !== stage.name || !['rodando', 'aguardando', 'pausado'].includes(agent.status)) {
       throw new Error('Essa execução já terminou ou não está mais ativa')
@@ -164,7 +268,12 @@ export function createStageController(
     if (agent?.stage !== stage.name) throw new Error('Essa não é a última etapa registrada para o card')
     if (['rodando', 'aguardando', 'pausado'].includes(agent.status))
       throw new Error('Interrompa o agente antes de limpar a etapa')
-    for (const file of [...stageOwnedFiles(stage), `${stage.name}.jsonl`, `${stage.name}.log`]) {
+    for (const file of [
+      ...stageOwnedFiles(stage),
+      `${stage.name}.jsonl`,
+      `${stage.name}.log`,
+      ...(stage.name === 'task-planning' ? [PLANNING_SELECTION_FILE] : []),
+    ]) {
       rmSync(join(cardPath, file), { force: true, recursive: true })
     }
     discardStageSnapshot(cardPath, stage.name)

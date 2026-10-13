@@ -26,6 +26,7 @@ import {
   openPullRequests,
 } from './card-actions'
 import { updateCard } from './card-update'
+import { readStageAgentRecord } from './agent-checkpoint'
 import { availableWorkspaceEditors, readWorkspaceSettings, writeWorkspaceSettings } from './workspace-settings'
 
 export { readCard, readPrs } from './card-record'
@@ -62,7 +63,7 @@ export function createWorkspaceService(
   codexModels?: () => Promise<CodexModelCatalog>,
 ): WorkspaceService {
   const config = completeWorkspaceConfig(inputConfig)
-  const stages = createStageController(config, runner, owner)
+  const stages = createStageController(config, runner, owner, codexModels)
   const diffReview = createSmartDiffReview(config, runner, owner)
   return {
     async handle(path, method, query, body) {
@@ -200,6 +201,7 @@ export function createWorkspaceService(
         return { ok: true }
       }
       if (path === '/delete') {
+        if (readStageAgentRecord(cardPath)?.selectingWithJev) await stages.stop(cardPath, 'task-planning')
         deleteCard(cardPath, resolve(config.worktreesDir), config.executables.git, runner)
         return { ok: true }
       }

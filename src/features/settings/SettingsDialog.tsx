@@ -4,9 +4,7 @@ import { DirectorySettings } from './DirectorySettings'
 const ActivityIslandSettings = lazy(() =>
   import('./ActivityIslandSettings').then((module) => ({ default: module.ActivityIslandSettings })),
 )
-const ExecutionSettings = lazy(() =>
-  import('./ExecutionSettings').then((module) => ({ default: module.ExecutionSettings })),
-)
+import { ExecutionSettings } from './ExecutionSettings'
 const IdeSettings = lazy(() => import('./IdeSettings').then((module) => ({ default: module.IdeSettings })))
 const JiraSettings = lazy(() => import('./JiraSettings').then((module) => ({ default: module.JiraSettings })))
 const TerminalSettings = lazy(() =>
@@ -20,7 +18,6 @@ import {
   CpuIcon,
   CommandLineIcon,
   Link01Icon,
-  FileEditIcon,
   Layers01Icon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
@@ -49,7 +46,7 @@ import { useSettingsDialog } from './useSettingsDialog'
 import { FALLBACK_CODEX_CATALOG } from '../../../shared/domain/codex-models'
 import { SettingsSearchInput, SettingsSearchResults } from './SettingsSearch'
 import { searchSettings, SETTINGS_TAB_LABELS, type SettingsSearchEntry, type SettingsTab } from './settings-search'
-import { PROMPT_FIELDS, PromptsSettings } from './PromptsSettings'
+import { PROMPT_FIELDS } from './PromptsSettings'
 
 type ThemeChoice = {
   value: string
@@ -267,7 +264,6 @@ const SETTINGS_TABS = [
   { value: 'ides', label: SETTINGS_TAB_LABELS.ides, icon: CodeIcon },
   { value: 'terminal', label: SETTINGS_TAB_LABELS.terminal, icon: CommandLineIcon },
   { value: 'integrations', label: SETTINGS_TAB_LABELS.integrations, icon: Link01Icon },
-  { value: 'prompts', label: SETTINGS_TAB_LABELS.prompts, icon: FileEditIcon },
   { value: 'island', label: SETTINGS_TAB_LABELS.island, icon: Layers01Icon },
 ] as const
 
@@ -279,7 +275,11 @@ export function SettingsDialog({
   initialTab?: SettingsTab | 'tools'
 }) {
   const [tab, setTab] = useState<string>(
-    initialTab === 'tools' ? 'models' : initialTab === 'island' && !isMacOSDesktop() ? 'general' : initialTab,
+    initialTab === 'tools' || initialTab === 'prompts'
+      ? 'models'
+      : initialTab === 'island' && !isMacOSDesktop()
+        ? 'general'
+        : initialTab,
   )
   const islandSettings = useRef<ActivityIslandSettingsHandle>(null)
   const dialog = useRef<HTMLDivElement>(null)
@@ -326,8 +326,10 @@ export function SettingsDialog({
   }
   const selectResult = (entry: SettingsSearchEntry) => {
     if (busy) return
-    if (entry.tab === 'prompts') {
-      const field = PROMPT_FIELDS.find((field) => `prompt-${field.key}` === entry.target)
+    if (entry.tab === 'models') {
+      const field = PROMPT_FIELDS.find(
+        (field) => `prompt-${field.key}` === entry.target || field.stage === entry.target,
+      )
       if (field) setPromptTab(field.key)
     }
     setTab(entry.tab)
@@ -434,7 +436,10 @@ export function SettingsDialog({
               </TabsList>
             </aside>
 
-            <TabsContent value="general" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
+            <TabsContent
+              value="general"
+              className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5"
+            >
               <div className="grid min-w-0 gap-5">
                 <section className="grid gap-2">
                   <div>
@@ -498,7 +503,7 @@ export function SettingsDialog({
                                 key={option.value}
                                 type="button"
                                 aria-pressed={selected}
-                                  className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'border-primary bg-primary/8 ring-1 ring-primary/25' : 'border-border hover:bg-muted/60'}`}
+                                className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 ${selected ? 'border-primary bg-primary/8 ring-1 ring-primary/25' : 'border-border hover:bg-muted/60'}`}
                                 onClick={() => {
                                   if (category.key === 'palette') setPalette(option.value as ThemeSettings['palette'])
                                   else if (category.key === 'typography') {
@@ -619,7 +624,10 @@ export function SettingsDialog({
                   </div>
                   <div className="divide-y overflow-hidden rounded-lg border">
                     {FLOW_SUMMARIES.map((profile) => (
-                        <div key={profile.title} className="grid gap-0.5 px-3 py-2.5 sm:grid-cols-[70px_minmax(0,1fr)] sm:gap-3">
+                      <div
+                        key={profile.title}
+                        className="grid gap-0.5 px-3 py-2.5 sm:grid-cols-[70px_minmax(0,1fr)] sm:gap-3"
+                      >
                         <div className="text-xs font-semibold">{profile.title}</div>
                         <div>
                           <p className="text-xs text-foreground/85">{profile.path}</p>
@@ -632,7 +640,10 @@ export function SettingsDialog({
               </div>
             </TabsContent>
 
-            <TabsContent value="jira" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
+            <TabsContent
+              value="jira"
+              className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5"
+            >
               {settings ? (
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <JiraSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
@@ -641,13 +652,22 @@ export function SettingsDialog({
                 <SettingsSectionLoading />
               )}
             </TabsContent>
-            <TabsContent value="models" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
+            <TabsContent
+              value="models"
+              className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5"
+            >
               {settings ? (
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <ExecutionSettings
                     settings={settings}
                     onGeneralChange={updateGeneral}
                     onStageChange={updateStage}
+                    onPromptsChange={updatePrompts}
+                    promptTab={promptTab}
+                    onPromptTabChange={(next) => {
+                      setPromptTab(next)
+                      setSearchTarget(null)
+                    }}
                     disabled={busy}
                     catalog={codexCatalog}
                     loading={codexModelsLoading}
@@ -658,7 +678,10 @@ export function SettingsDialog({
                 <SettingsSectionLoading />
               )}
             </TabsContent>
-            <TabsContent value="ides" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
+            <TabsContent
+              value="ides"
+              className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5"
+            >
               {settings && editorsLoaded ? (
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <IdeSettings
@@ -672,7 +695,10 @@ export function SettingsDialog({
                 <SettingsSectionLoading />
               )}
             </TabsContent>
-            <TabsContent value="terminal" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
+            <TabsContent
+              value="terminal"
+              className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5"
+            >
               {settings ? (
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <TerminalSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
@@ -681,7 +707,10 @@ export function SettingsDialog({
                 <SettingsSectionLoading />
               )}
             </TabsContent>
-            <TabsContent value="integrations" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
+            <TabsContent
+              value="integrations"
+              className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5"
+            >
               {settings ? (
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <TriageSettings value={settings.general} onChange={updateGeneral} disabled={busy} />
@@ -691,24 +720,11 @@ export function SettingsDialog({
               )}
             </TabsContent>
 
-            <TabsContent value="prompts" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
-              {settings ? (
-                <PromptsSettings
-                  value={settings.prompts}
-                  onChange={updatePrompts}
-                  tab={promptTab}
-                  onTabChange={(next) => {
-                    setPromptTab(next)
-                    setSearchTarget(null)
-                  }}
-                  disabled={busy}
-                />
-              ) : (
-                <SettingsSectionLoading />
-              )}
-            </TabsContent>
             {isMacOSDesktop() && (
-              <TabsContent value="island" className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5">
+              <TabsContent
+                value="island"
+                className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-4 [overflow-wrap:anywhere] sm:p-5"
+              >
                 <Suspense fallback={<SettingsSectionLoading />}>
                   <ActivityIslandSettings ref={islandSettings} onLoadedChange={setIslandLoaded} />
                 </Suspense>

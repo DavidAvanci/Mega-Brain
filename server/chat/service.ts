@@ -32,6 +32,9 @@ import {
   startAgentUsage,
 } from '../workspace/agent-usage'
 import { redactDevEnvOutput } from '../modules/dev-environments/dev-env-logs'
+import type { ModelStageSettings } from '../../shared/domain/settings'
+import { readStageSettings } from '../workspace/stage-settings'
+import { agentModelArgs } from '../agent-model-args'
 
 const DEFAULT_PROJECTS_ROOT = loadMegaBrainConfig().directories.claudeProjects
 const TRANSCRIPT_TAIL_BYTES = 512 * 1024
@@ -237,6 +240,7 @@ function streamChat(
   environment?: NodeJS.ProcessEnv,
   terminal = false,
   model = 'default',
+  stageSettings?: ModelStageSettings,
 ): void {
   const usageId = startAgentUsage(path, new Date(), {
     label: terminal ? 'dev-environment' : 'chat',
@@ -245,7 +249,10 @@ function streamChat(
   let costUsd: number | undefined
   const child = runner.spawn(
     claudeBin(executable),
-    chatArgs(text, terminal ? undefined : resolveSession(path, projectsRoot), model),
+    [
+      ...chatArgs(text, terminal ? undefined : resolveSession(path, projectsRoot), stageSettings ? 'default' : model),
+      ...(stageSettings ? agentModelArgs('claude', { ...stageSettings, model }) : []),
+    ],
     {
       cwd: path,
       detached: terminal && process.platform !== 'win32',
@@ -304,13 +311,18 @@ function streamCodexChat(
   environment?: NodeJS.ProcessEnv,
   terminal = false,
   model = 'default',
+  stageSettings?: ModelStageSettings,
 ): void {
   const usageId = startAgentUsage(path, new Date(), { label: terminal ? 'dev-environment' : 'chat', provider: 'codex' })
   const args = [
     'exec',
     '--json',
     '--dangerously-bypass-approvals-and-sandbox',
-    ...(model === 'default' ? [] : ['--model', model]),
+    ...(stageSettings
+      ? agentModelArgs('chatgpt', { ...stageSettings, model })
+      : model === 'default'
+        ? []
+        : ['--model', model]),
     text,
   ]
   const child = runner.spawn(codexBin(executable), args, {
@@ -406,6 +418,11 @@ export function createChatService(
   let closing = false
   const terminal = options.purpose === 'environment'
   const conversationPath = (path: string) => (terminal ? join(path, '.dev-env', 'agent') : path)
+  const modelSelection = (path: string) => {
+    const provider = config.preferences?.llmProvider ?? 'claude'
+    const model = terminal ? readStageSettings(config.workspaceDir, provider)['test-environment'].model : 'default'
+    return readChatModelSelection(conversationPath(path), provider, model)
+  }
   const folderPath = (name: unknown): string => {
     const root = resolve(config.workspaceDir)
     assertTestWorkspace(root)
@@ -414,7 +431,7 @@ export function createChatService(
   return {
     async history(name) {
       const path = folderPath(name)
-      const selection = readChatModelSelection(conversationPath(path), config.preferences?.llmProvider)
+      const selection = modelSelection(path)
       if (terminal)
         return {
           sessionId: null,
@@ -433,8 +450,7 @@ export function createChatService(
               .flatMap((line) => executionEntries(line).map((entry) => ({ ...entry, source: stage.name })))
           : []
       })
-      const legacy =
-        selection.provider === 'chatgpt' ? { entries: [], settings: null } : transcript(path, projectsRoot)
+      const legacy = selection.provider === 'chatgpt' ? { entries: [], settings: null } : transcript(path, projectsRoot)
       return {
         sessionId: resolveSession(path, projectsRoot) ?? null,
         settings: legacy.settings,
@@ -447,9 +463,7 @@ export function createChatService(
     send(name, text, emit, refs, requestedSelection) {
       if (closing) throw new Error('O serviço de chat está encerrando.')
       const path = folderPath(name)
-      const selection =
-        parseChatModelSelection(requestedSelection) ??
-        readChatModelSelection(conversationPath(path), config.preferences?.llmProvider)
+      const selection = parseChatModelSelection(requestedSelection) ?? modelSelection(path)
       const message = String(text ?? '').trim()
       if (!message) throw new Error('Mensagem vazia')
       if (message.length > 12_000) throw new Error('A mensagem deve ter no máximo 12000 caracteres')
@@ -512,6 +526,9 @@ export function createChatService(
       const source = profileEnvironment.MEGA_BRAIN_CODEX_PROFILE_NAME
         ? `Codex · ${profileEnvironment.MEGA_BRAIN_CODEX_PROFILE_NAME}`
         : undefined
+      const stageSettings = terminal
+        ? readStageSettings(config.workspaceDir, selection.provider)['test-environment']
+        : undefined
       appendConversation(conversation, {
         role: 'user',
         text: terminal ? redactDevEnvOutput(message) : message,
@@ -553,6 +570,7 @@ export function createChatService(
           environment,
           terminal,
           selection.model,
+          stageSettings,
         )
       else
         streamChat(
@@ -568,6 +586,7 @@ export function createChatService(
           environment,
           terminal,
           selection.model,
+          stageSettings,
         )
       options.busyPaths?.add(path)
       running.get(path)?.once('close', () => options.busyPaths?.delete(path))

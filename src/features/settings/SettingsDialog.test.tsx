@@ -4,12 +4,18 @@ import type { ActivityIslandSettingsHandle } from './ActivityIslandSettings'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { SettingsDialog } from './SettingsDialog'
-import { FALLBACK_CODEX_CATALOG } from '../../../shared/domain/codex-models'
+import { DEFAULT_PROMPTS } from '../../../shared/domain/settings'
+import { defaultStageSettings, FALLBACK_CODEX_CATALOG } from '../../../shared/domain/codex-models'
 import { searchSettings } from './settings-search'
 const state = vi.hoisted(() => ({
   mac: true,
   codex: false,
+  legacySettings: false,
+  jev: false,
+  planningJev: false,
+  planningModel: '',
   updateStage: vi.fn(),
+  updatePrompts: vi.fn(),
   save: vi.fn(),
   close: vi.fn(),
   saveIsland: vi.fn(),
@@ -38,6 +44,17 @@ vi.mock('./ActivityIslandSettings', () => ({
 vi.mock('./CodexProfilesSettings', () => ({
   CodexProfilesSettings: () => <section aria-label="Perfis do Codex">Perfis do Codex</section>,
 }))
+vi.mock('./PromptMarkdownEditor', () => ({
+  PromptMarkdownEditor: ({
+    title,
+    value,
+    onChange,
+  }: {
+    title: string
+    value: string
+    onChange: (value: string) => void
+  }) => <textarea aria-label={`Prompt de ${title}`} value={value} onChange={(event) => onChange(event.target.value)} />,
+}))
 vi.mock('@/theme', () => ({
   useThemeSettings: () => ({ palette: 'classic', typography: 'classic', shape: 'classic', preset: null }),
   useTheme: () => 'light',
@@ -62,22 +79,31 @@ vi.mock('./useSettingsDialog', () => ({
         jiraEmail: '',
         jiraApiToken: '',
         jiraConfigured: false,
-        jevEnabled: false,
+        jevEnabled: state.jev,
         jevBaseUrl: '',
         jevCredentialSource: 'none',
       },
+      prompts: state.legacySettings
+        ? { taskPlanning: DEFAULT_PROMPTS.taskPlanning, taskItem: DEFAULT_PROMPTS.taskItem }
+        : DEFAULT_PROMPTS,
       stages: {
-        'task-planning': { model: state.codex ? 'gpt-6.1-sol' : 'fable', effort: 'low' },
+        ...(state.legacySettings ? {} : defaultStageSettings(state.codex ? 'chatgpt' : 'claude')),
+        'task-planning': {
+          model: state.planningJev ? 'jev' : state.planningModel || (state.codex ? 'gpt-6.1-sol' : 'fable'),
+          effort: 'low',
+        },
         'run-task-checklist': { model: state.codex ? 'gpt-6.1-sol' : 'fable', effort: 'low' },
       },
     },
     editorDiscovery: { editors: [] },
+    editorsLoaded: true,
     autostartEnabled: false,
     autostartLoaded: true,
     error: null,
     saving: false,
     setAutostartEnabled: () => {},
     updateStage: state.updateStage,
+    updatePrompts: state.updatePrompts,
     codexCatalog: { ...FALLBACK_CODEX_CATALOG, source: 'codex', profileName: 'Pessoal' },
     codexModelsLoading: false,
     refreshModels: () => {},
@@ -88,10 +114,16 @@ vi.mock('./useSettingsDialog', () => ({
 }))
 let host: HTMLDivElement
 let root: Root
-beforeEach(() => {
+beforeEach(async () => {
+  await Promise.all([import('./JiraSettings'), import('./IdeSettings'), import('./TerminalSettings')])
   state.mac = true
   state.codex = false
+  state.legacySettings = false
+  state.jev = false
+  state.planningJev = false
+  state.planningModel = ''
   state.updateStage.mockClear()
+  state.updatePrompts.mockClear()
   state.save.mockReset().mockResolvedValue(undefined)
   state.close.mockReset()
   state.saveIsland.mockReset().mockResolvedValue(true)
@@ -133,12 +165,86 @@ test('Codex profiles are hidden when Claude is the selected provider', async () 
   expect(document.querySelector('section[aria-label="Perfis do Codex"]')).toBeNull()
 })
 
+test.each([false, true])('legacy settings open every agent without missing models (Codex=%s)', async (codex) => {
+  state.codex = codex
+  state.legacySettings = true
+  await act(async () => root.render(<SettingsDialog initialTab="models" onClose={() => {}} />))
+  for (const [label, title, model] of [
+    ['Planejamento', 'Planejamento', codex ? 'GPT-6.1 Sol' : 'Fable'],
+    ['Tarefas', 'Execução de tarefas', codex ? 'GPT-6.1 Sol' : 'Fable'],
+    ['Verificador', 'Verificador', codex ? 'GPT-6.1 Sol' : 'Fable'],
+    ['Ambiente', 'Ambiente de testes', codex ? 'Automático' : 'Haiku'],
+    ['Smart Diff', 'Revisão Smart Diff', 'Automático'],
+  ]) {
+    const tab = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Prompts de execução"] [role=tab]')].find(
+      (button) => button.textContent === label,
+    )!
+    await act(async () => tab.click())
+    expect(document.querySelector(`[aria-label="Modelo para ${title}"]`)?.textContent).toContain(model)
+    expect(document.querySelector<HTMLTextAreaElement>(`[aria-label="Prompt de ${title}"]`)?.value).toBeTruthy()
+  }
+})
+
 function options(label: string) {
   const trigger = document.querySelector(`[aria-label="${label}"]`)!
   const list = document.getElementById(trigger.getAttribute('aria-controls')!)!
   expect(list, label).toBeTruthy()
   return [...list.querySelectorAll<HTMLElement>('[role=option]')]
 }
+
+test.each([false, true])(
+  'Jev checkbox hides manual controls and restores the model when unchecked (Codex=%s)',
+  async (codex) => {
+    state.codex = codex
+    state.planningModel = codex ? 'gpt-6-luna' : 'sonnet'
+    await act(async () => root.render(<SettingsDialog initialTab="models" onClose={() => {}} />))
+    expect(document.querySelector('[data-settings-section="task-planning"] [role=checkbox]')).toBeNull()
+    state.jev = true
+    await act(async () => root.render(<SettingsDialog initialTab="models" onClose={() => {}} />))
+    const jev = document.querySelector<HTMLElement>('[data-settings-section="task-planning"] [role=checkbox]')!
+    expect(jev).toBeTruthy()
+    expect(jev.closest('label')?.textContent).toContain('Usar o Jev')
+    await act(async () => jev.click())
+    expect(state.updateStage).toHaveBeenCalledWith('task-planning', 'model', 'jev')
+    state.planningJev = true
+    await act(async () => root.render(<SettingsDialog initialTab="models" onClose={() => {}} />))
+    expect(jev.getAttribute('aria-checked')).toBe('true')
+    expect(document.querySelector('[aria-label="Modelo para Planejamento"]')).toBeNull()
+    expect(document.querySelector('[aria-label="Effort para Planejamento"]')).toBeNull()
+    await act(async () => jev.click())
+    expect(state.updateStage).toHaveBeenLastCalledWith('task-planning', 'model', state.planningModel)
+    state.planningJev = false
+    await act(async () => root.render(<SettingsDialog initialTab="models" onClose={() => {}} />))
+    expect(document.querySelector('[aria-label="Modelo para Planejamento"]')).toBeTruthy()
+    expect(document.querySelector('[aria-label="Effort para Planejamento"] [aria-checked=true]')?.textContent).toBe(
+      'Low',
+    )
+    const tasks = [
+      ...document.querySelectorAll<HTMLButtonElement>('[aria-label="Prompts de execução"] [role=tab]'),
+    ].find((button) => button.textContent === 'Tarefas')!
+    await act(async () => tasks.click())
+    expect(document.querySelector('[data-settings-section="run-task-checklist"] [role=checkbox]')).toBeNull()
+  },
+)
+
+test('saved Jev hides controls on reopen and exposes fallback controls when the integration is disabled', async () => {
+  state.jev = true
+  state.planningJev = true
+  await act(async () => root.render(<SettingsDialog initialTab="models" onClose={() => {}} />))
+  const jev = document.querySelector<HTMLElement>('[data-settings-section="task-planning"] [role=checkbox]')!
+  expect(jev.getAttribute('aria-checked')).toBe('true')
+  expect(document.querySelector('[aria-label="Modelo para Planejamento"]')).toBeNull()
+  expect(document.querySelector('[aria-label="Effort para Planejamento"]')).toBeNull()
+  expect(document.body.textContent).toContain('duas perguntas independentes')
+  state.jev = false
+  await act(async () => root.render(<SettingsDialog initialTab="models" onClose={() => {}} />))
+  expect(document.body.textContent).toContain('O Jev está desabilitado')
+  expect(document.querySelector('[data-settings-section="task-planning"] [role=checkbox]')).toBeNull()
+  expect(document.querySelector('[aria-label="Modelo para Planejamento"]')?.textContent).toContain('Fable')
+  expect(document.querySelector('[aria-label="Effort para Planejamento"]')).toBeTruthy()
+  await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Modelo para Planejamento"]')!.click())
+  expect(options('Modelo para Planejamento').some((option) => option.textContent?.includes('Jev'))).toBe(false)
+})
 test('Codex selects current models and limits reasoning to the supported options', async () => {
   state.codex = true
   await act(async () => root.render(<SettingsDialog initialTab="models" onClose={() => {}} />))
@@ -165,23 +271,22 @@ test('Codex selects current models and limits reasoning to the supported options
   expect(ultra.title).toContain('delegação automática')
   await act(async () => ultra.click())
   expect(state.updateStage).toHaveBeenCalledWith('task-planning', 'effort', 'ultra')
-  const testEfforts = document.querySelector('[aria-label="Effort para Testes automáticos"]')!
+  const testEfforts = document.querySelector('[aria-label="Effort para Ambiente de testes"]')!
   const efforts = testEfforts.textContent
   expect(efforts).toContain('Max')
-  expect(efforts).not.toContain('Ultra')
+  expect(efforts).toContain('Ultra')
 })
 
-test('categories expose Jira, models, IDEs and terminal as separate panels', async () => {
+test('categories merge prompts and models while keeping Jira, IDEs and terminal separate', async () => {
   await act(async () => root.render(<SettingsDialog onClose={() => {}} />))
   const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role=tab]')]
   expect(tabs.map((tab) => tab.textContent)).toEqual([
     'Geral',
     'Jira',
-    'Modelos de execução',
+    'Prompts e modelos',
     'IDEs',
     'Shell e terminal',
     'Integrações',
-    'Prompts',
     'Ilha Dinâmica',
   ])
   expect(document.querySelector('section[aria-label="Diretórios"]')).toBeTruthy()
@@ -250,6 +355,7 @@ test('Claude exposes the original effort scale beside a model Select with preset
   expect(models.getAttribute('role')).toBe('combobox')
   await act(async () => models.click())
   expect(options('Modelo para Planejamento').map((option) => option.textContent)).toEqual([
+    'Automático',
     'Fable',
     'Opus',
     'Sonnet',
@@ -275,6 +381,48 @@ async function search(query: string) {
   })
   return input
 }
+
+test('the verifier pairs its prompt and model and old prompt entry points open the unified panel', async () => {
+  await act(async () => root.render(<SettingsDialog initialTab="prompts" onClose={() => {}} />))
+  expect(document.querySelector('[role=tab][aria-selected=true]')?.textContent).toBe('Prompts e modelos')
+  const verifier = document.querySelector<HTMLButtonElement>(
+    '[aria-label="Prompts de execução"] [title="Verificador"]',
+  )!
+  await act(async () => verifier.click())
+  const panel = document.querySelector('[data-settings-section="prompt-taskVerification"]')!
+  expect(panel.querySelector('[aria-label="Modelo para Verificador"]')).toBeTruthy()
+  const effort = [
+    ...panel.querySelectorAll<HTMLButtonElement>('[aria-label="Effort para Verificador"] [role=radio]'),
+  ].find((button) => button.textContent === 'High')!
+  await act(async () => effort.click())
+  expect(state.updateStage).toHaveBeenCalledWith('task-verification', 'effort', 'high')
+  const prompt = panel.querySelector<HTMLTextAreaElement>('textarea')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+      prompt,
+      'Verificação personalizada',
+    )
+    prompt.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(state.updatePrompts).toHaveBeenCalledWith({
+    ...DEFAULT_PROMPTS,
+    taskVerification: 'Verificação personalizada',
+  })
+})
+
+test('searching an executor model opens its corresponding prompt and searching verifier opens its editor', async () => {
+  await act(async () => root.render(<SettingsDialog onClose={() => {}} />))
+  const input = await search('modelo desenvolvimento')
+  await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+  expect(document.querySelector('[aria-label="Prompts de execução"] [aria-selected=true]')?.textContent).toBe('Tarefas')
+  expect(document.activeElement?.getAttribute('data-settings-section')).toBe('run-task-checklist')
+  await search('verificador')
+  await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+  expect(document.querySelector('[aria-label="Prompts de execução"] [aria-selected=true]')?.textContent).toBe(
+    'Verificador',
+  )
+  expect(document.activeElement?.getAttribute('data-settings-section')).toBe('prompt-taskVerification')
+})
 
 test('settings search matches accents, words and platform availability and opens the matching section', async () => {
   expect(searchSettings('  TOKEN jira ', { desktop: false, macOS: false }).map((entry) => entry.target)).toEqual([
@@ -302,7 +450,7 @@ test('search preserves the current panel, clears with Escape and selects the mat
   expect(document.querySelector('section[aria-label="Shell e terminal"]')).toBe(panel)
   await search('revisao smart diff')
   await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
-  expect(document.querySelector('[role=tab][aria-selected=true]')?.textContent).toBe('Prompts')
+  expect(document.querySelector('[role=tab][aria-selected=true]')?.textContent).toBe('Prompts e modelos')
   expect(document.querySelector('[aria-label="Prompts de execução"] [role=tab][aria-selected=true]')?.textContent).toBe(
     'Smart Diff',
   )

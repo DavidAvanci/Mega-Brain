@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import { DEFAULT_PROMPTS, type MegaBrainSettings } from '../shared/domain/settings'
+import { defaultStageSettings } from '../shared/domain/codex-models'
 import { withGeneralSettings, withStageSetting } from './settings-state'
 
 const settings: MegaBrainSettings = {
@@ -22,6 +23,7 @@ const settings: MegaBrainSettings = {
     onboardingCompleted: true,
   },
   stages: {
+    ...defaultStageSettings('claude'),
     'task-planning': { model: 'fable', effort: 'low' },
     'run-task-checklist': { model: 'fable', effort: 'medium' },
   },
@@ -40,6 +42,24 @@ test('resets stage models only when the LLM provider changes', () => {
   )
 })
 
+test('edits a missing agent in legacy settings without dropping other saved selections', () => {
+  const legacy = {
+    ...settings,
+    stages: {
+      'task-planning': { model: 'opus', effort: 'high' },
+      'run-task-checklist': { model: 'sonnet', effort: 'medium' },
+    },
+  } as MegaBrainSettings
+  const edited = withStageSetting(legacy, 'task-verification', 'model', 'haiku')
+  expect(edited.stages['task-verification']).toEqual({ model: 'haiku', effort: 'medium', fastMode: false })
+  expect(edited.stages['run-task-checklist'].model).toBe('sonnet')
+  expect(edited.stages['task-planning'].model).toBe('opus')
+  expect(withStageSetting(legacy, 'test-environment', 'effort', 'high').stages['test-environment']).toMatchObject({
+    model: 'haiku',
+    effort: 'high',
+  })
+})
+
 test('switching from an Ultra model to Luna selects a supported default effort', () => {
   const codex = withGeneralSettings(settings, { ...settings.general, llmProvider: 'chatgpt' })
   const ultra = withStageSetting(codex, 'task-planning', 'effort', 'ultra')
@@ -47,6 +67,7 @@ test('switching from an Ultra model to Luna selects a supported default effort',
   expect(withStageSetting(ultra, 'task-planning', 'model', 'gpt-6-luna').stages['task-planning']).toEqual({
     model: 'gpt-6-luna',
     effort: 'medium',
+    fastMode: false,
   })
   expect(withStageSetting(ultra, 'task-planning', 'model', 'gpt-6-astra').stages['task-planning'].effort).toBe('ultra')
 })
@@ -54,8 +75,11 @@ test('switching from an Ultra model to Luna selects a supported default effort',
 test('Codex stage defaults preserve roles and respect a restricted account catalog', () => {
   const switched = withGeneralSettings(settings, { ...settings.general, llmProvider: 'chatgpt' })
   expect(switched.stages).toEqual({
-    'task-planning': { model: 'gpt-6.1-sol', effort: 'high' },
-    'run-task-checklist': { model: 'gpt-6.1-sol', effort: 'medium' },
+    'task-planning': { model: 'gpt-6.1-sol', effort: 'high', fastMode: false },
+    'run-task-checklist': { model: 'gpt-6.1-sol', effort: 'medium', fastMode: false },
+    'task-verification': { model: 'gpt-6.1-sol', effort: 'medium', fastMode: false },
+    'test-environment': { model: 'default', effort: 'medium', fastMode: false },
+    'smart-diff-review': { model: 'default', effort: 'medium', fastMode: false },
   })
   expect(switched.prompts).toEqual(settings.prompts)
   const restricted = {
@@ -77,5 +101,5 @@ test('Codex stage defaults preserve roles and respect a restricted account catal
   }
   expect(
     withGeneralSettings(settings, { ...settings.general, llmProvider: 'chatgpt' }, catalog).stages['task-planning'],
-  ).toEqual({ model: 'default', effort: 'high' })
+  ).toEqual({ model: 'default', effort: 'high', fastMode: false })
 })

@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path'
 import type { MegaBrainConfig } from '../config'
 
 export type WorkspaceConfigInput = Pick<MegaBrainConfig, 'workspaceDir' | 'executables'> &
-  Partial<Pick<MegaBrainConfig, 'worktreesDir' | 'preferences'>>
+  Partial<Pick<MegaBrainConfig, 'worktreesDir' | 'preferences' | 'jev'>>
 
 /** Completes the minimal test/runtime input with the workspace defaults. */
 export function completeWorkspaceConfig(input: WorkspaceConfigInput): MegaBrainConfig {
@@ -16,7 +16,7 @@ export function completeWorkspaceConfig(input: WorkspaceConfigInput): MegaBrainC
     workspaceDir,
     worktreesDir: input.worktreesDir ?? join(dirname(resolve(workspaceDir)), 'worktrees'),
     jira: {},
-    jev: { enabled: false },
+    jev: input.jev ?? { enabled: false },
     directories: {
       home,
       claudeHome: join(home, '.claude'),

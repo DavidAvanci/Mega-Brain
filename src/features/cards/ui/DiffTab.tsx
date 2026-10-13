@@ -6,6 +6,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowDown01Icon, ArrowRight01Icon, Cancel01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { Markdown } from '@/Markdown'
 import {
   fetchDiff,
   fetchStandardDiff,
@@ -18,6 +19,7 @@ import { fileLang, parseDiff, type FileDiff, type FileStatus } from '@/diff'
 import { useTheme, type Theme } from '@/theme'
 import type { AgentInfo } from '../../../../shared/domain/agents'
 import { SmartDiffIndicator } from './SmartDiffIndicator'
+import { syncCardSmartDiff } from '../model/card-commands'
 import '@git-diff-view/react/styles/diff-view.css'
 
 const STATUS_BADGE: Partial<Record<FileStatus, { label: string; className: string }>> = {
@@ -299,6 +301,7 @@ export function DiffTab({ cardId }: { cardId: string }) {
   const [status, setStatus] = useState<'checking' | 'idle' | 'running' | 'ready' | 'error'>('checking')
   const [error, setError] = useState<string | null>(null)
   const [split, setSplit] = useState(true)
+  const [view, setView] = useState<'explanation' | 'diff'>('explanation')
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [openNoise, setOpenNoise] = useState<ReadonlySet<string>>(new Set())
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(new Set())
@@ -312,6 +315,7 @@ export function DiffTab({ cardId }: { cardId: string }) {
 
   useEffect(() => {
     setCollapsedSections(new Set())
+    setView('explanation')
   }, [cardId])
 
   useEffect(() => {
@@ -321,6 +325,7 @@ export function DiffTab({ cardId }: { cardId: string }) {
       try {
         const state = await fetchDiff(cardId)
         if (cancelled) return
+        syncCardSmartDiff(cardId, state)
         setStatus(state.status === 'error' && !state.started ? 'idle' : state.status)
         setSteps(state.steps ?? [])
         setActivity(state.activity)
@@ -376,7 +381,7 @@ export function DiffTab({ cardId }: { cardId: string }) {
     setSteps([])
     setActivity(undefined)
     const begin = async () => {
-      if (request) await startDiff(cardId, request.regenerate)
+      if (request) syncCardSmartDiff(cardId, await startDiff(cardId, request.regenerate))
       if (!cancelled) await poll()
     }
     begin().catch((reason) => {
@@ -422,9 +427,11 @@ export function DiffTab({ cardId }: { cardId: string }) {
     })
   }, [])
   const rows = prepared.rows
+  const hasExplanation = document?.repositories.some((repo) => repo.explanation?.trim())
+  const showingExplanation = status === 'ready' && hasExplanation && view === 'explanation'
   const scroll = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
-    count: status === 'ready' ? rows.length : 0,
+    count: status === 'ready' && !showingExplanation ? rows.length : 0,
     getScrollElement: () => scroll.current,
     getItemKey: (index) => `${cardId}:${document?.generatedAt ?? ''}:${rows[index].key}`,
     estimateSize: (index) => {
@@ -454,7 +461,7 @@ export function DiffTab({ cardId }: { cardId: string }) {
                 ? 'Falha na revisão Smart Diff'
                 : `${prepared.fileCount} ${prepared.fileCount === 1 ? 'arquivo alterado' : 'arquivos alterados'}`}
         {status === 'ready' && <Counts additions={prepared.additions} deletions={prepared.deletions} />}
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5">
           {!checking && (
             <Button
               variant="outline"
@@ -469,7 +476,12 @@ export function DiffTab({ cardId }: { cardId: string }) {
               {started ? 'Gerar novo Smart Diff' : 'Gerar Smart Diff'}
             </Button>
           )}
-          <div className="flex rounded-md border p-0.5">
+          <div
+            className={cn('flex shrink-0 rounded-md border p-0.5', showingExplanation && 'invisible')}
+            role="group"
+            aria-label="Formato da diff"
+            aria-hidden={showingExplanation || undefined}
+          >
             <Button variant={split ? 'ghost' : 'secondary'} size="xs" onClick={() => setSplit(false)}>
               Unificado
             </Button>
@@ -477,6 +489,24 @@ export function DiffTab({ cardId }: { cardId: string }) {
               Dividido
             </Button>
           </div>
+          {status === 'ready' && hasExplanation && (
+            <div className="flex shrink-0 rounded-md border p-0.5" role="group" aria-label="Visualização do Smart Diff">
+              {(['explanation', 'diff'] as const).map((next) => (
+                <Button
+                  key={next}
+                  variant={view === next ? 'secondary' : 'ghost'}
+                  size="xs"
+                  aria-pressed={view === next}
+                  onClick={() => {
+                    setView(next)
+                    if (scroll.current) scroll.current.scrollTop = 0
+                  }}
+                >
+                  {next === 'explanation' ? 'Explicação' : 'Diff'}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       <div ref={scroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -537,7 +567,23 @@ export function DiffTab({ cardId }: { cardId: string }) {
         {status === 'ready' && !document?.repositories.length && (
           <p className="py-10 text-center text-xs text-muted-foreground">Sem repositórios vinculados à task.</p>
         )}
-        {status === 'ready' && (
+        {showingExplanation && (
+          <div className="mx-auto max-w-3xl space-y-8">
+            {document?.repositories.map((repo) => (
+              <section key={repo.name} aria-label={`Explicação de ${repo.name}`} className="space-y-3">
+                {document.repositories.length > 1 && <h2 className="text-base font-semibold">{repo.name}</h2>}
+                {repo.explanation?.trim() ? (
+                  <Markdown text={repo.explanation} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Sem texto explicativo para este repositório. Consulte a visualização Diff.
+                  </p>
+                )}
+              </section>
+            ))}
+          </div>
+        )}
+        {status === 'ready' && !showingExplanation && (
           <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((item) => {
               const row = rows[item.index]

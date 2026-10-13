@@ -110,6 +110,9 @@ export function defaultStageSettings(provider: LlmProvider, catalog = FALLBACK_C
     return {
       'task-planning': { model: 'fable', effort: 'high', fastMode: false },
       'run-task-checklist': { model: 'fable', effort: 'low', fastMode: false },
+      'task-verification': { model: 'fable', effort: 'low', fastMode: false },
+      'test-environment': { model: 'haiku', effort: 'low', fastMode: false },
+      'smart-diff-review': { model: 'default', effort: 'low', fastMode: false },
     }
   const sol = catalog.models.some((entry) => entry.id === 'gpt-6.1-sol') ? 'gpt-6.1-sol' : 'default'
   const stage = (model: string, effort: Effort) => ({
@@ -120,6 +123,9 @@ export function defaultStageSettings(provider: LlmProvider, catalog = FALLBACK_C
   return {
     'task-planning': stage(sol, 'high'),
     'run-task-checklist': stage(sol, 'medium'),
+    'task-verification': stage(sol, 'medium'),
+    'test-environment': stage('default', 'medium'),
+    'smart-diff-review': stage('default', 'medium'),
   }
 }
 

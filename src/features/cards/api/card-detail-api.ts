@@ -1,7 +1,8 @@
 import type { KnowledgeRef } from '../../../../shared/domain/knowledge'
 import { ApiError, apiClient } from '@/shared/api/api-client'
 import { requestJson } from '@/shared/api/request-json'
-import { DEFAULT_PROMPTS, type EditorDiscovery, type MegaBrainSettings } from '../../../../shared/domain/settings'
+import type { EditorDiscovery, MegaBrainSettings } from '../../../../shared/domain/settings'
+import { withSettingsDefaults } from '@/settings-state'
 import type { ChatAgentSettings, ChatEntry, ChatEvent, ChatModelSelection } from '../../../../shared/contracts/chat'
 import type { AgentInfo, CardAgentUsage, CardAgentUsageEntry } from '../../../../shared/domain/agents'
 import type { TaskChecklist } from '../../../../shared/domain/task-checklist'
@@ -43,7 +44,7 @@ export interface SmartDiffReview {
 export interface CardDiffDocument {
   schemaVersion: 1
   generatedAt: string
-  repositories: { name: string; review: SmartDiffReview }[]
+  repositories: { name: string; review: SmartDiffReview; explanation?: string }[]
 }
 
 export interface DiffState {
@@ -74,7 +75,7 @@ export { requestJson } from '@/shared/api/request-json'
 
 export async function fetchMegaBrainSettings(): Promise<MegaBrainSettings> {
   const settings = await requestJson<MegaBrainSettings>('/api/workspace/settings', 'Falha ao carregar configurações')
-  return { ...settings, prompts: { ...DEFAULT_PROMPTS, ...settings.prompts } }
+  return withSettingsDefaults(settings)
 }
 
 export function fetchDetectedEditors(): Promise<EditorDiscovery> {
@@ -97,7 +98,9 @@ export async function saveMegaBrainSettings(settings: MegaBrainSettings): Promis
       return typeof confirmed !== 'string' || confirmed.trim() !== settings.prompts[key].trim()
     })
   ) {
-    throw new Error('O backend não confirmou os prompts. Reinicie o Mega Brain com o backend atualizado e salve novamente.')
+    throw new Error(
+      'O backend não confirmou os prompts. Reinicie o Mega Brain com o backend atualizado e salve novamente.',
+    )
   }
   return saved
 }

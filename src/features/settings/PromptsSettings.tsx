@@ -1,29 +1,47 @@
+import type { ReactNode } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { DEFAULT_PROMPTS, type PromptSettings } from '../../../shared/domain/settings'
+import { DEFAULT_PROMPTS, type BoardSettings, type PromptSettings } from '../../../shared/domain/settings'
 import { PromptMarkdownEditor } from './PromptMarkdownEditor'
 
-export const PROMPT_FIELDS: { key: keyof PromptSettings; label: string; title: string; help: string }[] = [
+export const PROMPT_FIELDS: {
+  key: keyof PromptSettings
+  stage: keyof BoardSettings
+  label: string
+  title: string
+  help: string
+}[] = [
   {
     key: 'taskPlanning',
+    stage: 'task-planning',
     label: 'Planejamento',
     title: 'Planejamento',
     help: 'Instruções usadas ao criar o plano e os checklists da task.',
   },
   {
     key: 'taskItem',
+    stage: 'run-task-checklist',
     label: 'Tarefas',
     title: 'Execução de tarefas',
     help: 'Instruções usadas para implementar cada item do checklist.',
   },
   {
+    key: 'taskVerification',
+    stage: 'task-verification',
+    label: 'Verificador',
+    title: 'Verificador',
+    help: 'Verifica os arquivos alterados pelos executores e indica tarefas de correção quando necessário.',
+  },
+  {
     key: 'testEnvironment',
+    stage: 'test-environment',
     label: 'Ambiente',
     title: 'Ambiente de testes',
     help: 'Instruções do agente aberto para preparar o ambiente local.',
   },
   {
     key: 'smartDiffReview',
+    stage: 'smart-diff-review',
     label: 'Smart Diff',
     title: 'Revisão Smart Diff',
     help: 'Instruções usadas ao gerar uma revisão Smart Diff.',
@@ -36,18 +54,17 @@ export function PromptsSettings({
   tab,
   onTabChange,
   disabled,
+  renderModel,
 }: {
   value: PromptSettings
   onChange: (value: PromptSettings) => void
   tab: keyof PromptSettings
   onTabChange: (tab: keyof PromptSettings) => void
   disabled?: boolean
+  renderModel?: (field: (typeof PROMPT_FIELDS)[number]) => ReactNode
 }) {
   return (
     <div className="grid min-w-0 gap-4">
-      <p className="text-xs text-muted-foreground">
-        Prompts enviados em cada etapa do Mega Brain, salvos aqui e compartilhados entre Claude e Codex.
-      </p>
       <Tabs
         value={tab}
         onValueChange={(next) => {
@@ -72,31 +89,36 @@ export function PromptsSettings({
             </TabsTrigger>
           ))}
         </TabsList>
-        {PROMPT_FIELDS.map(({ key, title, help }) => (
-          <TabsContent key={key} value={key} keepMounted data-settings-section={`prompt-${key}`}>
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div className="grid gap-1">
-                <h3 className="text-sm font-medium">{title}</h3>
-                <p className="text-xs text-muted-foreground">{help}</p>
+        {PROMPT_FIELDS.map((field) => {
+          const { key, title, help } = field
+          return (
+            <TabsContent key={key} value={key} keepMounted data-settings-section={`prompt-${key}`}>
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                <div className="grid min-w-0 flex-1 basis-48 gap-1">
+                  <h3 className="text-sm font-medium">{title}</h3>
+                  <p className="text-xs text-muted-foreground">{help}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={disabled || value[key].trim() === DEFAULT_PROMPTS[key].trim()}
+                  onClick={() => onChange({ ...value, [key]: DEFAULT_PROMPTS[key] })}
+                >
+                  Restaurar padrão
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={disabled || value[key].trim() === DEFAULT_PROMPTS[key].trim()}
-                onClick={() => onChange({ ...value, [key]: DEFAULT_PROMPTS[key] })}
-              >
-                Restaurar padrão
-              </Button>
-            </div>
-            <PromptMarkdownEditor
-              title={title}
-              value={value?.[key] ?? ''}
-              onChange={(next) => onChange({ ...value, [key]: next })}
-              disabled={disabled}
-            />
-          </TabsContent>
-        ))}
+              {renderModel?.(field)}
+              <PromptMarkdownEditor
+                title={title}
+                value={value?.[key] ?? ''}
+                onChange={(next) => onChange({ ...value, [key]: next })}
+                disabled={disabled}
+              />
+            </TabsContent>
+          )
+        })}
       </Tabs>
     </div>
   )

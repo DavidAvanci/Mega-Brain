@@ -18,7 +18,8 @@ import { repositoryMentionContext } from '../repositories/mentions'
 import { taskMessageContext } from '../chat/task-conversation'
 import { claudeCostFromStream, finishAgentUsage, setAgentUsageProcess, startAgentUsage } from './agent-usage'
 import { DEFAULT_PROMPTS } from '../../shared/domain/settings'
-import { isClaudeModelAlias } from '../../shared/domain/codex-models'
+import { compatibleEffort, defaultStageSettings, isClaudeModelAlias, isEffort } from '../../shared/domain/codex-models'
+import { JEV_PLANNING_MODEL, type PlanningSelection } from '../../shared/domain/planning-selection'
 import { readTaskChecklist } from '../../shared/storage/task-checklist'
 
 export const AGENT_FILE = 'agent.json'
@@ -117,12 +118,25 @@ export function runStageAgent(
   logger?: StageLogger,
   settingsFile?: string,
   resume?: { record: StageAgentRecord; sessionId?: string },
+  selection?: PlanningSelection,
 ): void {
-  const settings = settingsForStage(path, stage, provider)
+  const saved = settingsForStage(path, stage, provider)
+  const defaultModel = defaultStageSettings(provider)['task-planning'].model
+  const settings =
+    stage.name === 'task-planning' && selection
+      ? { ...selection.settings }
+      : saved.model === JEV_PLANNING_MODEL
+        ? { ...saved, model: defaultModel, effort: compatibleEffort(provider, defaultModel, saved.effort) }
+        : saved
+  if (resume && isEffort(resume.record.effort)) settings.effort = resume.record.effort
   const effectiveModel = model ?? settings.model
   if (!resume && model === undefined) {
     // Migrate old artifacts before snapshotting so cancellation restores the JSON source of truth.
-    try { readTaskChecklist(path) } catch { /* Planning may replace an invalid previous artifact. */ }
+    try {
+      readTaskChecklist(path)
+    } catch {
+      /* Planning may replace an invalid previous artifact. */
+    }
     captureStageSnapshot(path, stage.name, stageOwnedFiles(stage))
   }
   const usageId = stage.script
@@ -149,6 +163,7 @@ export function runStageAgent(
   )
   const stageMessages = taskMessageContext(path)
   const profileEnvironment = provider === 'chatgpt' && settingsFile ? codexProfileEnvironment(settingsFile) : {}
+  const verification = readStageSettings(dirname(path), provider)['task-verification']
   const environment: NodeJS.ProcessEnv = {
     ...(provider === 'chatgpt' ? { CODEX_HOME: process.env.CODEX_HOME ?? join(homedir(), '.codex') } : {}),
     ...profileEnvironment,
@@ -160,6 +175,9 @@ export function runStageAgent(
     }),
     CHECKLIST_MODEL: settings.model,
     CHECKLIST_EFFORT: settings.effort,
+    CHECKLIST_VERIFICATION_MODEL: verification.model,
+    CHECKLIST_VERIFICATION_EFFORT: verification.effort,
+    CHECKLIST_VERIFICATION_FAST_MODE: verification.fastMode ? '1' : '0',
     MEGA_BRAIN_WORKTREES_DIR: worktreesDir ?? process.env.MEGA_BRAIN_WORKTREES_DIR,
     MEGA_BRAIN_SETTINGS_FILE: settingsFile ?? process.env.MEGA_BRAIN_SETTINGS_FILE,
     MEGA_BRAIN_LLM_PROVIDER: provider,
@@ -197,6 +215,8 @@ export function runStageAgent(
     startedAt: resume?.record.startedAt ?? new Date().toISOString(),
     stage: stage.name,
     model: effectiveModel,
+    effort: settings.effort,
+    planningSelection: resume?.record.planningSelection ?? selection,
     provider: provider === 'chatgpt' ? 'codex' : 'claude',
     codexProfileId: environment.MEGA_BRAIN_CODEX_PROFILE_ID,
     codexProfileName: environment.MEGA_BRAIN_CODEX_PROFILE_NAME,

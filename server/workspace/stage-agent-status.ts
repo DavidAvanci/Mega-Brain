@@ -65,16 +65,33 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
     pausedAt?: string
     sessionId?: string
     resume?: import('./agent-checkpoint').StageCheckpoint
+    selectingWithJev?: string
+    selectionError?: string
+    model?: string
+    effort?: string
   } = {}
   try {
     meta = JSON.parse(readFileSync(metaFile, 'utf8'))
   } catch {}
   const stage = STAGES.find((candidate) => candidate.name === meta.stage) ?? STAGES[0]
   const info: AgentInfo = {
+    model: meta.model,
+    effort: meta.effort,
     stage: stage.name,
     execution: stage.script ? 'script' : 'agent',
     status: 'rodando',
     startedAt: meta.startedAt,
+  }
+  if (meta.selectingWithJev) {
+    info.status = typeof meta.pid === 'number' && alive(meta.pid) ? 'rodando' : 'morto'
+    info.phase = 'Jev escolhendo modelo e esforço'
+    info.resumable = false
+    return info
+  }
+  if (meta.selectionError) {
+    info.status = 'erro'
+    info.error = meta.selectionError
+    return info
   }
   if (meta.provider === 'claude' || meta.provider === 'codex') info.provider = meta.provider
   if (meta.provider === 'codex') {
@@ -126,10 +143,15 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
       if (narration && !stage.script) info.activity = narration
     }
   }
-  if (info.status === 'concluido' && stage.name === 'task-planning' && readCard(path, basename(path)).status === 'planejando') {
+  if (
+    info.status === 'concluido' &&
+    stage.name === 'task-planning' &&
+    readCard(path, basename(path)).status === 'planejando'
+  ) {
     try {
       const checklist = readTaskChecklist(path)
-      if (!checklist || !activeChecklistItems(checklist).length) throw new Error(`${TASK_CHECKLIST_FILE}: nenhum item executável`)
+      if (!checklist || !activeChecklistItems(checklist).length)
+        throw new Error(`${TASK_CHECKLIST_FILE}: nenhum item executável`)
     } catch (error) {
       info.status = 'erro'
       info.error = error instanceof Error ? error.message : String(error)

@@ -6,7 +6,8 @@
   "build": {
     "beforeBuildCommand": "npm run build && npm run server:build && npm run tauri:runtime",
     "frontendDist": "../dist",
-    "devUrl": "http://127.0.0.1:15173"
+    "devUrl": "http://127.0.0.1:15173",
+    "additionalWatchFolders": ["../dist/server"]
   },
   "app": {
     "withGlobalTauri": true,

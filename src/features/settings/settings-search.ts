@@ -3,7 +3,7 @@ export type SettingsTab = 'general' | 'jira' | 'models' | 'ides' | 'terminal' | 
 export const SETTINGS_TAB_LABELS: Record<SettingsTab, string> = {
   general: 'Geral',
   jira: 'Jira',
-  models: 'Modelos de execução',
+  models: 'Prompts e modelos',
   ides: 'IDEs',
   terminal: 'Shell e terminal',
   integrations: 'Integrações',
@@ -96,9 +96,9 @@ const ENTRIES: SettingsSearchEntry[] = [
     target: 'task-planning',
     tab: 'models',
     title: 'Modelo e esforço de planejamento',
-    description: 'Modelo e raciocínio para criar planos e checklists.',
+    description: 'Modelo e raciocínio para criar planos e checklists, com seleção opcional pelo Jev.',
     keywords:
-      'modelos de execução claude codex effort reasoning fast mode velocidade low medium high x-high max ultra fable opus sonnet haiku gpt',
+      'modelos de execução claude codex effort reasoning low medium high x-high max ultra fable opus sonnet haiku gpt usar jev automático typesafe',
   },
   {
     target: 'run-task-checklist',
@@ -106,7 +106,7 @@ const ENTRIES: SettingsSearchEntry[] = [
     title: 'Modelo e esforço de desenvolvimento',
     description: 'Modelo e raciocínio para executar as tarefas.',
     keywords:
-      'modelos de execução claude codex effort reasoning fast mode velocidade low medium high x-high max ultra fable opus sonnet haiku gpt',
+      'modelos de execução claude codex effort reasoning low medium high x-high max ultra fable opus sonnet haiku gpt',
   },
   {
     target: 'codex-profiles',
@@ -145,31 +145,38 @@ const ENTRIES: SettingsSearchEntry[] = [
   },
   {
     target: 'prompt-taskPlanning',
-    tab: 'prompts',
+    tab: 'models',
     title: 'Prompt de planejamento',
     description: 'Instruções para criar o plano e os checklists.',
     keywords: 'prompts claude codex task agente',
   },
   {
     target: 'prompt-taskItem',
-    tab: 'prompts',
+    tab: 'models',
     title: 'Prompt de execução de tarefas',
     description: 'Instruções para implementar cada item do checklist.',
     keywords: 'prompts claude codex desenvolvimento task agente',
   },
   {
+    target: 'prompt-taskVerification',
+    tab: 'models',
+    title: 'Verificador: prompt, modelo e esforço',
+    description: 'Verificações após a execução das tarefas e indicação de correções.',
+    keywords: 'prompts modelos verificação verificar executores lint testes claude codex effort raciocínio',
+  },
+  {
     target: 'prompt-testEnvironment',
-    tab: 'prompts',
-    title: 'Prompt de ambiente de testes',
+    tab: 'models',
+    title: 'Ambiente de testes: prompt, modelo e esforço',
     description: 'Instruções para preparar o ambiente local.',
-    keywords: 'prompts claude codex agente',
+    keywords: 'prompts modelos esforço effort claude codex agente',
   },
   {
     target: 'prompt-smartDiffReview',
-    tab: 'prompts',
-    title: 'Prompt de revisão Smart Diff',
+    tab: 'models',
+    title: 'Revisão Smart Diff: prompt, modelo e esforço',
     description: 'Instruções para revisar as alterações de código.',
-    keywords: 'prompts claude codex review agente',
+    keywords: 'prompts modelos esforço effort claude codex review agente',
   },
   {
     target: 'island',

@@ -12,6 +12,7 @@ import { formatDuration, runChecklist, type ItemOutcome } from '../lib/scheduler
 import { runClaudeItem } from '../lib/executor.ts'
 import { megaBrainPrompt } from '../lib/prompts.ts'
 import { taskItemPrompt } from '../lib/task-item-prompt.ts'
+import { verificationPrompt } from '../lib/verification-prompt.ts'
 import {
   assertFeatureBranch,
   dropItemWorktree,
@@ -146,18 +147,6 @@ async function commitItem(
 interface VerificationReport {
   checks: { repo: string; name: string; command: string; status: 'passed' | 'failed' | 'skipped'; summary: string }[]
   failures: { repo: string; check: string; command: string; summary: string; task: string; files?: string[] }[]
-}
-
-function verificationPrompt(projects: { repo: string; path: string; files: string[] }[], reportPath: string, round: number): string {
-  return [
-    `Item: VFY${round} — Verificar os projetos após a execução dos agentes`,
-    'Você é o agente de verificação final. Em cada projeto, execute os checks relevantes (lint, formatação em modo check, typecheck, testes e hooks Husky) somente contra os arquivos listados para aquele projeto. Use argumentos de arquivo para limitar os checks. Se uma verificação não aceitar escopo por arquivo, registre-a como skipped; nunca rode um comando global do projeto.',
-    'Descubra os comandos pelos manifests e configurações do projeto. Use scripts e binários que já estejam instalados localmente; não instale dependências nem use npx para baixar ferramentas. Não corrija arquivos, não faça commits e não altere TASK-CHECKLIST.json. Execute apenas comandos de verificação; não use modos que formatem ou modifiquem arquivos. Se um hook modificar arquivos ou não puder ser executado sem mudanças, registre-o como skipped com a razão. Projetos sem arquivos alterados também devem ser registrados com uma verificação skipped.',
-    'Rode cada verificação relevante em cada projeto e registre resultado, comando e resumo. Para cada verificação que falhar, crie uma correção implementável, específica, em linguagem pt-BR, indicando os arquivos preferenciais quando identificáveis. Não crie correções para verificações skipped.',
-    'Grave somente o relatório JSON no caminho indicado. Use exatamente este formato: {"checks":[{"repo":"alias","name":"lint","command":"comando executado","status":"passed|failed|skipped","summary":"resumo curto"}],"failures":[{"repo":"alias","check":"nome exato da verificação","command":"comando","summary":"erro observado","task":"ação de correção","files":["caminho/relativo"]}]}. Toda verificação failed deve ter pelo menos uma entrada correspondente em failures. Use arrays vazios quando não houver registros.',
-    `Projetos, paths e lista exata de arquivos alterados pelo card: ${JSON.stringify(projects)}`,
-    `Relatório JSON: ${reportPath}`,
-  ].join('\n\n')
 }
 
 function cardChangedFiles(repo: string): string[] {
@@ -489,8 +478,11 @@ export async function runDevStage(): Promise<void> {
     const result = await runClaudeItem({
       cwd: wsPath,
       prompt: verificationPrompt(projects, reportPath, round),
-      model: AGENT.model,
-      effort: AGENT.effort,
+      model: process.env.CHECKLIST_VERIFICATION_MODEL ?? AGENT.model,
+      effort: process.env.CHECKLIST_VERIFICATION_EFFORT ?? AGENT.effort,
+      fastMode: process.env.CHECKLIST_VERIFICATION_FAST_MODE === undefined
+        ? undefined
+        : process.env.CHECKLIST_VERIFICATION_FAST_MODE === '1',
       tools: AGENT.tools,
       timeoutMs: positiveInt(process.env.CHECKLIST_VERIFICATION_TIMEOUT_MINUTES, 60, 'CHECKLIST_VERIFICATION_TIMEOUT_MINUTES') * 60_000,
     })
