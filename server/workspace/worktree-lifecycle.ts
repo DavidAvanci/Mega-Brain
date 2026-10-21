@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { stopDevEnv } from '../modules/dev-environments/dev-env'
 import type { ProcessRunner } from '../process'
+import { taskId } from '../../scripts/lib/task-id.ts'
 import { type CardData } from './card-record'
 import { cardRepos, gitOut } from './worktree-inspector'
 
@@ -45,7 +46,7 @@ function companionWorktrees(reposRoot: string): string[] {
 
 export function cardWorktreeRepos(cardPath: string, worktreesRoot: string): { name: string; path: string }[] {
   const repos = new Map(cardRepos(cardPath).map((repo) => [repo.name, repo]))
-  const managedRepos = join(worktreesRoot, basename(cardPath), 'repos')
+  const managedRepos = join(worktreesRoot, taskId(cardPath), 'repos')
   for (const path of companionWorktrees(managedRepos)) {
     const name = basename(path)
     if (!repos.has(name)) repos.set(name, { name, path })
@@ -74,7 +75,7 @@ function removeCardWorktrees(
   const mainRepos = new Set<string>()
   const worktrees = new Map<string, string>()
   for (const repo of cardRepos(cardPath)) worktrees.set(resolve(repo.path), repo.name)
-  const taskRoot = join(root, basename(cardPath))
+  const taskRoot = join(root, taskId(cardPath))
   for (const worktree of companionWorktrees(join(taskRoot, 'repos')))
     worktrees.set(resolve(worktree), basename(worktree))
   const itemRoot = join(taskRoot, 'items')
@@ -105,7 +106,7 @@ function removeCardWorktrees(
     }
   }
   for (const mainRepo of mainRepos) gitOut(mainRepo, git, runner, 'worktree', 'prune')
-  rmSync(itemRoot, { recursive: true, force: true })
+  rmSync(taskRoot, { recursive: true, force: true })
 }
 
 export function deleteCard(

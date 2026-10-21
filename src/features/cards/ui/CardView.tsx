@@ -7,7 +7,6 @@ import {
   Folder01Icon,
   GitMergeIcon,
   GitPullRequestArrowIcon,
-  RoboticIcon,
   TriangleAlertIcon,
 } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
@@ -22,7 +21,7 @@ import type { AgentInfo } from '../../../../shared/domain/agents'
 import type { Card, PrState } from '../../../../shared/domain/cards'
 import { relativeTime } from '@/relativeTime'
 import { attentionReason } from '@/boardFilters'
-import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
+import { AgentBadge, ScriptRunningIndicator, StartingExecutorsIndicator, activeAgents, agentName, isFormattingCardFiles, isStartingExecutors } from '@/CardAgentBadge'
 import { FlowIndicator } from './FlowIndicator'
 import { SmartDiffIndicator } from './SmartDiffIndicator'
 export { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
@@ -196,10 +195,9 @@ function AgentLine({
 }) {
   const [stopping, setStopping] = useState(false)
   if (agent.taskId) {
-    const taskAgent = { ...agent, phase: `Iniciando ${agent.taskId}` }
     return (
       <div className="flex items-center gap-1.5">
-        <AgentBadge agent={taskAgent} cardId={cardId} iconOnly muted={stopping || mutedByParent} growText />
+        <AgentBadge agent={agent} cardId={cardId} iconOnly muted={stopping || mutedByParent} growText />
         <SessionStopIconButton agent={agent} onPendingChange={setStopping} />
       </div>
     )
@@ -248,35 +246,24 @@ function DevelopmentProgress({
 }) {
   const progress = agent.progress
   if (!progress) return null
-  const percentage = Math.round((progress.done / progress.total) * 100)
   return (
     <div className="flex items-center gap-1.5">
-      <HugeiconsIcon
-        icon={RoboticIcon}
-        strokeWidth={2}
-        className="size-3.5 shrink-0 text-primary dark:text-chart-2"
-        aria-label="Script de desenvolvimento"
-      />
       <Progress
         value={progress.done}
         max={progress.total}
         className="min-w-0 flex-1"
         aria-label="Progresso do desenvolvimento"
       />
-      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{percentage}%</span>
+      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{progress.done}/{progress.total}</span>
       <StageResetButton
         agent={agent}
         cardId={cardId}
         iconOnly
-        interruptLabel="Interromper todos os agentes deste card"
+        interruptLabel="Encerrar todos os agentes deste card"
         onPendingChange={onPendingChange}
       />
     </div>
   )
-}
-
-function initialTaskId(agent: AgentInfo | undefined): string | undefined {
-  return agent?.phase?.match(/^([A-Za-z]+\d+|#\d+)\b/)?.[1]
 }
 
 function FolderName({ name }: { name: string }) {
@@ -310,14 +297,19 @@ export function CardBody({
   interactive?: boolean
   onOpen?: (tab?: string) => void
 }) {
-  const runningAgents = activeAgents(card).filter((agent) => agent.status === 'rodando')
   const isDevelopment = card.status === 'desenvolvendo'
   const developmentStageAgent = isDevelopment
     ? card.agents?.find(
-        (agent) => agent.stage === 'run-task-checklist' && ['rodando', 'aguardando'].includes(agent.status),
+        (agent) => agent.stage === 'run-task-checklist' && agent.status === 'rodando',
       )
     : undefined
-  const agents = isDevelopment ? runningAgents.filter((agent) => agent.taskId) : runningAgents
+  const agents = activeAgents(card).filter(
+    (agent) =>
+      ['rodando', 'aguardando', 'erro'].includes(agent.status) &&
+      !(isDevelopment && agent.stage === 'run-task-checklist' && agent.status === 'rodando'),
+  )
+  const startingExecutors = isStartingExecutors(card)
+  const formattingCardFiles = isFormattingCardFiles(card)
   const resumableAgent = card.agents?.find((agent) => agent.stage && agent.resumable)
   const pausedAgent = resumableAgent?.status === 'pausado' ? resumableAgent : undefined
   const attention = attentionReason(card)
@@ -371,8 +363,10 @@ export function CardBody({
           Agentes pausados · progresso salvo
         </div>
       )}
-      {(agents.length > 0 || card.smartDiffRunning || developmentStageAgent) && (
+      {(agents.length > 0 || card.smartDiffRunning || developmentStageAgent || startingExecutors || formattingCardFiles) && (
         <div className="mt-2 flex flex-col gap-1.5">
+          {formattingCardFiles && <ScriptRunningIndicator text="Formatando arquivos..." />}
+          {startingExecutors && <StartingExecutorsIndicator />}
           {agents.map((agent, index) => (
             <AgentLine
               key={`${agent.taskId ?? agent.stage ?? 'autonomo'}-${index}`}
@@ -381,17 +375,6 @@ export function CardBody({
               mutedByParent={stoppingAllDevelopmentAgents}
             />
           ))}
-          {developmentStageAgent && agents.length === 0 && (
-            <span className="inline-flex min-w-0 items-center gap-1.5 text-[11px] text-primary dark:text-chart-2">
-              <HugeiconsIcon
-                icon={RoboticIcon}
-                strokeWidth={2}
-                className="size-3.5 shrink-0"
-                aria-label="Script de desenvolvimento"
-              />
-              <span className="truncate">Iniciando {initialTaskId(developmentStageAgent) ?? 'tarefa'}...</span>
-            </span>
-          )}
           {developmentStageAgent && (
             <DevelopmentProgress
               agent={developmentStageAgent}
@@ -434,7 +417,7 @@ export function CardBody({
         </span>
       </div>
       {(card.status === 'code-review' || (card.devEnv && card.devEnv.status !== 'parado')) && (
-        <DevEnvPanel card={card} onOpen={() => onOpen?.('environments')} />
+        <DevEnvPanel card={card} onOpen={() => onOpen?.('environment-configure')} />
       )}
     </>
   )

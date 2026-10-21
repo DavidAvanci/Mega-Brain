@@ -1,0 +1,468 @@
+# Plano — runtime por repositório e correção do fluxo de verificação
+
+Data: 14/10/2026. Estado: planejamento; nenhuma task deste plano foi executada.
+
+## Objetivo e limites
+
+Implementar todas as melhorias úteis propostas em `C:/Users/david/Downloads/MEGA-BRAIN-VERIFIER-FIX-PROMPT.md`, incorporando os ajustes identificados na análise. O documento recebido serve como referência técnica; sua ordem de implementação e critérios não substituem as decisões abaixo.
+
+O verificador continuará desabilitado ao final da implementação. Seu pipeline ficará preparado, com cobertura e caminho de ativação documentado. Reativá-lo em cards reais exige uma decisão explícita posterior do usuário. Runtime, diagnóstico e preparação de dependências podem beneficiar Tasks e ambiente dev mesmo com verificação desligada.
+
+A implementação altera apenas o Mega Brain. Sondagens e remediações durante sua operação ficam restritas às worktrees gerenciadas dos cards. Não instalar Node, trocar versão global, modificar dependências do checkout canônico, publicar releases ou reexecutar o card real automaticamente.
+
+Estes arquivos são um plano de trabalho e uma checklist de referência. Não representam um card criado nem iniciam o scheduler. A checklist usa o alias `mega-brain`; antes de importá-la para um card, confirmar esse alias no catálogo ativo e substituí-lo, se necessário. Não há número Jira ou ID de card inventado.
+
+## Evidências já confirmadas
+
+- `scripts/lib/workspace.ts:306`: a validação atual do Node acontece somente quando falta `node_modules`, usa o major do `process.version` do servidor e não lê `.node-version`.
+- `scripts/lib/workspace.ts:172`: compartilhar `node_modules` por symlink faz parte do desenho atual das worktrees.
+- `server/modules/dev-environments/dev-env.ts:298`: um único PATH do shell de login é recuperado e reutilizado; não há seleção por repo. O arquivo já contém proteção para desvincular dependências compartilhadas quando os lockfiles diferem.
+- `scripts/lib/executor.ts:249`: o spawn aceita um ambiente específico, mas a execução das Tasks não passa hoje um runtime resolvido por repo.
+- `scripts/commands/dev-stage.ts`: tentativas registram o Node do servidor; o loop do verificador foi desabilitado com `verificationEnabled = false`.
+- `scripts/lib/checklist.ts:43`: cada falha gera um novo item, sem deduplicação.
+- `scripts/lib/executor.ts:178`: todos os IDs VFY são classificados como Verificador, inclusive executores de correção.
+- Diagnóstico real no Ubuntu WSL: processos com PATH separado usaram Node 16.20.2 e 24.15.0; o binário `/usr/bin/node` retornou 18.19.1. Isso comprova a seleção por processo, ainda sem provar a integração com os shells internos das CLIs.
+- Os números e causas do incidente descrito no documento ainda precisam dos artefatos de `/home/david/mega-brain-files/workspace/migrar-delivery-rotas-em-andamento`. Não tratá-los como resultados reproduzidos neste workspace.
+
+## Decisões de implementação
+
+1. **Três contextos distintos de runtime:** servidor, CLI do agente e comandos do projeto. Controlar cada comando de projeto por runner/launcher explícito; não depender de `nvm use` em outra sessão.
+2. **Resolução determinística:** override de repo, `.nvmrc`, `.node-version`, `engines.node`; conferir compatibilidade de engines. Versão exata ausente bloqueia por padrão. Fallback para patch anterior no mesmo major precisa de política explícita, aviso e compatibilidade com engines.
+3. **Installs seguros:** reuso de árvore compartilhada exige compatibilidade. Install necessário ocorre depois de desvincular o symlink, dentro da worktree e com Node correto. Lockfile congelado é o padrão; a exceção para repos com dependências git precisa ser configurada, pois a documentação atual já registra um repo incompatível com `npm ci`.
+4. **Ambiente não é correção de código:** classificar causas com evidência. Problemas de ambiente não geram VFY nem consomem levas; também não são aprovação de checks.
+5. **Baseline com limites explícitos:** comparar diagnósticos com configuração/dependências adequadas. Parsing inválido na base implica resultado inconclusivo, não prova de que todas as violações atuais são antigas.
+6. **Formatação determinística:** ferramenta local do projeto, escopo do card, commit pelo scheduler e política explícita para formatação de legado. Esse passo permanece desativado junto ao pipeline de verificação.
+7. **Deduplicação sem esconder falhas:** repetição após done deve aparecer como falta de progresso e interromper o ciclo. Sobreposição de arquivos não basta para mesclar causas independentes.
+8. **Perfil persistente e invalidável:** comandos, flags, versões, limites e motivos de skipped permanecem estáveis até mudar a configuração relevante.
+9. **Permissão de check por origem validada:** metadados de reparo e perfil autorizado determinam o comando. Prefixo VFY sozinho não autoriza verificações.
+10. **Compatibilidade:** preservar Claude/Codex, cancelamento, retomada, histórico de checklist, defaults antigos e bundle do servidor compatível com Node 18.19.
+
+## Ordem de entrega
+
+| Fase | Tasks | Resultado |
+|---|---|---|
+| 1 — Contratos e runtime | T1–T3 | Seleção e execução por repo com runtime independente da CLI |
+| 2 — Ambiente e Tasks | T4–T9 | Dependências isoladas, companions, scheduler, ambiente dev e evidência de runtime |
+| 3 — Checks determinísticos | T10–T13 | Perfil, escopo/baseline, formatação e classificação de relatórios |
+| 4 — Correções e agentes | T14–T17 | Deduplicação, check de reparo, contexto entre levas e identidade correta |
+| 5 — Integração e distribuição | T18–T20 | Pipeline completo desabilitado, resumo por rodada e bundle/documentação |
+
+As dependências exatas estão na checklist e no detalhamento abaixo. T17 pode ser entregue depois de T1, antes das demais correções. Arquivos compartilhados constam de `files` para que o scheduler serialize alterações sobrepostas.
+
+## Correspondência com o documento recebido
+
+| Proposta original | Tasks |
+|---|---|
+| 1. Node por repo | T1–T3, T7–T9 |
+| 2. Preflight e problemas de ambiente | T4–T6, T13, T18 |
+| 3. Baseline | T10–T11, T13 |
+| 4. Formatação | T12 |
+| 5. Deduplicação | T14 |
+| 6. Perfil persistente | T10, T16, T18 |
+| 7. Check pelo executor de correção | T15 |
+| 8. Notas blocked/failed | T16 |
+| 9. Telemetria | T9, T17, T19 |
+| Compatibilidade e distribuição | T20 |
+
+## Validação e aceite
+
+A checklist contém entregas de implementação; não há tasks autônomas de QA ou testes. A cobertura automatizada relevante acompanha cada entrega e os checks são executados durante sua validação, fora da execução normal dos agentes de Tasks. Não aplicar a exceção de VFY aos itens deste plano.
+
+### Runtime e isolamento
+
+- Usar repos/fixtures de requisitos distintos e confirmar `process.version` e `process.execPath` no runner, no script do gerenciador e no caminho de comando exposto ao agente.
+- Reproduzir a seleção simultânea de 16.20.2 e 24.15.0 no Ubuntu WSL; ambos já foram encontrados instalados. Não instalar versões automaticamente.
+- Exercitar launcher com cada provider e com shell que altera PATH. Uma sondagem externa deve ser controlada e não editar repos nem gastar agentes em execução longa. Não concluir que injeção no spawn prova o ambiente interno da CLI.
+- Confirmar que requisito exato 24.19.0 gera bloqueio na política estrita; na política flexibilizada, usar 24.15.0 somente com aviso explícito e engines compatível.
+- Conferir que install/build/test/start usam o runtime do projeto e não mudam servidor, CLI ou configurações globais.
+- Demonstrar que install em worktree não altera dependências ou lockfile do checkout original.
+
+### Classificação e correções
+
+- Fixture de dependência ausente: diagnosticar ambiente e não criar task.
+- Fixture de alias estático para `../api-core/dist/index.js` ausente: ambiente; remediar somente quando houver comando e relação configurados.
+- Fixture de dependência git com lockfile instável: respeitar política explícita, sem tentar `npm ci` repetidamente.
+- Fixture de arquivo legado: diagnósticos antigos observáveis na base não criam task; novo diagnóstico cria.
+- Fixture de parsing inválido na base: resultado inconclusivo e nenhuma correção automática do conjunto inteiro de violações.
+- Fixture de duas ocorrências iguais da mesma regra/mensagem: detectar nova ocorrência por contagem.
+- Fixture de formatação: formatter determinístico produz patch/commit restrito; não criar reparo de LLM.
+- Fixture de lint/format correlacionados: uma task por causa; falhas independentes em mesmo arquivo continuam distintas.
+- Fixture de falha repetida após done: interromper ciclo e manter falha no resumo.
+- Fixture de reparo com check ainda falhando: não persistir done nem integrar como correção confirmada.
+- Fixture de blocked/failed: contexto chega à próxima rodada; notas livres sem evidência não inventam causa.
+- OOM/timeout/gerenciador ausente: classificação estável, limites explícitos e nenhum ciclo de descoberta repetido.
+
+### Lifecycle, telemetria e distribuição
+
+- Verificador real não é chamado com modo padrão desabilitado, em início, retomada, migração de configuração ou mudança de provider.
+- Fixtures com runners injetados exercitam as rodadas do pipeline sem reativar agentes em cards reais.
+- Confirmar limite de levas, cancelamento, reinício, escrita atômica e ausência de tasks/commits duplicados.
+- Relatórios e resumos distinguem passed/failed/skipped/environment/inconclusive, reparos criados/reusados, custo disponível e versão por repo.
+- Unitários de resolver, dependências, aliases, perfil/invalidação, baseline e deduplicação acompanham os módulos; integração cobre scheduler e bundle.
+- Executar testes relevantes de cada mudança; ao integrar, executar os checks exigidos pelo repositório e a suíte pertinente, evitando rodadas repetidas sem mudança ou falha que as justifique.
+- Build distribuído roda os helpers sem `tsx` ou caminhos do checkout de desenvolvimento, sob o baseline de servidor Node 18.19.
+- O card real do incidente só pode ser reproduzido em cópias/fixtures controladas depois de obter os artefatos. Não alterar sua checklist, branches ou worktrees existentes.
+- `<= 2` rodadas e `<= 4` correções são metas específicas do caso reproduzido; não reduzir controles para forçar esses números. O teste dos 432 casos só é aceite reproduzido se a revisão/dependências reais do repo estiverem disponíveis.
+
+## Conclusão e futura ativação
+
+Entrega pronta quando as 20 tasks satisfizerem seus critérios e a validação relevante estiver registrada, mantendo o verificador desabilitado. Os ajustes de runtime e ambiente podem ser usados separadamente.
+
+A ativação não é uma task deste plano. Depois da entrega, apresentar evidências do runner, resultados de fixtures, problemas pendentes e procedimento de rollback para o usuário decidir a ativação. O rollback da ativação deve preservar artefatos e código; os ajustes de runtime e isolamento podem continuar em uso.
+
+## Tasks detalhadas
+
+| ID | Task | Dependências |
+|---|---|---|
+| T1 | Definir contratos de runtime, ambiente, verificações e origem das correções | — |
+| T2 | Resolver a versão Node exigida e o binário instalado por repositório | T1 |
+| T3 | Criar um executor determinístico de comandos com Node por projeto | T2 |
+| T4 | Diagnosticar compatibilidade das dependências compartilhadas das worktrees | T2 |
+| T5 | Preparar dependências com Node correto e install isolado da worktree | T3, T4 |
+| T6 | Detectar artefatos de repos companheiros ausentes e remediar com política explícita | T3, T4, T5 |
+| T7 | Integrar runtime e preflight ao scheduler e ao contexto dos agentes | T3, T5, T6 |
+| T8 | Aplicar runtime por repo aos installs, builds e servidores do ambiente dev | T3, T5, T6 |
+| T9 | Registrar ambiente efetivo nas tentativas e nos comandos executados | T7, T8 |
+| T10 | Descobrir e persistir perfil de checks por card com adaptadores de ferramentas | T1, T3, T9 |
+| T11 | Determinar escopo do card e comparar diagnósticos com baseline isolada | T5, T10 |
+| T12 | Formatar deterministicamente arquivos do card e integrar as alterações | T10, T11 |
+| T13 | Validar e classificar relatórios sem transformar ambiente em task | T1, T10, T11, T12 |
+| T14 | Deduplicar reparos e interromper ciclos de falha sem progresso | T1, T13 |
+| T15 | Permitir check aprovado em correções e confirmar o resultado antes do commit | T7, T10, T14 |
+| T16 | Repassar diagnósticos e resultados das levas ao verificador | T13, T14, T15 |
+| T17 | Separar identidade do verificador, executor e executor de correção | T1 |
+| T18 | Integrar pipeline de verificação com limite de levas e chamada desabilitada | T9, T12, T13, T14, T15, T16, T17 |
+| T19 | Registrar resumo por rodada, custos, causas e versões utilizadas | T9, T17, T18 |
+| T20 | Documentar políticas e integrar os helpers ao runtime distribuído | T8, T18, T19 |
+
+### T1 — Definir contratos de runtime, ambiente, verificações e origem das correções
+
+**Dependências:** nenhuma.
+
+Criar tipos compartilhados para requisito e runtime Node resolvido, comandos estruturados, diagnósticos de ambiente, perfil e relatório versionados. Acrescentar metadados opcionais de origem às tasks de correção; IDs VFY continuam compatíveis, mas não determinam permissão ou papel. Preservar os documentos e estados antigos da checklist.
+
+**Arquivos previstos:** `shared/domain/project-runtime.ts`, `shared/domain/verification.ts`, `shared/domain/task-checklist.ts`, `shared/domain/repositories.ts`, `shared/storage/task-checklist.ts`, `shared/domain/verification.test.ts`, `shared/domain/task-checklist.test.ts`.
+
+**Novos arquivos de implementação:** `shared/domain/project-runtime.ts`, `shared/domain/verification.ts`.
+
+**Critérios de conclusão:**
+
+- Runtime distingue Node do servidor, da CLI do agente e dos comandos do projeto; registra requisito, binário, versão, política e aviso.
+- Checks distinguem passed, failed, skipped, environment e inconclusive; apenas falhas de código atribuíveis ao card são candidatas a correção.
+- Relatório e perfil possuem versão, identidade de repo/check e informações suficientes para executar comandos sem interpretar texto livre.
+- Metadados opcionais de correção sobrevivem a leitura, gravação e snapshots; checklists antigas continuam válidas.
+
+### T2 — Resolver a versão Node exigida e o binário instalado por repositório
+
+**Dependências:** T1.
+
+Resolver override explícito, .nvmrc, .node-version e engines.node nessa ordem; validar conflito com engines quando houver. Em WSL/Linux, descobrir instalações NVM; permitir caminho explícito em outras plataformas. Resolver ranges com semver e aliases LTS com metadados disponíveis, sem rede ou nvm install automático. Versão exata ausente bloqueia por padrão; flexibilização ao mesmo major exige política explícita e deve satisfazer engines. Evitar escolher outro major apenas por satisfazer um >= amplo. Persistir overrides e políticas opcionais pelo catálogo/API existentes, com defaults compatíveis e validação; definir o comportamento de ausência de requisito sem presumir que o Node do servidor é adequado.
+
+**Arquivos previstos:** `scripts/lib/project-node.ts`, `shared/domain/project-runtime.ts`, `package.json`, `package-lock.json`, `yarn.lock`, `shared/domain/repositories.ts`, `server/repositories/registry.ts`, `scripts/lib/project-node.test.ts`, `server/repositories/registry.test.ts`.
+
+**Novos arquivos de implementação:** `scripts/lib/project-node.ts`.
+
+**Critérios de conclusão:**
+
+- Seleciona v16.20.2 ou v24.15.0 quando os requisitos forem satisfeitos, com desempate determinístico.
+- Cobertura inclui >=20.11, >=24.15.0 <25, ^22, versões exatas, aliases LTS e ausência de versão instalada.
+- Requisito exato 24.19.0 não é satisfeito silenciosamente por 24.15.0; fallback autorizado produz aviso persistido.
+- Binário escolhido é sondado para confirmar process.version e process.execPath; ausência de requisito possui política documentada.
+- Servidor continua compatível com o baseline Node 18.19 do bundle.
+
+### T3 — Criar um executor determinístico de comandos com Node por projeto
+
+**Dependências:** T2.
+
+Implementar runner que recebe cwd, binário, argv, runtime e ambiente; aplica PATH por invocação e mantém runtime da CLI do agente separado. Executar sem shell de login, com timeout, captura de saída e encerramento de subprocessos. Resolver gerenciador compatível e seu launcher; não assumir que npm/yarn/pnpm vêm junto com todo Node instalado. Disponibilizar entrypoint de comando do projeto para uso pelos agentes, inclusive no bundle; comandos de correção referenciam IDs do perfil em vez de shell livre.
+
+**Arquivos previstos:** `scripts/lib/project-command.ts`, `scripts/lib/packageManager.ts`, `server/process.ts`, `scripts/commands/project-command.ts`, `scripts/lib/project-command.test.ts`, `scripts/lib/packageManager.test.ts`.
+
+**Novos arquivos de implementação:** `scripts/lib/project-command.ts`, `scripts/commands/project-command.ts`.
+
+**Critérios de conclusão:**
+
+- Dois comandos concorrentes em repos distintos usam versões diferentes sem mutação de process.env ou do Node global.
+- Comando filho e script npm/yarn/pnpm confirmam o Node selecionado, inclusive quando o shell padrão teria outro PATH.
+- Gerenciador ausente ou incompatível gera diagnóstico de ambiente, sem download silencioso.
+- Runner controla timeout, cancelamento e saída, sem registrar segredos ou construir comando por concatenação de shell.
+
+### T4 — Diagnosticar compatibilidade das dependências compartilhadas das worktrees
+
+**Dependências:** T2.
+
+Substituir a validação baseada apenas em existência de node_modules por diagnóstico estruturado. Symlink é um mecanismo válido; conferir destino, lockfile, dependências pertinentes e contexto de workspace. Distinguir dependências de implementação das necessárias somente aos checks. Não interpretar toda ausência de node_modules como falha em Yarn PnP ou outro layout suportado.
+
+**Arquivos previstos:** `scripts/lib/project-environment.ts`, `scripts/lib/workspace.ts`, `scripts/lib/packageManager.ts`, `scripts/lib/project-environment.test.ts`, `scripts/lib/workspace.test.ts`.
+
+**Novos arquivos de implementação:** `scripts/lib/project-environment.ts`.
+
+**Critérios de conclusão:**
+
+- Versão Node é conferida mesmo quando node_modules existe.
+- Detecta pacote obrigatório ausente, link quebrado e lockfile incompatível com árvore compartilhada; considera dependencies e devDependencies relevantes ao comando.
+- Árvore ligada ao checkout canônico não é classificada como inválida apenas por ser um symlink.
+- pnpm, monorepos e layouts não suportados são tratados explicitamente, sem produzir falsos diagnósticos de dependência ausente.
+- Falha que afeta apenas um check não impede automaticamente edição de código por todos os agentes.
+
+### T5 — Preparar dependências com Node correto e install isolado da worktree
+
+**Dependências:** T3, T4.
+
+Reutilizar e generalizar shouldInstallDependencies/prepareDependencies já existentes no ambiente dev. Desvincular árvore compartilhada somente quando necessário e instalar numa árvore exclusiva da worktree. Usar lockfile congelado por padrão, respeitando gerenciador e versão; repos com dependências git e lockfile instável podem ter exceção explícita, nunca um npm ci obrigatório global. Capturar erros atualmente silenciados e limitar tentativas.
+
+**Arquivos previstos:** `scripts/lib/workspace.ts`, `scripts/lib/packageManager.ts`, `scripts/lib/project-environment.ts`, `server/modules/dev-environments/dev-env.ts`, `scripts/lib/workspace.test.ts`, `scripts/lib/packageManager.test.ts`.
+
+**Critérios de conclusão:**
+
+- Installs usam o runner e o Node resolvido para o repo.
+- Install na worktree não escreve em node_modules do checkout original.
+- Lockfiles compatíveis permitem reuso; alterações exigem preparação isolada e são reavaliadas após bases obrigatórias ou mudanças do card.
+- Falha de install é preservada como problema de ambiente, sem criação de task de correção.
+- Políticas congelada e excepcional são explícitas, e qualquer alteração de lockfile é registrada.
+
+### T6 — Detectar artefatos de repos companheiros ausentes e remediar com política explícita
+
+**Dependências:** T3, T4, T5.
+
+Diagnosticar paths estáticos de moduleNameMapper e aliases equivalentes suportados; não executar arbitrariamente configs JS para procurar paths. Padrões dinâmicos, regex e configs não suportados devem ser inconclusivos, não falsos arquivos inexistentes. Build de repo companheiro exige relação cadastrada, comando explícito e worktree gerenciada; apenas existir um script build não autoriza sua execução.
+
+**Arquivos previstos:** `scripts/lib/project-companions.ts`, `scripts/lib/project-environment.ts`, `scripts/lib/workspace.ts`, `shared/domain/repositories.ts`, `scripts/lib/project-companions.test.ts`.
+
+**Novos arquivos de implementação:** `scripts/lib/project-companions.ts`.
+
+**Critérios de conclusão:**
+
+- Detecta alvo estático inexistente como ../api-core/dist/index.js e associa causa ao ambiente.
+- Aliases com regex ou configuração dinâmica não são tratados como paths literais.
+- Build autorizado roda no Node do companheiro, em worktree gerenciada, com timeout e detecção de ciclos.
+- Sem remediação configurada, retorna orientação humana sem abrir task de código ou alterar checkout canônico.
+
+### T7 — Integrar runtime e preflight ao scheduler e ao contexto dos agentes
+
+**Dependências:** T3, T5, T6.
+
+Preparar contexto por repo antes de gastar agente, propagar ferramenta/launcher de comandos do projeto e preservar runtime das CLIs Claude/Codex. Cobrir executores, correções, resolução de conflitos e retomada. Não depender de nvm use em outro shell ou apenas de instrução textual para escolher Node. Manter proibição de checks para tasks normais.
+
+**Arquivos previstos:** `scripts/commands/dev-stage.ts`, `scripts/lib/executor.ts`, `scripts/lib/task-item-prompt.ts`, `scripts/lib/conflictResolver.ts`, `server/workspace/stage-agent.ts`, `scripts/lib/executor.test.ts`, `scripts/lib/task-item-prompt.test.ts`, `scripts/lib/conflictResolver.test.ts`, `server/workspace/stage-agent.test.ts`.
+
+**Critérios de conclusão:**
+
+- Task recebe requisito, binário resolvido e forma explícita de executar comandos de seu repo.
+- Claude e Codex continuam iniciando com seu runtime; shells internos não anulam a seleção dos comandos do projeto.
+- Ausência de runtime necessário bloqueia com motivo claro antes de install/check ou gasto de agente relacionado.
+- Runtime é revalidado na retomada e alterações de requisito não reutilizam silenciosamente contexto antigo.
+- Chamada do verificador permanece desabilitada.
+
+### T8 — Aplicar runtime por repo aos installs, builds e servidores do ambiente dev
+
+**Dependências:** T3, T5, T6.
+
+Substituir o uso de um único PATH de login para todos os projetos por contexto de execução por repo. Cobrir steps e processos detached, builds de libs companheiras, scripts predev e start. Preservar contratos de portas, cancelamento, logs e encerramento existentes.
+
+**Arquivos previstos:** `server/modules/dev-environments/dev-env.ts`, `server/modules/dev-environments/dev-env-config.ts`, `server/modules/dev-environments/dev-env-agent.ts`, `devEnv.test.ts`.
+
+**Critérios de conclusão:**
+
+- Frontend Node 16 e projeto Node 24 iniciam simultaneamente com runtime distinto.
+- Install, build e start do mesmo repo usam a mesma resolução.
+- Processos de desenvolvimento preservam lifecycle, cancelamento e isolamento de dependências.
+- Configuração global do usuário e Node do servidor não são alterados.
+
+### T9 — Registrar ambiente efetivo nas tentativas e nos comandos executados
+
+**Dependências:** T7, T8.
+
+Manter leitura do campo environment histórico e acrescentar contexto estruturado distinguindo runtime do servidor, CLI e projeto. Não registrar process.version do servidor como se fosse versão de todos os comandos do agente. Sondar o caminho real do runner e usar os resultados dos processos.
+
+**Arquivos previstos:** `scripts/lib/workspace.ts`, `scripts/commands/dev-stage.ts`, `scripts/lib/project-command.ts`, `server/workspace/agent-usage.ts`, `scripts/lib/project-command.test.ts`.
+
+**Critérios de conclusão:**
+
+- execution-attempts.json registra requisito, versão e caminho resolvidos do projeto, incluindo avisos de fallback.
+- Comandos executados pelo runner registram versão/caminho sondados, duração e status.
+- Telemetria diferencia runtime selecionado de comando efetivamente executado; tasks sem comandos não inventam evidência.
+- Tentativas antigas continuam legíveis e logs não contêm credenciais.
+
+### T10 — Descobrir e persistir perfil de checks por card com adaptadores de ferramentas
+
+**Dependências:** T1, T3, T9.
+
+Descobrir comandos por scripts/configs do projeto e adaptadores explicitamente suportados, mantendo argv e limites estruturados. Persistir verification-profile.json com Node, versões de ferramentas, escopo, flags, motivos de skipped e hashes de configuração. Não fixar heap de 8GB universalmente; usar política limitada por repo e registrar ajuste de recurso uma única vez. Checks sem escopo seguro são skipped com motivo estável.
+
+**Arquivos previstos:** `scripts/lib/verification-profile.ts`, `scripts/lib/verification-adapters.ts`, `scripts/lib/packageManager.ts`, `scripts/lib/verification-prompt.ts`, `scripts/lib/verification-profile.test.ts`, `scripts/lib/verification-adapters.test.ts`.
+
+**Novos arquivos de implementação:** `scripts/lib/verification-profile.ts`, `scripts/lib/verification-adapters.ts`.
+
+**Critérios de conclusão:**
+
+- Rodadas seguintes reutilizam o mesmo comando e classificação enquanto o perfil for válido.
+- Mudança de lockfile, script, config, runtime ou tool version invalida apenas o perfil afetado.
+- OOM repetido não redispara descoberta infinita; timeout/OOM são diagnósticos de ambiente/recurso com evidência.
+- Flags e mecanismos stdin são validados para a versão instalada de ESLint, Prettier ou Biome.
+- Perfil grava skipped e causas, com escrita atômica e comportamento definido na retomada.
+
+### T11 — Determinar escopo do card e comparar diagnósticos com baseline isolada
+
+**Dependências:** T5, T10.
+
+Extrair o cálculo do diff do card preservando base original/merge-base; distinguir novos, modificados, renomeados e removidos. Executar lint/format da base em contexto isolado adequado à configuração e dependências da base; não supor que stdin com configuração atual reproduz a base. Comparar diagnósticos como multiconjunto por regra, mensagem e arquivo/mapeamento de rename, sem usar linha como identidade.
+
+**Arquivos previstos:** `scripts/lib/card-change-scope.ts`, `scripts/lib/verification-baseline.ts`, `scripts/commands/dev-stage.ts`, `scripts/lib/card-change-scope.test.ts`, `scripts/lib/verification-baseline.test.ts`.
+
+**Novos arquivos de implementação:** `scripts/lib/card-change-scope.ts`, `scripts/lib/verification-baseline.ts`.
+
+**Critérios de conclusão:**
+
+- Erros legados já observados na base não geram tasks de correção.
+- Um diagnóstico novo continua detectável quando outras ocorrências iguais já existiam.
+- Parsing quebrado na base gera inconclusive com motivo; não declara todos os erros atuais antigos ou novos.
+- Arquivos novos, deletados e renomeados possuem comportamento explícito, sem comandos em arquivos ausentes.
+- Mudança de regras/config torna a comparação explícita ou inconclusiva; baseline não escreve nos checkouts dos cards.
+
+### T12 — Formatar deterministicamente arquivos do card e integrar as alterações
+
+**Dependências:** T10, T11.
+
+Preparar passo de formatação após cada leva, usando ferramenta local e configuração do repo. Executar somente em arquivos existentes, rastreados ou novos do card, respeitando ignores e suporte do adaptador. Preferir trechos alterados onde a ferramenta suportar; formatação de arquivo inteiro exige política do projeto e impacto registrado. Passo pertence ao pipeline de verificação e permanece inativo enquanto ele estiver desabilitado.
+
+**Arquivos previstos:** `scripts/lib/project-format.ts`, `scripts/commands/dev-stage.ts`, `scripts/lib/workspace.ts`, `scripts/lib/project-format.test.ts`.
+
+**Novos arquivos de implementação:** `scripts/lib/project-format.ts`.
+
+**Critérios de conclusão:**
+
+- ESLint com autofix de código não é usado como formatador; Biome roda somente o formatter neste passo.
+- Erro puramente de formatação não cria task de LLM.
+- Mudanças são commitadas pelo scheduler com mensagem determinística e somente paths atribuídos ao passo.
+- Não altera checkout original nem gera churn silencioso em legado.
+- Falha do formatador permanece visível e não é marcada como passed.
+
+### T13 — Validar e classificar relatórios sem transformar ambiente em task
+
+**Dependências:** T1, T10, T11, T12.
+
+Extrair readVerificationReport para contrato tipado, com validação de status, causa, checkId, repo, escopo e correspondência do perfil. Usar evidências do runner para ambiente e baseline; não confiar somente no palpite da LLM. Ambiente, skipped e inconclusive não geram reparos nem consomem levas, mas também não equivalem a aprovação.
+
+**Arquivos previstos:** `scripts/lib/verification-report.ts`, `scripts/commands/dev-stage.ts`, `scripts/lib/verification-prompt.ts`, `scripts/lib/verification-report.test.ts`.
+
+**Novos arquivos de implementação:** `scripts/lib/verification-report.ts`.
+
+**Critérios de conclusão:**
+
+- Dependência ausente, Node incompatível, artefato companheiro faltante e OOM conhecido resultam em environment.
+- Relatório incompleto ou inconsistente é inválido e mantém motivo explícito.
+- Apenas failed de código novo confirmado pode gerar task.
+- Com verificação habilitada, environment/inconclusive deixam a etapa com atenção conforme política explícita, sem falso sucesso.
+- Relatórios anteriores possuem leitura/migração definida; paths e comandos são associados ao perfil autorizado.
+
+### T14 — Deduplicar reparos e interromper ciclos de falha sem progresso
+
+**Dependências:** T1, T13.
+
+Agrupar diagnósticos correlacionados da mesma causa em mesmo repo, com sobreposição de files. Sobreposição sozinha não é suficiente para mesclar causas independentes. Persistir fingerprint, checkId, profile hash e origem da correção. Repetição após done continua como falha pendente/escalada; não criar infinitamente VFYs nem omitir a falha. Preservar histórico e IDs descartados.
+
+**Arquivos previstos:** `scripts/lib/checklist.ts`, `shared/domain/task-checklist.ts`, `shared/storage/task-checklist.ts`, `scripts/lib/checklist.test.ts`.
+
+**Critérios de conclusão:**
+
+- Lint e format da mesma causa não criam tarefas redundantes; erro de código independente permanece separado.
+- Falha equivalente a uma task pending/blocked é vinculada ao item existente.
+- Repetição após done é reportada como sem progresso e interrompe repetição automática, sem sucesso falso.
+- Mudança real de causa, escopo ou perfil pode gerar novo reparo com justificativa.
+- Gravação permanece atômica e dependências/histórico não são corrompidos.
+
+### T15 — Permitir check aprovado em correções e confirmar o resultado antes do commit
+
+**Dependências:** T7, T10, T14.
+
+Distinguir reparo por metadados validados, não apenas prefixo VFY. Fornecer comando do perfil em leitura e escopo da task. Acrescentar contrato obrigatório também ao prompt personalizado, preservando a proibição para tasks normais. Após retorno done de reparo, scheduler executa check autorizado antes de commit/integração. Ferramentas que escrevem ficam exclusivamente no passo determinístico de formatação.
+
+**Arquivos previstos:** `scripts/lib/task-item-prompt.ts`, `scripts/lib/checklist.ts`, `scripts/lib/executor.ts`, `scripts/commands/dev-stage.ts`, `shared/domain/prompt-defaults.ts`, `docs/kanban/prompts/task-item-default.txt`, `scripts/lib/task-item-prompt.test.ts`, `scripts/lib/executor.test.ts`.
+
+**Critérios de conclusão:**
+
+- Executor de correção recebe comando exato aprovado e evidência da falha, sem redescoberta.
+- Itens normais continuam sem permissão para lint/build/test.
+- Done de reparo só é persistido após confirmação do runner; persistência da falha ou ambiente retorna motivo apropriado.
+- Comando informado livremente pelo agente não é executado sem validação contra perfil e escopo.
+- Mantém limites existentes de tentativas, timeout, custo e compatibilidade Claude/Codex.
+
+### T16 — Repassar diagnósticos e resultados das levas ao verificador
+
+**Dependências:** T13, T14, T15.
+
+Incluir perfil válido, alterações do card, baseline, resultados anteriores e notas relevantes de blocked/failed da leva anterior. Dar preferência à classificação estruturada e evidência de processos; texto livre não deve reclassificar automaticamente erro como ambiente. Limitar volume e redigir segredos.
+
+**Arquivos previstos:** `scripts/lib/verification-prompt.ts`, `scripts/commands/dev-stage.ts`, `scripts/lib/verification-prompt.test.ts`.
+
+**Critérios de conclusão:**
+
+- Verificador recebe diagnóstico do item bloqueado e resultado do comando que já foi executado.
+- Mesma causa não é investigada do zero em todas as rodadas.
+- Classificação de ambiente exige evidência ou permanece inconclusiva.
+- Prompt identifica cada repo/runtime, restringe execução ao launcher e preserva contrato obrigatório quando personalizado.
+
+### T17 — Separar identidade do verificador, executor e executor de correção
+
+**Dependências:** T1.
+
+Adicionar papel/label explícito às opções do agente. Verificador usa Verificação · Rodada n e displayName Verificador; VFY identifica task de correção, não papel. Preservar identidade de checkpoints e possibilidade de retomar sessões antigas mesmo com ajuste de texto/label.
+
+**Arquivos previstos:** `scripts/lib/executor.ts`, `scripts/lib/verification-prompt.ts`, `scripts/lib/agent-checkpoint.ts`, `server/workspace/agent-usage.ts`, `server/chat/task-conversation.ts`, `scripts/lib/executor.test.ts`, `scripts/lib/agent-resume.test.ts`.
+
+**Critérios de conclusão:**
+
+- Verificador não ocupa identidade de item VFY e não colide com executor de correção.
+- Executor VFY recebe papel Executor de correção, não Verificador.
+- Labels, mensagens, sessões e checkpoints distinguem rodada de item em Claude e Codex.
+- Retomada não perde sessão antiga silenciosamente devido à nova identificação do prompt.
+
+### T18 — Integrar pipeline de verificação com limite de levas e chamada desabilitada
+
+**Dependências:** T9, T12, T13, T14, T15, T16, T17.
+
+Integrar preflight -> perfil -> formatação -> checks/baseline -> relatório -> reparos -> nova leva, centralizando resultados. Preparação determinística roda antes de cada rodada apenas quando contexto mudou; ambiente não consome leva. Manter teto CHECKLIST_MAX_VERIFICATION_WAVES e evitar anexar reparos que não serão executados sem sinalizar pendência. Habilitação deve exigir decisão explícita; nenhuma configuração antiga reativa o agente.
+
+**Arquivos previstos:** `scripts/commands/dev-stage.ts`, `scripts/lib/verification-prompt.ts`, `scripts/lib/verification-profile.ts`, `scripts/lib/agent-checkpoint.ts`, `scripts/commands/dev-stage.test.ts`.
+
+**Critérios de conclusão:**
+
+- Modo padrão mantém verificador e seus passos de checks/formatação sem chamada, com resumo desabilitado.
+- Código do pipeline permanece disponível para ativação futura controlada; runtime/preparação das Tasks continuam úteis com ele desligado.
+- Falhas não remediáveis, sem progresso, tarefas bloqueadas e teto atingido interrompem com resumo e artefatos preservados.
+- Timeout/cancelamento/retomada não duplicam commits, tasks ou rodadas.
+- Etapa diferencia implementado, verificação desabilitada e verificado, sem inventar aprovação.
+
+### T19 — Registrar resumo por rodada, custos, causas e versões utilizadas
+
+**Dependências:** T9, T17, T18.
+
+Persistir resumo por rodada junto aos relatórios: duração, custo disponível, passed/failed/skipped/environment/inconclusive, reparos criados/reusados e ambiente de cada repo. Distinguir tempo de relógio e tempo agregado dos agentes. Valores ausentes permanecem indisponíveis, especialmente em providers sem custo reportado.
+
+**Arquivos previstos:** `scripts/commands/dev-stage.ts`, `scripts/lib/verification-report.ts`, `server/workspace/agent-usage.ts`, `scripts/lib/verification-report.test.ts`.
+
+**Critérios de conclusão:**
+
+- run-task-checklist.log apresenta resultado por rodada e total consistente com os registros.
+- Node por repo e avisos de fallback aparecem sem confundir runtime do servidor.
+- Mostra falhas sem progresso, ambientes pendentes e tarefas não executadas após teto.
+- Custo ausente não é apresentado como zero comprovado; diagnóstico não expõe dados sensíveis.
+
+### T20 — Documentar políticas e integrar os helpers ao runtime distribuído
+
+**Dependências:** T8, T18, T19.
+
+Documentar configuração suportada, fallback exato, gerenciador, installs excepcionais, companions, perfil e estado desabilitado. Incorporar helpers/entrypoints ao bundle se necessário, sem depender de paths do checkout ou tsx no WSL distribuído. Não reativar verificador durante build, instalação, migração ou mudança de provider.
+
+**Arquivos previstos:** `docs/kanban/04-desenvolvendo.md`, `docs/kanban/README.md`, `docs/architecture/task-checklist-json.md`, `docs/architecture/project-runtime-and-verification.md`, `docs/architecture/wsl-runtime-contract.md`, `scripts/commands/server-build.mjs`, `server/workspace/stage-command.ts`, `server/app/embedded-stage.ts`, `server/main.ts`, `server/workspace/stage-command.test.ts`.
+
+**Novos arquivos de implementação:** `docs/architecture/project-runtime-and-verification.md`.
+
+**Critérios de conclusão:**
+
+- Documentação descreve o fluxo efetivo, inclusive como distinguir tasks implementadas de código verificado.
+- Bundle suporta Node 18.19 do servidor e execução de projetos em runtimes distintos.
+- Launcher usado por agente funciona no bundle sem arquivos inexistentes do repositório de desenvolvimento.
+- Configuração antiga segue funcionando e não habilita verificador automaticamente.
+- Procedimento de validação e de futura ativação/rollback está documentado.

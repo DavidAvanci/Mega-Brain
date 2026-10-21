@@ -2,7 +2,7 @@ import { itemCheckpoint } from './agent-checkpoint.ts'
 import { continuationArgs } from '../../server/workspace/agent-checkpoint.ts'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { delimiter, join } from 'node:path'
+import { delimiter, isAbsolute, join } from 'node:path'
 import {
   agentSessionIdFromEvent,
   agentSessionIdFromOutput,
@@ -10,7 +10,12 @@ import {
   setAgentUsageSessionId,
   startAgentUsage,
 } from '../../server/workspace/agent-usage.ts'
-import { appendConversation, executionEntries, pendingTaskMessages, taskMessageContext } from '../../server/chat/task-conversation.ts'
+import {
+  appendConversation,
+  executionEntries,
+  pendingTaskMessages,
+  taskMessageContext,
+} from '../../server/chat/task-conversation.ts'
 
 export interface ItemResult {
   status: 'done' | 'failed' | 'blocked'
@@ -39,6 +44,16 @@ export function claudeBin(): string {
   return 'claude'
 }
 
+export function agentCliRuntime(): { name: string; execPath: string } {
+  const chatgpt = process.env.MEGA_BRAIN_LLM_PROVIDER === 'chatgpt'
+  const name = chatgpt ? 'codex' : 'claude'
+  const command = chatgpt ? codexBin() : claudeBin()
+  const resolved = isAbsolute(command)
+    ? command
+    : (process.env.PATH ?? '').split(delimiter).map((dir) => join(dir, command)).find(existsSync)
+  return { name, execPath: resolved ?? command }
+}
+
 function codexBin(): string {
   if (process.env.MEGA_BRAIN_CODEX_BIN?.trim()) return process.env.MEGA_BRAIN_CODEX_BIN.trim()
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
@@ -57,6 +72,7 @@ export interface ClaudeItemOptions {
   tools: string
   timeoutMs: number
   env?: Record<string, string>
+  role?: 'executor' | 'verification' | 'repair'
 }
 
 type ResultStatus = ItemResult['status']
@@ -78,7 +94,10 @@ function parseResult(stdout: string): ItemResult | null {
     data = record(JSON.parse(stdout))
   } catch {
     for (const line of stdout.split('\n')) {
-      try { const event = record(JSON.parse(line)); if (event?.type === 'result') data = event } catch {}
+      try {
+        const event = record(JSON.parse(line))
+        if (event?.type === 'result') data = event
+      } catch {}
     }
   }
   if (!data) return null
@@ -153,8 +172,18 @@ export async function runClaudeItem(options: ClaudeItemOptions): Promise<ItemRes
   let result = await runItemPass(options)
   const cardPath = process.env.MEGA_BRAIN_CARD_PATH?.trim()
   while (cardPath && result.status === 'done' && pendingTaskMessages(cardPath).length) {
-    const followup = await runItemPass({ ...options, prompt: `${options.prompt}\n\nResposta anterior do agente: ${result.note}\nRevise a implementação deste item considerando as novas mensagens do usuário antes de finalizar.` })
-    result = { ...followup, durationMs: (result.durationMs ?? 0) + (followup.durationMs ?? 0), costUsd: result.costUsd === undefined && followup.costUsd === undefined ? undefined : (result.costUsd ?? 0) + (followup.costUsd ?? 0) }
+    const followup = await runItemPass({
+      ...options,
+      prompt: `${options.prompt}\n\nResposta anterior do agente: ${result.note}\nRevise a implementação deste item considerando as novas mensagens do usuário antes de finalizar.`,
+    })
+    result = {
+      ...followup,
+      durationMs: (result.durationMs ?? 0) + (followup.durationMs ?? 0),
+      costUsd:
+        result.costUsd === undefined && followup.costUsd === undefined
+          ? undefined
+          : (result.costUsd ?? 0) + (followup.costUsd ?? 0),
+    }
   }
   return result
 }
@@ -164,7 +193,9 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
     const startedAt = Date.now()
     const settle = (result: ItemResult) => resolve({ ...result, durationMs: Date.now() - startedAt })
     const provider = process.env.MEGA_BRAIN_LLM_PROVIDER === 'chatgpt' ? 'chatgpt' : 'claude'
-    const itemId = options.prompt.match(/(?:^|\n)(?:Item:|Cenário:|Correção orientada por teste que falhou:)\s*([^\s—]+)/)?.[1]
+    const itemId = options.prompt.match(
+      /(?:^|\n)(?:Item:|Cenário:|Correção orientada por teste que falhou:)\s*([^\s—]+)/,
+    )?.[1]
     const stageScript = process.env.MEGA_BRAIN_STAGE_SCRIPT ?? ''
     const stageLabel = stageScript.includes('test-stage')
       ? 'Testes'
@@ -175,17 +206,23 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
       provider === 'chatgpt' && ['fable', 'opus', 'sonnet', 'haiku', 'default'].includes(options.model.toLowerCase())
         ? undefined
         : options.model
-    const sessionName = itemId?.startsWith('VFY')
-      ? 'Verificador'
-      : stageScript === 'stage-task' || stageScript === 'master-pr-task'
-        ? 'Criador de PR'
-        : 'Executor'
+    const sessionName =
+      options.role === 'verification'
+        ? `Verificação · Rodada ${itemId?.match(/\d+/)?.[0] ?? '1'}`
+        : options.role === 'repair'
+          ? 'Executor de correção'
+          : stageScript === 'stage-task' || stageScript === 'master-pr-task'
+            ? 'Criador de PR'
+            : 'Executor'
+    const displayName = options.role === 'verification' ? 'Verificador' : sessionName
     const cardPath = process.env.MEGA_BRAIN_CARD_PATH?.trim()
     const usageId = cardPath
       ? startAgentUsage(cardPath, new Date(startedAt), {
-          label: itemId ? `${stageLabel} · ${itemId}` : stageLabel,
+          label: options.role === 'verification' ? sessionName : itemId ? `${stageLabel} · ${itemId}` : stageLabel,
+          displayName,
           provider: provider === 'chatgpt' ? 'codex' : 'claude',
           model: usageModel,
+          effort: options.effort,
         })
       : undefined
     let usageFinished = false
@@ -197,7 +234,9 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
     const messages = cardPath ? taskMessageContext(cardPath) : undefined
     const prompt = `${sessionName}\n\n${options.prompt}${process.env.MEGA_BRAIN_KNOWLEDGE_CONTEXT ?? ''}${messages?.prompt ?? ''}`
     const fastModeArgs =
-      (options.fastMode ?? process.env.MEGA_BRAIN_CLAUDE_FAST_MODE === '1') ? ['--settings', JSON.stringify({ fastMode: true })] : []
+      (options.fastMode ?? process.env.MEGA_BRAIN_CLAUDE_FAST_MODE === '1')
+        ? ['--settings', JSON.stringify({ fastMode: true })]
+        : []
     const claudeArgs = [
       '-p',
       ...fastModeArgs,
@@ -242,7 +281,9 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
     if (cardPath && usageId && saved?.sessionId) setAgentUsageSessionId(cardPath, usageId, saved.sessionId)
     const originalArgs = saved?.args ?? args
     checkpoint.save({ provider: providerName, args: originalArgs, sessionId: saved?.sessionId })
-    const launchArgs = saved ? continuationArgs(providerName, originalArgs, saved.sessionId, messages?.prompt ?? '') : args
+    const launchArgs = saved
+      ? continuationArgs(providerName, originalArgs, saved.sessionId, messages?.prompt ?? '')
+      : args
     const child = spawn(command, launchArgs, {
       cwd: options.cwd,
       env: { ...process.env, ...options.env },
@@ -253,21 +294,30 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
     let timedOut = false
     let buffer = ''
     child.on('spawn', () => messages?.acknowledge())
-    if (cardPath) appendConversation(cardPath, { role: 'assistant', tool: `Executando ${itemId ?? 'task'}`, source: sessionName })
+    if (cardPath)
+      appendConversation(cardPath, { role: 'assistant', tool: `Executando ${itemId ?? 'task'}`, source: displayName })
     child.stdout.on('data', (chunk) => {
       stdout += chunk
       buffer += chunk
       const lines = buffer.split('\n')
       buffer = lines.pop() ?? ''
       for (const line of lines) {
-        const event = (() => { try { return record(JSON.parse(line)) } catch { return undefined } })()
+        const event = (() => {
+          try {
+            return record(JSON.parse(line))
+          } catch {
+            return undefined
+          }
+        })()
         const sessionId = agentSessionIdFromEvent(event)
         if (typeof sessionId === 'string') {
           checkpoint.save({ provider: providerName, args: originalArgs, sessionId })
           if (cardPath && usageId) setAgentUsageSessionId(cardPath, usageId, sessionId)
         }
       }
-      if (cardPath) for (const line of lines) for (const entry of executionEntries(line)) appendConversation(cardPath, { ...entry, source: sessionName })
+      if (cardPath)
+        for (const line of lines)
+          for (const entry of executionEntries(line)) appendConversation(cardPath, { ...entry, source: displayName })
     })
     child.stderr.on('data', (chunk) => (stderr += chunk))
     const timer = setTimeout(() => {
@@ -277,7 +327,8 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
     child.on('error', (error) => {
       checkpoint.clear()
       clearTimeout(timer)
-      if (cardPath && buffer.trim()) for (const entry of executionEntries(buffer)) appendConversation(cardPath, { ...entry, source: sessionName })
+      if (cardPath && buffer.trim())
+        for (const entry of executionEntries(buffer)) appendConversation(cardPath, { ...entry, source: displayName })
       finishUsage()
       settle({
         status: 'failed',
@@ -288,7 +339,8 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
       if (!signal || timedOut) checkpoint.clear()
       clearTimeout(timer)
       if (cardPath && usageId) setAgentUsageSessionId(cardPath, usageId, agentSessionIdFromOutput(stdout))
-      if (cardPath && buffer.trim()) for (const entry of executionEntries(buffer)) appendConversation(cardPath, { ...entry, source: sessionName })
+      if (cardPath && buffer.trim())
+        for (const entry of executionEntries(buffer)) appendConversation(cardPath, { ...entry, source: displayName })
       if (timedOut) {
         finishUsage()
         settle({ status: 'failed', note: `Timeout após ${Math.round(options.timeoutMs / 60000)}min` })
@@ -298,7 +350,17 @@ function runItemPass(options: ClaudeItemOptions): Promise<ItemResult> {
       let reportedCost = result?.costUsd
       if (provider === 'claude' && reportedCost === undefined) {
         try {
-          const rawCost = stdout.split('\n').flatMap(line => { try { return [record(JSON.parse(line))] } catch { return [] } }).reverse().find(event => event?.type === 'result')?.total_cost_usd
+          const rawCost = stdout
+            .split('\n')
+            .flatMap((line) => {
+              try {
+                return [record(JSON.parse(line))]
+              } catch {
+                return []
+              }
+            })
+            .reverse()
+            .find((event) => event?.type === 'result')?.total_cost_usd
           if (typeof rawCost === 'number' && Number.isFinite(rawCost) && rawCost >= 0) reportedCost = rawCost
         } catch {
           // A malformed provider response can still be reported as a failed execution.

@@ -86,8 +86,11 @@ export function createPlanningSelectionService(
           ? catalog.models.map((model) => [model.id, `${model.label}: ${model.description}`])
           : CLAUDE_MODELS.map((model) => [model.value, CLAUDE_DESCRIPTIONS[model.value]]),
       )
-      const efforts = EFFORT_ORDER.filter((effort) =>
-        Object.keys(modelCriteria).some((model) => supportedEfforts(provider, model, catalog).includes(effort)),
+      const maxJevEffortIndex = EFFORT_ORDER.indexOf('high')
+      const efforts = EFFORT_ORDER.filter(
+        (effort) =>
+          EFFORT_ORDER.indexOf(effort) <= maxJevEffortIndex &&
+          Object.keys(modelCriteria).some((model) => supportedEfforts(provider, model, catalog).includes(effort)),
       )
       const questions = {
         planningModel: {

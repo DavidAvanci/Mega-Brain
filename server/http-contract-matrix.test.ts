@@ -153,15 +153,15 @@ function fixtures(fail = false) {
 
 test('contract matrix: every JSON route forwards its exact method/path/query/body and returns the JSON envelope', async () => {
   const { routes, calls } = fixtures()
-  expect(routes).toHaveLength(28)
+  expect(routes).toHaveLength(29)
   for (const route of routes) {
     const response = await route.handler(request(route))
     expect(response, route.label).toMatchObject({ status: 200, headers: { 'Content-Type': 'application/json' } })
   }
   const workspaceCalls = calls.filter((call) => call.area === 'workspace')
-  expect(workspaceCalls).toHaveLength(20)
+  expect(workspaceCalls).toHaveLength(21)
   expect(workspaceCalls.map(({ args }) => [args[0], args[1], args[2], args[3]])).toEqual(
-    routes.slice(0, 20).map((route) => [route.path, route.method, route.query ?? '', route.body]),
+    routes.slice(0, 21).map((route) => [route.path, route.method, route.query ?? '', route.body]),
   )
 })
 

@@ -24,6 +24,7 @@ export interface SchedulerSummary {
   total: number
   ok: boolean
   costUsd: number
+  costReported: boolean
   durationMs: number
   failures: { id: string; note: string }[]
 }
@@ -49,6 +50,7 @@ export async function runChecklist(options: SchedulerOptions): Promise<Scheduler
   const inFlight = new Map<string, Promise<void>>()
   let writeLock = Promise.resolve()
   let totalCostUsd = 0
+  let costReported = false
   let totalDurationMs = 0
   const failures: { id: string; note: string }[] = []
 
@@ -61,6 +63,7 @@ export async function runChecklist(options: SchedulerOptions): Promise<Scheduler
       let costUsd = 0
       let durationMs = 0
       const absorb = (outcome: ItemOutcome) => {
+        if (outcome.costUsd !== undefined) costReported = true
         costUsd += outcome.costUsd ?? 0
         durationMs += outcome.durationMs ?? 0
         return outcome
@@ -126,6 +129,7 @@ export async function runChecklist(options: SchedulerOptions): Promise<Scheduler
     total: final.length,
     ok: final.length > 0 && final.every((item) => item.state === 'done'),
     costUsd: totalCostUsd,
+    costReported,
     durationMs: totalDurationMs,
     failures,
   }

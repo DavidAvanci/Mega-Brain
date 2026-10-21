@@ -29,6 +29,7 @@ import {
   agentSessionIdFromOutput,
   finishAgentUsage,
   setAgentUsageSessionId,
+  setAgentUsageSettings,
   startAgentUsage,
 } from '../workspace/agent-usage'
 import { redactDevEnvOutput } from '../modules/dev-environments/dev-env-logs'
@@ -53,7 +54,9 @@ function jsonRecord(line: string): Record<string, unknown> | undefined {
 }
 
 export function sessionDir(cwd: string, projectsRoot = DEFAULT_PROJECTS_ROOT): string {
-  return join(projectsRoot, cwd.replace(/[/.]/g, '-'))
+  // Claude encodes the absolute cwd as one directory name. Normalize both
+  // separator styles because transcripts can contain POSIX paths on Windows.
+  return join(projectsRoot, cwd.replace(/[:\\/.]/g, '-'))
 }
 
 export function resolveSession(path: string, projectsRoot = DEFAULT_PROJECTS_ROOT): string | undefined {
@@ -245,6 +248,7 @@ function streamChat(
   const usageId = startAgentUsage(path, new Date(), {
     label: terminal ? 'dev-environment' : 'chat',
     provider: 'claude',
+    ...(stageSettings ? { model, effort: stageSettings.effort } : {}),
   })
   let costUsd: number | undefined
   const child = runner.spawn(
@@ -279,7 +283,10 @@ function streamChat(
       if (usageEvent?.type === 'result' && typeof usageEvent.total_cost_usd === 'number')
         costUsd = usageEvent.total_cost_usd
       const settings = settingsEvent(line)
-      if (settings) emit(settings)
+      if (settings?.type === 'settings') {
+        setAgentUsageSettings(path, usageId, settings.settings.model, settings.settings.effort)
+        emit(settings)
+      }
       const event = chatEvent(line, terminal)
       if (!event) continue
       if (event.type === 'done') finish(event)
@@ -313,7 +320,11 @@ function streamCodexChat(
   model = 'default',
   stageSettings?: ModelStageSettings,
 ): void {
-  const usageId = startAgentUsage(path, new Date(), { label: terminal ? 'dev-environment' : 'chat', provider: 'codex' })
+  const usageId = startAgentUsage(path, new Date(), {
+    label: terminal ? 'dev-environment' : 'chat',
+    provider: 'codex',
+    ...(stageSettings ? { model, effort: stageSettings.effort } : {}),
+  })
   const args = [
     'exec',
     '--json',
@@ -546,7 +557,10 @@ export function createChatService(
         if (terminal && event.type === 'tool') event = { ...event, tool: redactDevEnvOutput(event.tool).slice(0, 4000) }
         if (terminal && event.type === 'done' && event.error)
           event = { ...event, error: redactDevEnvOutput(event.error) }
-        if (event.type === 'text') response += event.text
+        if (event.type === 'text') {
+          if (terminal && response && event.text) event = { ...event, text: `\n\n${event.text}` }
+          response += event.text
+        }
         if (event.type === 'tool')
           appendConversation(conversation, { role: 'assistant', tool: event.tool, ...(source ? { source } : {}) })
         if (event.type === 'output') appendConversation(conversation, { role: 'assistant', output: event.text })

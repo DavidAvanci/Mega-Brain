@@ -35,3 +35,7 @@ O scheduler grava estados e notas por ID, preservando os outros campos. Correç�
 `GET /api/workspace/detail?name=<card>&section=checklist` retorna `{ "checklist": <documento ou null> }`. O detalhe completo também inclui `checklist`. O acesso por `section=file&file=TASK-CHECKLIST.json` permanece disponível para leitura do artefato. A aba Tasks usa componentes próprios; o plano continua com a visualização Markdown.
 
 Cards antigos são convertidos no primeiro acesso pela camada de persistência. A conversão preserva IDs explícitos, estados, metadados, contexto indentado, notas e itens riscados; IDs ausentes são atribuídos sem colidir com os existentes. O original é preservado em `TASK-CHECKLIST.md.bak`. Havendo JSON, ele sempre prevalece. Um JSON inválido nunca usa o Markdown como fallback, e uma migração inválida preserva o original e informa o erro. Snapshots de etapas preservam o artefato JSON para interrupção e retomada. Snapshots anteriores à migração também restauram o conteúdo da checklist no formato atual, inclusive quando o artefato ainda não existia.
+
+# Metadados de reparo
+
+Itens de correção podem conter `origin: "verification-repair"` e metadados `repair` (checkId, fingerprint, profileFingerprint, origem e leva). Esses campos são opcionais para manter a leitura de checklists antigas. IDs `VFY` sozinhos não autorizam comandos de verificação nem definem o papel da CLI.

@@ -18,6 +18,7 @@ export const DevEnvAgentTerminal = forwardRef<
   { cardId: string; onRunningChange: (running: boolean) => void }
 >(function DevEnvAgentTerminal({ cardId, onRunningChange }, ref) {
   const [entries, setEntries] = useState<ChatEntry[]>([])
+  const [settings, setSettings] = useState<{ model: string; effort: string } | null>(null)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [running, setRunning] = useState(false)
@@ -41,6 +42,7 @@ export const DevEnvAgentTerminal = forwardRef<
         const history = await fetchDevEnvAgent(cardId)
         if (cancelled) return
         setEntries(history.entries)
+        setSettings(history.settings ?? null)
         setRunning(Boolean(history.executionRunning))
         restore(history.selection)
       } catch (failure) {
@@ -73,6 +75,10 @@ export const DevEnvAgentTerminal = forwardRef<
         cardId,
         text,
         (event) => {
+          if (event.type === 'settings') {
+            setSettings(event.settings)
+            return
+          }
           if (event.type === 'text')
             setEntries((previous) => {
               const last = previous.at(-1)
@@ -105,24 +111,24 @@ export const DevEnvAgentTerminal = forwardRef<
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden" aria-label="Terminal integrado do agente">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-muted/40 px-4 py-3">
-        <div>
-          <h3 className="text-sm font-medium">Agente de ambiente</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Peça para iniciar, investigar um erro ou ajustar o ambiente local.
-          </p>
+    <section className="flex h-full min-h-0 flex-col overflow-hidden" aria-label="Conversa do ambiente">
+      {settings && (
+        <div
+          className="flex shrink-0 items-center justify-between gap-2 border-b px-5 py-2 text-[11px] text-muted-foreground"
+          aria-label="Configuração do agente"
+        >
+          <span className="min-w-0 truncate">{settings.model} · effort {settings.effort}</span>
+          <div className="flex shrink-0 items-center gap-2">
+            {busy && (
+              <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Spinner className="size-3.5" />
+                Executando
+              </span>
+            )}
+            <ChatExport cardId={cardId} conversation="Ambiente" entries={entries} />
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {busy && (
-            <span className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Spinner className="size-3.5" />
-              Executando
-            </span>
-          )}
-          <ChatExport cardId={cardId} conversation="Ambiente" entries={entries} />
-        </div>
-      </div>
+      )}
       <div
         ref={scroller}
         role="log"
@@ -149,7 +155,7 @@ export const DevEnvAgentTerminal = forwardRef<
           {error}
         </p>
       )}
-      <div className="shrink-0 px-4 pt-3 pb-2">
+      <div className="shrink-0 px-5 py-3">
         <ChatComposer
           input={input}
           onInput={setInput}
@@ -164,11 +170,9 @@ export const DevEnvAgentTerminal = forwardRef<
           placeholder="Peça para iniciar o ambiente ou investigar uma falha…"
           sendLabel="Enviar pedido ao agente"
           stopLabel="Interromper agente"
+          showKeyboardHint={false}
         />
       </div>
-      <p className="shrink-0 px-4 pb-3 text-[11px] text-muted-foreground">
-        Interromper o agente encerra sua execução. Para encerrar os projetos, use “Parar ambiente”.
-      </p>
     </section>
   )
 })

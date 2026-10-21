@@ -11,13 +11,21 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { appendFileSync, mkdirSync, rmdirSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { WORKTREES } from './env.ts'
-import { activeRepositoryCompanionGroup, activeRepositoryPath, assertRegisteredWorktree } from '../../server/repositories/catalog.ts'
+import {
+  activeRepositories,
+  activeRepositoryCompanionGroup,
+  activeRepositoryPath,
+  assertRegisteredWorktree,
+} from '../../server/repositories/catalog.ts'
 import { currentBranch, defaultBranch, git, hasRef } from './git.ts'
-import { JIRA_KEY } from './jira.ts'
-import { detectPackageManager, installCommand, lockfileName } from './packageManager.ts'
+import { installCommand, lockfilesMatch, resolvePackageManagerCommand } from './packageManager.ts'
 import { readPlan } from './plan.ts'
+import { diagnoseProjectEnvironment } from './project-environment.ts'
+import { resolveProjectNode } from './project-node.ts'
+import { slugify, taskJiraKey } from './task-id.ts'
+import { diagnoseCompanionArtifacts, runConfiguredCompanionBuild } from './project-companions.ts'
 
 export interface TaskInfo {
   id: string
@@ -44,6 +52,15 @@ export interface PreservedAttempt {
   commitBefore?: string
   commitAfter?: string
   environment?: string
+  runtime?: {
+    requirement: string
+    source: string
+    version: string
+    execPath: string
+    server?: { version: string; execPath: string }
+    cli?: { name: string; execPath: string }
+    warning?: string
+  }
 }
 
 const ATTEMPTS_FILE = 'execution-attempts.json'
@@ -67,27 +84,20 @@ export function readRequiredBases(wsPath: string, repo: string): string[] {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
   const value = (raw as Record<string, unknown>)[repo]
   if (typeof value === 'string') return value.trim() ? [value.trim()] : []
-  return Array.isArray(value) ? value.filter((ref): ref is string => typeof ref === 'string' && Boolean(ref.trim())).map((ref) => ref.trim()) : []
+  return Array.isArray(value)
+    ? value.filter((ref): ref is string => typeof ref === 'string' && Boolean(ref.trim())).map((ref) => ref.trim())
+    : []
 }
 
 export function recordPreparedBases(wsPath: string, repo: string, resolved: string[]): void {
   const file = join(wsPath, 'card.json')
   const card = readCardRecord(file) ?? {}
-  const current = card.preparedBases && typeof card.preparedBases === 'object' && !Array.isArray(card.preparedBases)
-    ? (card.preparedBases as Record<string, unknown>)
-    : {}
+  const current =
+    card.preparedBases && typeof card.preparedBases === 'object' && !Array.isArray(card.preparedBases)
+      ? (card.preparedBases as Record<string, unknown>)
+      : {}
   card.preparedBases = { ...current, [repo]: { refs: resolved, preparedAt: new Date().toISOString() } }
   writeFileSync(file, `${JSON.stringify(card, null, 2)}\n`)
-}
-
-export function slugify(title: string): string {
-  const slug = title
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return slug || 'task'
 }
 
 function readCardRecord(path: string): Record<string, unknown> | undefined {
@@ -105,11 +115,7 @@ export function taskInfo(wsPath: string): TaskInfo {
   let title = folder
   const card = readCardRecord(join(wsPath, 'card.json'))
   if (typeof card?.title === 'string' && card.title) title = card.title
-  const key = JIRA_KEY.test(folder)
-    ? folder.toUpperCase()
-    : plan.issue && JIRA_KEY.test(plan.issue)
-      ? plan.issue.toUpperCase()
-      : undefined
+  const key = taskJiraKey(wsPath, plan)
   const id = key ?? slugify(folder)
   const branch = `${plan.type}/${key ? `${id}-` : ''}${slugify(title)}`.slice(0, 60).replace(/-+$/, '')
   return { id, jiraKey: key, title, type: plan.type, branch }
@@ -178,7 +184,7 @@ export function linkProjectRuntimeFiles(real: string, worktree: string): void {
     const target = join(worktree, name)
     if (!existsSync(source) || lstatSync(target, { throwIfNoEntry: false })) continue
     try {
-      symlinkSync(realpathSync(source), target, type)
+      symlinkSync(realpathSync(source), target, type === 'dir' && process.platform === 'win32' ? 'junction' : type)
     } catch {}
   }
   excludeInjectedPaths(worktree)
@@ -219,7 +225,9 @@ export function ensureWorktree(wsPath: string, repo: string, taskId: string, bra
     if (target && insideWorktrees(target) && isRegisteredWorktree(real, target)) {
       assertFeatureBranch(target, repo)
       linkProjectRuntimeFiles(real, target)
+      prepareProjectDependencies(real, target, repo)
       ensureRepositoryCompanions(taskId, repo)
+      prepareCompanionArtifactsSafely(taskId, repo, target)
       return target
     }
     if (!lstatSync(link).isSymbolicLink()) {
@@ -251,18 +259,10 @@ export function ensureWorktree(wsPath: string, repo: string, taskId: string, bra
   linkProjectRuntimeFiles(real, worktree)
   checkoutTaskBranch(worktree, branch)
   assertFeatureBranch(worktree, repo)
-  symlinkSync(worktree, link)
-  if (existsSync(join(worktree, 'package.json')) && !existsSync(join(worktree, 'node_modules'))) {
-    const install = installCommand(worktree)
-    try {
-      execFileSync(install.cmd, install.args, { cwd: worktree, stdio: 'ignore', timeout: 15 * 60_000 })
-    } catch (error) {
-      process.stderr.write(
-        `${install.cmd} ${install.args.join(' ')} falhou em ${repo}: ${error instanceof Error ? error.message : error}\n`,
-      )
-    }
-  }
+  symlinkSync(worktree, link, process.platform === 'win32' ? 'junction' : 'dir')
+  prepareProjectDependencies(real, worktree, repo)
   ensureRepositoryCompanions(taskId, repo)
+  prepareCompanionArtifactsSafely(taskId, repo, worktree)
   return worktree
 }
 
@@ -303,31 +303,65 @@ export function prepareRequiredBases(worktree: string, repo: string, refs: strin
   return resolved
 }
 
-export function projectEnvironmentIssue(dir: string): string | null {
-  if (!existsSync(join(dir, 'package.json'))) return null
-  let pkg: { engines?: { node?: unknown }; packageManager?: unknown } = {}
+export function projectEnvironmentIssue(dir: string, repo?: string): string | null {
+  const canonical = repo ? activeRepositoryPath(repo) : undefined
+  return (
+    diagnoseProjectEnvironment(dir, repo ?? dir, canonical).diagnostics.find((diagnostic) =>
+      ['node-runtime-unavailable', 'package-json-invalid'].includes(diagnostic.code),
+    )?.message ?? null
+  )
+}
+
+function prepareCompanionArtifactsSafely(taskId: string, repo: string, worktree: string): void {
   try {
-    pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-  } catch {
-    return 'package.json inválido'
+    prepareCompanionArtifacts(taskId, repo, worktree)
+  } catch (error) {
+    process.stderr.write(
+      `${repo}: artefato companheiro indisponível; os checks poderão ficar ambientais: ${error instanceof Error ? error.message : String(error)}\n`,
+    )
   }
-  const manager = detectPackageManager(dir)
-  const lockfile = lockfileName(manager)
-  if (!existsSync(join(dir, lockfile))) return `Dependências não verificáveis: falta ${lockfile} para ${manager}`
-  // O Node do executor só decide o install; com node_modules vinculado o repo roda sob o Node do agente.
-  if (!existsSync(join(dir, 'node_modules'))) {
-    let expected = typeof pkg.engines?.node === 'string' ? pkg.engines.node : ''
-    try {
-      const nvm = readFileSync(join(dir, '.nvmrc'), 'utf8').trim()
-      if (nvm) expected = nvm
-    } catch {}
-    const requiredMajor = /^(?:\^|~|v)?(\d+)/.exec(expected.trim())?.[1]
-    const actualMajor = /v?(\d+)/.exec(process.version)?.[1]
-    if (requiredMajor && actualMajor && requiredMajor !== actualMajor)
-      return `Node incompatível: projeto exige ${expected}, executor usa ${process.version}`
-    return `Dependências indisponíveis: node_modules ausente após preparar ${manager}`
+}
+
+/** Installs only in the task worktree; shared dependency links are removed before installation. */
+export function prepareProjectDependencies(canonical: string, worktree: string, repo: string): void {
+  if (!existsSync(join(worktree, 'package.json'))) return
+  const config = activeRepositories().find((entry) => entry.alias.toLowerCase() === repo.toLowerCase())?.nodeRuntime
+  const resolution = resolveProjectNode(worktree, {
+    override: config?.override,
+    policy:
+      config?.policy ??
+      (process.env.CHECKLIST_NODE_POLICY === 'same-major-fallback' ? 'same-major-fallback' : 'strict'),
+    allowServerDefault: true,
+  })
+  if (resolution.status !== 'resolved' || !resolution.runtime?.project) {
+    process.stderr.write(`${repo}: ${resolution.diagnostic ?? 'Node do projeto indisponível'}\n`)
+    return
   }
-  return null
+  const modules = join(worktree, 'node_modules')
+  const linked = isLink(modules)
+  const canonicalRuntime = resolveProjectNode(canonical, {
+    override: config?.override,
+    policy: config?.policy ?? 'strict',
+    allowServerDefault: true,
+  })
+  const runtimeCompatible =
+    canonicalRuntime.status === 'resolved' &&
+    canonicalRuntime.runtime?.project?.version === resolution.runtime.project.version
+  const compatible = linked && lockfilesMatch(canonical, worktree) && runtimeCompatible
+  if (compatible) return
+  if (linked) unlinkSync(modules)
+  if (existsSync(modules)) return
+  const install = installCommand(worktree)
+  const binDir = dirname(resolution.runtime.project.execPath)
+  const env = { ...process.env, PATH: [binDir, process.env.PATH].filter(Boolean).join(delimiter) }
+  try {
+    const command = resolvePackageManagerCommand(install.cmd, install.args, resolution.runtime.project.execPath, env)
+    execFileSync(command.cmd, command.args, { cwd: worktree, env, stdio: 'ignore', timeout: 15 * 60_000 })
+  } catch (error) {
+    process.stderr.write(
+      `${install.cmd} ${install.args.join(' ')} falhou em ${repo}: ${error instanceof Error ? error.message : error}\n`,
+    )
+  }
 }
 
 export function checkoutTaskBranch(worktree: string, branch: string): void {
@@ -349,6 +383,54 @@ export function ensureRepositoryCompanions(taskId: string, repo: string): void {
         `${companion.alias}: não foi possível criar a worktree companheira: ${error instanceof Error ? error.message : error}\n`,
       )
     }
+  }
+}
+
+const companionBuildsRun = new Set<string>()
+
+export function prepareCompanionArtifacts(taskId: string, repo: string, worktree: string): void {
+  const repositories = activeRepositories()
+  const consumer = repositories.find((entry) => entry.alias.toLowerCase() === repo.toLowerCase())
+  if (!consumer) return
+  const companions = activeRepositoryCompanionGroup(repo)
+    .filter((entry) => entry.id !== consumer.id)
+    .map((entry) => ({ alias: entry.alias, path: join(WORKTREES, taskId, 'repos', entry.alias), entry }))
+  const issues = diagnoseCompanionArtifacts(worktree, companions)
+  for (const issue of issues) {
+    if (issue.status === 'inconclusive') throw new Error(`${issue.reason} (${issue.target})`)
+    if (!issue.companionPath || !issue.artifact)
+      throw new Error(`${issue.reason}; configure uma relação de companion ou corrija o alias estático`)
+    const companion = companions.find((entry) => entry.path === issue.companionPath)?.entry
+    if (!companion) throw new Error(`${issue.reason}; repositório companheiro não cadastrado`)
+    const build = consumer.companionBuilds?.find(
+      (entry) =>
+        entry.repositoryId === companion.id &&
+        entry.artifacts.some(
+          (path) => issue.artifact === path || issue.artifact?.startsWith(`${path.replace(/\/$/, '')}/`),
+        ),
+    )
+    if (!build) throw new Error(`${issue.reason}; configure command e artifact autorizados para ${companion.alias}`)
+    const canonical = activeRepositoryPath(companion.alias)
+    const key = `${taskId}:${consumer.id}:${companion.id}:${build.artifacts.join(',')}`
+    if (!companionBuildsRun.has(key)) {
+      const companionWorktree = join(WORKTREES, taskId, 'repos', companion.alias)
+      if (!existsSync(companionWorktree) || !isRegisteredWorktree(canonical, companionWorktree))
+        throw new Error(`${issue.reason}; não há worktree gerenciada para ${companion.alias}`)
+      const runtime = resolveProjectNode(companionWorktree, {
+        override: companion.nodeRuntime?.override,
+        policy: companion.nodeRuntime?.policy ?? 'strict',
+        allowServerDefault: true,
+      })
+      if (runtime.status !== 'resolved' || !runtime.runtime?.project)
+        throw new Error(`${companion.alias}: ${runtime.diagnostic ?? 'Node indisponível para build'}`)
+      const result = runConfiguredCompanionBuild(consumer, companion, companionWorktree, issue.artifact, {
+        nodePath: runtime.runtime.project.execPath,
+      })
+      if (result.status !== 'built') throw new Error(result.note)
+      companionBuildsRun.add(key)
+    }
+    const target = join(issue.companionPath, issue.artifact)
+    if (!existsSync(target)) throw new Error(`${issue.reason}; o build autorizado não produziu ${issue.artifact}`)
   }
 }
 
@@ -456,7 +538,9 @@ export function ensureItemWorktree(mainPath: string, taskId: string, repo: strin
     return path
   }
   if (existsSync(path)) {
-    throw new Error(`${itemId}: worktree residual não registrada em ${path}; preserve-a e corrija o registro Git antes de retomar`)
+    throw new Error(
+      `${itemId}: worktree residual não registrada em ${path}; preserve-a e corrija o registro Git antes de retomar`,
+    )
   }
   mkdirSync(dirname(path), { recursive: true })
   if (hasRef(mainPath, `refs/heads/${branch}`)) git(mainPath, 'worktree', 'add', '--quiet', path, branch)
@@ -464,7 +548,7 @@ export function ensureItemWorktree(mainPath: string, taskId: string, repo: strin
   const modules = join(mainPath, 'node_modules')
   if (existsSync(modules) && !existsSync(join(path, 'node_modules'))) {
     try {
-      symlinkSync(realpathSync(modules), join(path, 'node_modules'), 'dir')
+      symlinkSync(realpathSync(modules), join(path, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
     } catch {}
   }
   linkProjectRuntimeFiles(mainPath, path)

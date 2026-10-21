@@ -43,7 +43,7 @@ test('invalid shell settings cannot overwrite saved preferences', () => {
   expect(config.preferences.shellCommand).toBe('')
 })
 
-test('login shell launches keep prompts and command arguments as literal data', () => {
+test.skipIf(process.platform === 'win32')('login shell launches keep prompts and command arguments as literal data', () => {
   const directory = mkdtempSync(join(tmpdir(), 'mega-brain-shell-argv-'))
   const marker = join(directory, 'unexpected')
   const values = ["spaces and apostrophes: '", `$(touch ${marker})`, '; echo injected', 'a\nb']

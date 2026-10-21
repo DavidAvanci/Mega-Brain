@@ -8,6 +8,7 @@ export interface AgentInfo {
   effort?: string
   execution?: 'script' | 'agent'
   provider?: AgentProvider
+  displayName?: string
   sessionId?: string
   sessionControlId?: string
   taskId?: string
@@ -40,8 +41,10 @@ export interface CardAgentUsageEntry {
   id: string
   sessionId?: string
   label?: string
+  displayName?: string
   provider?: AgentProvider
   model?: string
+  effort?: string
   startedAt: string
   finishedAt?: string
   durationMs: number
@@ -62,6 +65,7 @@ export interface AgentSession {
   updatedAt: string
   activity?: string
   narration?: string
+  error?: string
   visualState?: IslandVisualState
   question?: string
   codexProfileId?: string

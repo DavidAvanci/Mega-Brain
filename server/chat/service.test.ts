@@ -281,7 +281,7 @@ test.each(['claude', 'chatgpt'] as const)(
         onboardingCompleted: true,
       },
     }
-    symlinkSync(actualWorkspace, workspaceAlias, 'dir')
+    symlinkSync(actualWorkspace, workspaceAlias, process.platform === 'win32' ? 'junction' : 'dir')
     const fake = fakeRunner()
     const chat = createChatService(config, fake.runner)
     let running = false
@@ -308,6 +308,7 @@ test.each(['claude', 'chatgpt'] as const)(
     running = true
     expect(agentService.list().sessions[0]).toMatchObject({ cardId: 'card', provider: providerName, status: 'rodando' })
     expect((await board())[0].agents).toContainEqual({
+      execution: 'agent',
       status: 'rodando',
       provider: providerName,
       sessionControlId: `${providerName}-123`,

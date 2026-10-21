@@ -18,3 +18,16 @@ export const jiraTransitionHttp = (service: JiraService): ApiHandler =>
       body: await service.transition(String(body?.key ?? '').toUpperCase(), String(body?.status ?? '')),
     }
   })
+export const jiraCreateHttp = (service: JiraService): ApiHandler =>
+  legacyJsonHandler(async (r) => {
+    const body = r.body as { project?: string; summary?: string; description?: string } | undefined
+    return {
+      status: 200,
+      headers: JSON_HEADERS,
+      body: await service.createIssue({
+        project: String(body?.project ?? ''),
+        summary: String(body?.summary ?? ''),
+        description: String(body?.description ?? ''),
+      }),
+    }
+  })

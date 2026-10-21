@@ -35,6 +35,13 @@ export function fetchReadyJiraIssues(): Promise<JiraReadyIssue[]> {
   return requestJson('/api/jira/ready', 'Falha ao buscar cards do Jira')
 }
 
+export function createJiraIssue(summary: string, description: string): Promise<{ key: string }> {
+  return requestJson('/api/jira/create', 'Falha ao criar issue no Jira', {
+    method: 'POST',
+    body: { project: 'ESTR', summary, description },
+  })
+}
+
 export async function transitionJiraStatus(id: string, status: Status): Promise<string | undefined> {
   const jiraStatus = JIRA_STATUS_BY_STATUS[status]
   if (!jiraStatus || !JIRA_KEY.test(id)) return undefined

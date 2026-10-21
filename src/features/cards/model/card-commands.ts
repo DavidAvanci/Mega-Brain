@@ -10,7 +10,7 @@ import {
   updateWorkspaceCard,
   workspaceAction,
 } from '../api/cards-api'
-import { fetchJiraStatuses, fetchReadyJiraIssues, transitionJiraStatus } from '../integrations/jira'
+import { createJiraIssue, fetchJiraStatuses, fetchReadyJiraIssues, transitionJiraStatus } from '../integrations/jira'
 import { toCards } from './card-mappers'
 import type { DiffState } from '../api/card-detail-api'
 import { cardsState, cardsSubscriberCount, setCardsState, subscribeCards, type CardsState } from './cards-state'
@@ -126,6 +126,16 @@ export async function syncJiraCards(): Promise<number> {
   return missing.length
 }
 
+export async function convertCardToJira(card: Card): Promise<string> {
+  const issue = await createJiraIssue(card.title, card.description)
+  await workspaceAction('/api/workspace/jira-id', 'Issue criada, mas não foi possível atualizar o ID local', {
+    name: card.id,
+    key: issue.key,
+  })
+  await refresh()
+  return issue.key
+}
+
 export async function deleteCard(name: string): Promise<void> {
   await deleteWorkspaceCard(name)
   await refresh()
@@ -218,6 +228,8 @@ export const clearLatestStage = (name: string, stage: string) =>
   action('/api/workspace/stage/clear', 'Falha ao limpar a etapa', { name, stage }, true)
 export const stopDevEnv = (name: string) =>
   action('/api/workspace/dev-env/stop', 'Falha ao parar o ambiente dev', { name }, true)
+export const stopDevEnvProject = (name: string, repo: string) =>
+  action('/api/workspace/dev-env/stop-project', 'Falha ao parar o projeto', { name, repo }, true)
 export const openDevEnv = (name: string, repo: string) =>
   action('/api/workspace/dev-env/open', 'Falha ao abrir o ambiente dev', { name, repo })
 

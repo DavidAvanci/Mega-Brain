@@ -145,6 +145,7 @@ export function runStageAgent(
         label: stage.name,
         provider: provider === 'chatgpt' ? 'codex' : 'claude',
         model: effectiveModel,
+        effort: settings.effort,
       })
   if (resume) appendFileSync(join(path, `${stage.name}.jsonl`), `${JSON.stringify({ type: 'mega_brain.resume' })}\n`)
   const out = openSync(join(path, `${stage.name}.jsonl`), resume ? 'a' : 'w')
@@ -164,6 +165,7 @@ export function runStageAgent(
   const stageMessages = taskMessageContext(path)
   const profileEnvironment = provider === 'chatgpt' && settingsFile ? codexProfileEnvironment(settingsFile) : {}
   const verification = readStageSettings(dirname(path), provider)['task-verification']
+  const conflictResolution = readStageSettings(dirname(path), provider)['conflict-resolution']
   const environment: NodeJS.ProcessEnv = {
     ...(provider === 'chatgpt' ? { CODEX_HOME: process.env.CODEX_HOME ?? join(homedir(), '.codex') } : {}),
     ...profileEnvironment,
@@ -178,6 +180,8 @@ export function runStageAgent(
     CHECKLIST_VERIFICATION_MODEL: verification.model,
     CHECKLIST_VERIFICATION_EFFORT: verification.effort,
     CHECKLIST_VERIFICATION_FAST_MODE: verification.fastMode ? '1' : '0',
+    CHECKLIST_CONFLICT_MODEL: conflictResolution.model,
+    CHECKLIST_CONFLICT_EFFORT: conflictResolution.effort,
     MEGA_BRAIN_WORKTREES_DIR: worktreesDir ?? process.env.MEGA_BRAIN_WORKTREES_DIR,
     MEGA_BRAIN_SETTINGS_FILE: settingsFile ?? process.env.MEGA_BRAIN_SETTINGS_FILE,
     MEGA_BRAIN_LLM_PROVIDER: provider,

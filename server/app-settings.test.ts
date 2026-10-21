@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execPath } from 'node:process'
 import { expect, test } from 'vitest'
 import { loadMegaBrainConfig } from './config'
 import { editorExecutable, readGeneralSettings, writeGeneralSettings } from './app-settings'
@@ -9,12 +10,13 @@ test('persists global preferences outside the workspace and reloads them', () =>
   const home = mkdtempSync(join(tmpdir(), 'mega-brain-settings-'))
   const config = loadMegaBrainConfig({ homeDir: home, env: { WORKSPACE_DIR: join(home, 'old-workspace') } })
   expect(readGeneralSettings(config).onboardingCompleted).toBe(false)
-  config.executables.cursor = '/bin/sh'
-  expect(editorExecutable(config)).toBe('/bin/sh')
+  config.preferences.editor = 'custom'
+  config.preferences.editorCommand = execPath
+  expect(editorExecutable(config)).toBe(execPath)
 
   const saved = writeGeneralSettings(config, {
     editor: 'custom',
-    editorCommand: '/bin/sh',
+    editorCommand: execPath,
     terminalCommand: ' iTerm2 ',
     workspaceDir: join(home, 'cards'),
     worktreesDir: join(home, 'trees'),
@@ -37,7 +39,7 @@ test('persists global preferences outside the workspace and reloads them', () =>
     onboardingCompleted: true,
   })
   expect(config.workspaceDir).toBe(join(home, 'cards'))
-  expect(editorExecutable(config)).toBe('/bin/sh')
+  expect(editorExecutable(config)).toBe(execPath)
   expect(JSON.parse(readFileSync(config.preferences.settingsFile, 'utf8'))).toMatchObject({
     jiraSite: 'example',
     jiraEmail: 'person@example.test',

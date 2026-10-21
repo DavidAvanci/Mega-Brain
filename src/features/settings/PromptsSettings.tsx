@@ -46,6 +46,13 @@ export const PROMPT_FIELDS: {
     title: 'Revisão Smart Diff',
     help: 'Instruções usadas ao gerar uma revisão Smart Diff.',
   },
+  {
+    key: 'conflictResolution',
+    stage: 'conflict-resolution',
+    label: 'Conflitos Git',
+    title: 'Resolução de conflitos Git',
+    help: 'Instruções usadas quando o cherry-pick de staging ou o rebase para master encontra conflitos.',
+  },
 ]
 
 export function PromptsSettings({

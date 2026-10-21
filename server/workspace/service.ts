@@ -1,6 +1,6 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { previewDevEnv, readDevEnv, startDevEnv, stopDevEnv } from '../modules/dev-environments/dev-env'
+import { previewDevEnv, readDevEnv, startDevEnv, stopDevEnv, stopDevEnvProject } from '../modules/dev-environments/dev-env'
 import { readDevEnvLogs } from '../modules/dev-environments/dev-env-logs'
 import { parseDevEnvOptions } from '../modules/dev-environments/dev-env-options'
 import { createOwnedProcessRunner, nodeProcessRunner, type ProcessOwner, type ProcessRunner } from '../process'
@@ -161,6 +161,10 @@ export function createWorkspaceService(
         stopDevEnv(cardPath)
         return { ok: true }
       }
+      if (path === '/dev-env/stop-project') {
+        stopDevEnvProject(cardPath, String(data.repo ?? ''))
+        return { ok: true }
+      }
       if (path === '/dev-env/open') {
         await openDevEnvironment(cardPath, data.repo, config, runner)
         return { ok: true }
@@ -199,6 +203,15 @@ export function createWorkspaceService(
       if (path === '/update') {
         updateCard(cardPath, name, data, stages.start)
         return { ok: true }
+      }
+      if (path === '/jira-id') {
+        const jiraKey = String(data.key ?? '').toUpperCase()
+        if (!/^(?!MB-)[A-Z][A-Z0-9]*-\d+$/.test(jiraKey)) throw new Error('Chave Jira inválida')
+        const target = resolve(root, jiraKey)
+        if (target.toLowerCase() !== cardPath.toLowerCase() && existsSync(target))
+          throw new Error(`Já existe um card com o ID ${jiraKey}`)
+        renameSync(cardPath, target)
+        return { ok: true, name: jiraKey }
       }
       if (path === '/delete') {
         if (readStageAgentRecord(cardPath)?.selectingWithJev) await stages.stop(cardPath, 'task-planning')

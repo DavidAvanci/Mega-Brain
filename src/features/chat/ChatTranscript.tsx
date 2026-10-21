@@ -2,6 +2,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowRight01Icon, CommandIcon } from '@hugeicons/core-free-icons'
 import { Markdown } from '@/Markdown'
 import type { ChatEntry } from '../../../shared/contracts/chat'
+import { separateChatParagraphs, structuredChatMessage } from './structured-chat-message'
 
 type ChatBlock = { index: number; entries: ChatEntry[]; activity: boolean; source?: string }
 
@@ -88,7 +89,20 @@ export function ChatTranscript({ entries, busy = false }: { entries: ChatEntry[]
         return (
           <div key={block.index} className="min-w-0 text-sm leading-relaxed">
             {entry.source && <p className="mb-2 text-[11px] text-muted-foreground">{entry.source}</p>}
-            <Markdown text={entry.text ?? ''} />
+            {(() => {
+              const text = entry.text ?? ''
+              const result = entry.role === 'assistant' ? structuredChatMessage(text) : null
+              return result ? (
+                <div>
+                  <span className="mb-1 inline-flex rounded-md border bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {result.status}
+                  </span>
+                  <Markdown text={separateChatParagraphs(result.note)} />
+                </div>
+              ) : (
+                <Markdown text={separateChatParagraphs(text)} />
+              )
+            })()}
           </div>
         )
       })}

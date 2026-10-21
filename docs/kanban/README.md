@@ -54,3 +54,7 @@ O prompt padrão de Smart Diff usa o marcador `<script-de-revisao>`, substituíd
 - `src/features/cards/model/card-commands.ts`, `src/features/cards/integrations/jira.ts`: movimentação pela interface e Jira.
 - `server/workspace/stage-catalog.ts`, `stage-transition.ts`, `card-update.ts`, `board-list.ts`, `worktree-lifecycle.ts`: execução, avanço e limpeza.
 - `scripts/commands/`: trabalhos de desenvolvimento, testes e PRs.
+
+# Runtime por repositório
+
+Tasks e ambientes dev selecionam runtime Node por projeto. Consulte [desenvolvimento](04-desenvolvendo.md) e [runtime e verificação](../architecture/project-runtime-and-verification.md) para políticas, limites e estado de ativação do verificador.

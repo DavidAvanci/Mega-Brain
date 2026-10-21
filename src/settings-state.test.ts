@@ -80,6 +80,7 @@ test('Codex stage defaults preserve roles and respect a restricted account catal
     'task-verification': { model: 'gpt-6.1-sol', effort: 'medium', fastMode: false },
     'test-environment': { model: 'default', effort: 'medium', fastMode: false },
     'smart-diff-review': { model: 'default', effort: 'medium', fastMode: false },
+    'conflict-resolution': { model: 'gpt-6.1-sol', effort: 'medium', fastMode: false },
   })
   expect(switched.prompts).toEqual(settings.prompts)
   const restricted = {

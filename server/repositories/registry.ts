@@ -28,7 +28,10 @@ export class RepositoryRegistry {
   private readonly pulledHeads = new Map<string, string>()
   private readonly migrationResults = new Map<string, RepositoryMigrationResult>()
 
-  constructor(private readonly file: string, private readonly runner: ProcessRunner) {}
+  constructor(
+    private readonly file: string,
+    private readonly runner: ProcessRunner,
+  ) {}
 
   async list(): Promise<Repository[]> {
     return (await this.read()).repositories
@@ -77,7 +80,9 @@ export class RepositoryRegistry {
     return (await this.getRepository(id)).path
   }
 
-  async preview(value: unknown): Promise<{ path: string; displayName: string; alias: string; origin?: string; duplicateId?: string }> {
+  async preview(
+    value: unknown,
+  ): Promise<{ path: string; displayName: string; alias: string; origin?: string; duplicateId?: string }> {
     const path = await this.validatePath(value)
     const name = path.split(/[\\/]/).filter(Boolean).at(-1) ?? 'repository'
     const origin = safeOrigin(await this.git(path, ['config', '--get', 'remote.origin.url']).catch(() => undefined))
@@ -85,7 +90,9 @@ export class RepositoryRegistry {
     return { path, displayName: name, alias: slug(name), origin, duplicateId }
   }
 
-  async discover(value: unknown): Promise<{ path: string; repositories: Awaited<ReturnType<RepositoryRegistry['preview']>>[] }> {
+  async discover(
+    value: unknown,
+  ): Promise<{ path: string; repositories: Awaited<ReturnType<RepositoryRegistry['preview']>>[] }> {
     if (typeof value !== 'string' || !isAbsolute(value.trim()) || /[\r\n\0]/.test(value)) {
       throw new Error('Escolha uma pasta absoluta válida')
     }
@@ -100,16 +107,23 @@ export class RepositoryRegistry {
     for (const directory of [...directories]) {
       if (await stat(join(directory, '.git')).catch(() => null)) continue
       const children = await readdir(directory, { withFileTypes: true }).catch(() => [])
-      directories.push(...children.filter(entry => !entry.name.startsWith('.') && (entry.isDirectory() || entry.isSymbolicLink())).map(entry => join(directory, entry.name)))
+      directories.push(
+        ...children
+          .filter((entry) => !entry.name.startsWith('.') && (entry.isDirectory() || entry.isSymbolicLink()))
+          .map((entry) => join(directory, entry.name)),
+      )
       if (directories.length > 1000) throw new Error('O workspace contém subpastas demais para a busca de repositórios')
     }
     const repositories: Awaited<ReturnType<RepositoryRegistry['preview']>>[] = []
     for (let index = 0; index < directories.length; index += 8) {
-      const group = await Promise.all(directories.slice(index, index + 8).map(async (directory) => {
-        if (!await stat(join(directory, '.git')).catch(() => null)) return null
-        return this.preview(directory).catch(() => null)
-      }))
-      for (const repository of group) if (repository && !repositories.some(item => item.path === repository.path)) repositories.push(repository)
+      const group = await Promise.all(
+        directories.slice(index, index + 8).map(async (directory) => {
+          if (!(await stat(join(directory, '.git')).catch(() => null))) return null
+          return this.preview(directory).catch(() => null)
+        }),
+      )
+      for (const repository of group)
+        if (repository && !repositories.some((item) => item.path === repository.path)) repositories.push(repository)
     }
     return { path, repositories }
   }
@@ -122,15 +136,25 @@ export class RepositoryRegistry {
     const displayName = typeof input.displayName === 'string' ? input.displayName.trim() : preview.displayName
     validateAlias(alias)
     if (!displayName) throw new Error('Nome do repositório é obrigatório')
-    if (file.repositories.some((repo) => repo.path === preview.path)) throw new Error('Este checkout já está cadastrado')
-    if (file.repositories.some((repo) => repo.alias.toLowerCase() === alias.toLowerCase())) throw new Error(`Alias já está em uso: ${alias}`)
+    if (file.repositories.some((repo) => repo.path === preview.path))
+      throw new Error('Este checkout já está cadastrado')
+    if (file.repositories.some((repo) => repo.alias.toLowerCase() === alias.toLowerCase()))
+      throw new Error(`Alias já está em uso: ${alias}`)
     const repository: Repository = {
       id: `repo_${randomUUID().replaceAll('-', '')}`,
-      alias, displayName, path: preview.path, active: true, tags: input.tags === undefined ? [] : stringList(input.tags, 'tags'),
+      alias,
+      displayName,
+      path: preview.path,
+      active: true,
+      tags: input.tags === undefined ? [] : stringList(input.tags, 'tags'),
       githubUrl: input.githubUrl === undefined ? webOrigin(preview.origin) : optionalWebUrl(input.githubUrl),
       environments: normalizeEnvironments(input.environments),
+      nodeRuntime: normalizeNodeRuntime(input.nodeRuntime),
+      companionBuilds: normalizeCompanionBuilds(input.companionBuilds),
     }
     validateCompanions(repository, file.repositories)
+    validateCompanionBuildReferences(repository, file.repositories)
+    validateCompanionBuildGraph([...file.repositories, repository])
     file.repositories.push(repository)
     await this.write(file)
     return repository
@@ -159,14 +183,28 @@ export class RepositoryRegistry {
     }
     if ('tags' in patch) next.tags = stringList(patch.tags, 'tags')
     if ('githubUrl' in patch) next.githubUrl = optionalWebUrl(patch.githubUrl)
+    if ('nodeRuntime' in patch) next.nodeRuntime = normalizeNodeRuntime(patch.nodeRuntime)
+    if ('companionBuilds' in patch) next.companionBuilds = normalizeCompanionBuilds(patch.companionBuilds)
     if ('environments' in patch) {
       if (!isRecord(patch.environments)) throw new Error('Ambientes inválidos')
       next.environments = normalizeEnvironments({ ...old.environments, ...patch.environments })
     }
-    if (file.repositories.some((repo) => repo.id !== id && (repo.path === next.path || repo.alias.toLowerCase() === next.alias.toLowerCase()))) {
+    if (
+      file.repositories.some(
+        (repo) => repo.id !== id && (repo.path === next.path || repo.alias.toLowerCase() === next.alias.toLowerCase()),
+      )
+    ) {
       throw new Error('Caminho ou alias já está cadastrado')
     }
-    validateCompanions(next, file.repositories.filter((repo) => repo.id !== id))
+    validateCompanions(
+      next,
+      file.repositories.filter((repo) => repo.id !== id),
+    )
+    validateCompanionBuildReferences(
+      next,
+      file.repositories.filter((repo) => repo.id !== id),
+    )
+    validateCompanionBuildGraph([...file.repositories.filter((repo) => repo.id !== id), next])
     file.repositories[index] = next
     await this.write(file)
     return next
@@ -181,20 +219,40 @@ export class RepositoryRegistry {
       const [branch, dirty, origin, head] = await Promise.all([
         this.git(path, ['branch', '--show-current']),
         this.git(path, ['status', '--porcelain']).then((text) => text.length > 0),
-        this.git(path, ['config', '--get', 'remote.origin.url']).then(safeOrigin).catch(() => undefined),
+        this.git(path, ['config', '--get', 'remote.origin.url'])
+          .then(safeOrigin)
+          .catch(() => undefined),
         this.git(path, ['rev-parse', 'HEAD']),
       ])
-      const base = { available: true, path, branch, dirty, origin, checkedAt, migrationReady: this.pulledHeads.get(id) === head } as const
-      const upstream = await this.git(path, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']).catch(() => '')
+      const base = {
+        available: true,
+        path,
+        branch,
+        dirty,
+        origin,
+        checkedAt,
+        migrationReady: this.pulledHeads.get(id) === head,
+      } as const
+      const upstream = await this.git(path, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']).catch(
+        () => '',
+      )
       if (!upstream || !branch) return { ...base, source: 'local', state: 'no-upstream' }
       const counts = await this.git(path, ['rev-list', '--left-right', '--count', 'HEAD...@{upstream}'])
       const [ahead, behind] = counts.split(/\s+/).map(Number)
       if (!Number.isInteger(ahead) || !Number.isInteger(behind)) throw new Error('Contagens Git inválidas')
-      const remoteCheckedAt = this.remoteChecks.get(id)?.branch === branch ? this.remoteChecks.get(id)?.checkedAt : undefined
+      const remoteCheckedAt =
+        this.remoteChecks.get(id)?.branch === branch ? this.remoteChecks.get(id)?.checkedAt : undefined
       const state = ahead && behind ? 'diverged' : behind ? 'behind' : ahead ? 'ahead' : 'up-to-date'
       return { ...base, upstream, ahead, behind, remoteCheckedAt, source: 'local', state }
     } catch (error) {
-      return { available: false, path: repository.path, checkedAt, source: 'local', state: 'unavailable', error: message(error) }
+      return {
+        available: false,
+        path: repository.path,
+        checkedAt,
+        source: 'local',
+        state: 'unavailable',
+        error: message(error),
+      }
     }
   }
 
@@ -205,12 +263,18 @@ export class RepositoryRegistry {
   async verifyRemotes(ids: string[]): Promise<Record<string, RepositoryStatus>> {
     const result: Record<string, RepositoryStatus> = {}
     for (let index = 0; index < ids.length; index += 4) {
-      await Promise.all(ids.slice(index, index + 4).map(async (id) => {
-        result[id] = await this.verifyRemote(id).catch((error) => ({
-          available: false, path: '', checkedAt: new Date().toISOString(), source: 'remote',
-          state: 'remote-failed', error: message(error),
-        }))
-      }))
+      await Promise.all(
+        ids.slice(index, index + 4).map(async (id) => {
+          result[id] = await this.verifyRemote(id).catch((error) => ({
+            available: false,
+            path: '',
+            checkedAt: new Date().toISOString(),
+            source: 'remote',
+            state: 'remote-failed',
+            error: message(error),
+          }))
+        }),
+      )
     }
     return result
   }
@@ -225,7 +289,7 @@ export class RepositoryRegistry {
       await this.git(repository.path, ['fetch', '--', remote], 30_000)
       const checkedAt = new Date().toISOString()
       this.remoteChecks.set(id, { branch: local.branch!, checkedAt })
-      return { ...await this.status(id), source: 'remote', remoteCheckedAt: checkedAt }
+      return { ...(await this.status(id)), source: 'remote', remoteCheckedAt: checkedAt }
     } catch (error) {
       return { ...local, source: 'remote', state: 'remote-failed', error: message(error) }
     }
@@ -235,7 +299,8 @@ export class RepositoryRegistry {
     return this.exclusive(id, async () => {
       this.pulledHeads.delete(id)
       const verified = await this.verifyRemoteUnlocked(id)
-      if (!verified.available || verified.state === 'remote-failed') return { ...verified, error: verified.error ?? 'Checkout indisponível' }
+      if (!verified.available || verified.state === 'remote-failed')
+        return { ...verified, error: verified.error ?? 'Checkout indisponível' }
       if (verified.dirty) return { ...verified, error: 'Checkout com alterações locais' }
       if (verified.state !== 'behind') return { ...verified, error: `Atualização indisponível: ${verified.state}` }
       const repository = await this.getRepository(id)
@@ -245,9 +310,9 @@ export class RepositoryRegistry {
         await this.git(repository.path, ['merge', '--ff-only', '@{upstream}'], 60_000)
         const head = await this.git(repository.path, ['rev-parse', 'HEAD'])
         this.pulledHeads.set(id, head)
-        return { ...await this.status(id), source: 'remote' }
+        return { ...(await this.status(id)), source: 'remote' }
       } catch (error) {
-        return { ...await this.status(id), source: 'remote', error: message(error) }
+        return { ...(await this.status(id)), source: 'remote', error: message(error) }
       }
     })
   }
@@ -262,11 +327,16 @@ export class RepositoryRegistry {
       const dirty = Boolean(await this.git(repository.path, ['status', '--porcelain']))
       if (dirty) {
         if (dirtyAction === 'commit') {
-          if (typeof commitMessage !== 'string' || !commitMessage.trim()) throw new Error('Informe a mensagem do commit')
+          if (typeof commitMessage !== 'string' || !commitMessage.trim())
+            throw new Error('Informe a mensagem do commit')
           await this.git(repository.path, ['add', '--all'])
           await this.git(repository.path, ['commit', '-m', commitMessage.trim()], 60_000)
         } else if (dirtyAction === 'stash') {
-          await this.git(repository.path, ['stash', 'push', '--include-untracked', '-m', 'Mega Brain: antes de sincronizar remoto'], 30_000)
+          await this.git(
+            repository.path,
+            ['stash', 'push', '--include-untracked', '-m', 'Mega Brain: antes de sincronizar remoto'],
+            30_000,
+          )
         } else {
           await this.git(repository.path, ['reset', '--hard', 'HEAD'])
           await this.git(repository.path, ['clean', '-fd'])
@@ -284,21 +354,38 @@ export class RepositoryRegistry {
     return this.exclusive(id, async () => {
       const repository = await this.getRepository(id)
       const config = repository.environments[environment]?.migration
-      if (!config?.backend || !config.command.length) throw new Error('Migração de backend não configurada para este ambiente')
+      if (!config?.backend || !config.command.length)
+        throw new Error('Migração de backend não configurada para este ambiente')
       const head = await this.git(repository.path, ['rev-parse', 'HEAD'])
       if (this.pulledHeads.get(id) !== head) throw new Error('Atualize o checkout antes de executar migrações')
       const cwd = resolve(repository.path, config.workingDirectory)
       const relativePath = relative(repository.path, cwd)
-      if (relativePath.startsWith('..') || isAbsolute(relativePath) || await realpath(cwd) !== cwd) throw new Error('Diretório de migração fora do checkout')
-      const result: RepositoryMigrationResult = { state: 'running', environment, command: config.command, workingDirectory: cwd }
+      if (relativePath.startsWith('..') || isAbsolute(relativePath) || (await realpath(cwd)) !== cwd)
+        throw new Error('Diretório de migração fora do checkout')
+      const result: RepositoryMigrationResult = {
+        state: 'running',
+        environment,
+        command: config.command,
+        workingDirectory: cwd,
+      }
       this.migrationResults.set(id, result)
       try {
         const output = await this.run(cwd, config.command[0], config.command.slice(1), 120_000)
-        const completed = { ...result, state: 'success' as const, completedAt: new Date().toISOString(), output: output.slice(-4000) }
+        const completed = {
+          ...result,
+          state: 'success' as const,
+          completedAt: new Date().toISOString(),
+          output: output.slice(-4000),
+        }
         this.migrationResults.set(id, completed)
         return completed
       } catch (error) {
-        const completed = { ...result, state: 'failure' as const, completedAt: new Date().toISOString(), error: message(error).slice(-4000) }
+        const completed = {
+          ...result,
+          state: 'failure' as const,
+          completedAt: new Date().toISOString(),
+          error: message(error).slice(-4000),
+        }
         this.migrationResults.set(id, completed)
         return completed
       }
@@ -308,7 +395,11 @@ export class RepositoryRegistry {
   private async exclusive<T>(id: string, action: () => Promise<T>): Promise<T> {
     if (this.operations.has(id)) throw new Error('Operação já em andamento neste repositório')
     this.operations.add(id)
-    try { return await action() } finally { this.operations.delete(id) }
+    try {
+      return await action()
+    } finally {
+      this.operations.delete(id)
+    }
   }
 
   async switchToMaster(id: unknown, dirtyAction?: unknown, commitMessage?: unknown): Promise<RepositoryStatus> {
@@ -324,8 +415,11 @@ export class RepositoryRegistry {
     const worktrees = await this.git(path, ['worktree', 'list', '--porcelain'])
     for (const block of worktrees.split(/\n\s*\n/)) {
       if (!block.split('\n').includes('branch refs/heads/master')) continue
-      const worktree = block.split('\n').find((line) => line.startsWith('worktree '))?.slice('worktree '.length)
-      if (worktree && await realpath(worktree).catch(() => worktree) !== path) {
+      const worktree = block
+        .split('\n')
+        .find((line) => line.startsWith('worktree '))
+        ?.slice('worktree '.length)
+      if (worktree && (await realpath(worktree).catch(() => worktree)) !== path) {
         throw new Error(`A branch master já está aberta em outra worktree: ${worktree}`)
       }
     }
@@ -341,7 +435,11 @@ export class RepositoryRegistry {
         await this.git(path, ['add', '--all'])
         await this.git(path, ['commit', '-m', commitMessage.trim()], 60_000)
       } else if (dirtyAction === 'stash') {
-        await this.git(path, ['stash', 'push', '--include-untracked', '-m', 'Mega Brain: antes de ir para master'], 30_000)
+        await this.git(
+          path,
+          ['stash', 'push', '--include-untracked', '-m', 'Mega Brain: antes de ir para master'],
+          30_000,
+        )
       } else {
         await this.git(path, ['reset', '--hard', 'HEAD'])
         await this.git(path, ['clean', '-fd'])
@@ -352,12 +450,18 @@ export class RepositoryRegistry {
   }
 
   private async validatePath(value: unknown): Promise<string> {
-    if (typeof value !== 'string' || !isAbsolute(value.trim()) || /[\r\n\0]/.test(value)) throw new Error('Informe um caminho absoluto válido')
+    if (typeof value !== 'string' || !isAbsolute(value.trim()) || /[\r\n\0]/.test(value))
+      throw new Error('Informe um caminho absoluto válido')
     const path = await realpath(value.trim())
-    if (await this.git(path, ['rev-parse', '--is-bare-repository']) === 'true') throw new Error('Repositórios bare não podem ser cadastrados')
-    if (await this.git(path, ['rev-parse', '--show-toplevel']) !== path) throw new Error('O caminho precisa apontar para a raiz do checkout Git')
+    if ((await this.git(path, ['rev-parse', '--is-bare-repository'])) === 'true')
+      throw new Error('Repositórios bare não podem ser cadastrados')
+    const gitRoot = await this.git(path, ['rev-parse', '--show-toplevel'])
+    const normalizePath = (value: string) => resolve(value).replaceAll('\\', '/').replace(/\/$/, '').toLowerCase()
+    if (normalizePath(gitRoot) !== normalizePath(path))
+      throw new Error('O caminho precisa apontar para a raiz do checkout Git')
     const gitDir = await this.git(path, ['rev-parse', '--absolute-git-dir'])
-    if (/[\\/]\.git[\\/]worktrees[\\/]/.test(gitDir)) throw new Error('Worktrees gerenciadas não podem ser cadastradas como repositórios')
+    if (/[\\/]\.git[\\/]worktrees[\\/]/.test(gitDir))
+      throw new Error('Worktrees gerenciadas não podem ser cadastradas como repositórios')
     return path
   }
 
@@ -367,17 +471,23 @@ export class RepositoryRegistry {
 
   private run(cwd: string, command: string, args: string[], timeout: number): Promise<string> {
     return new Promise((resolve, reject) => {
-      this.runner.execFile(command, args, { cwd, timeout, encoding: 'utf8', maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
-        if (error) reject(new Error(stderr.trim() || error.message))
-        else resolve(stdout.trim())
-      })
+      this.runner.execFile(
+        command,
+        args,
+        { cwd, timeout, encoding: 'utf8', maxBuffer: 1024 * 1024 },
+        (error, stdout, stderr) => {
+          if (error) reject(new Error(stderr.trim() || error.message))
+          else resolve(stdout.trim())
+        },
+      )
     })
   }
 
   private async read(): Promise<RepositoryRegistryFile> {
     try {
       const value: unknown = JSON.parse(await readFile(this.file, 'utf8'))
-      if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.repositories)) throw new Error('Versão do catálogo de repositórios não suportada')
+      if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.repositories))
+        throw new Error('Versão do catálogo de repositórios não suportada')
       return value as unknown as RepositoryRegistryFile
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyRegistry()
@@ -398,10 +508,75 @@ export class RepositoryRegistry {
   }
 }
 
+function normalizeNodeRuntime(value: unknown): Repository['nodeRuntime'] {
+  if (value === undefined || value === null) return undefined
+  if (!isRecord(value)) throw new Error('Configuração de Node inválida')
+  if (
+    value.override !== undefined &&
+    (typeof value.override !== 'string' || !value.override.trim() || /[\r\n\0]/.test(value.override))
+  )
+    throw new Error('Override Node inválido')
+  const policies = ['strict', 'same-major-fallback', 'server-default']
+  if (value.policy !== undefined && !policies.includes(String(value.policy))) throw new Error('Política Node inválida')
+  return {
+    ...(typeof value.override === 'string' ? { override: value.override.trim() } : {}),
+    ...(typeof value.policy === 'string'
+      ? { policy: value.policy as NonNullable<Repository['nodeRuntime']>['policy'] }
+      : {}),
+  }
+}
+
+function normalizeCompanionBuilds(value: unknown): Repository['companionBuilds'] {
+  if (value === undefined || value === null) return undefined
+  if (!Array.isArray(value)) throw new Error('Builds de repositórios companheiros inválidos')
+  return value.map((entry, index) => {
+    if (!isRecord(entry) || typeof entry.repositoryId !== 'string' || !entry.repositoryId.trim())
+      throw new Error(`Build companheiro ${index + 1} inválido`)
+    const artifacts = stringList(entry.artifacts, 'artifacts')
+    const command = stringList(entry.command, 'command')
+    if (!artifacts.length || !command.length || command.some((part) => /[\r\n\0]/.test(part)))
+      throw new Error(`Build companheiro ${index + 1} exige artifacts e argv`)
+    if (artifacts.some((path) => isAbsolute(path) || path.split(/[\\/]/).includes('..')))
+      throw new Error(`Artifact inválido no build companheiro ${index + 1}`)
+    const timeoutMs = entry.timeoutMs === undefined ? 15 * 60_000 : entry.timeoutMs
+    if (!Number.isInteger(timeoutMs) || (timeoutMs as number) < 1000 || (timeoutMs as number) > 60 * 60_000)
+      throw new Error(`Timeout inválido no build companheiro ${index + 1}`)
+    return { repositoryId: entry.repositoryId.trim(), artifacts, command, timeoutMs: timeoutMs as number }
+  })
+}
+
+function validateCompanionBuildReferences(repository: Repository, others: Repository[]): void {
+  const ids = new Set(others.map((item) => item.id))
+  const allowed = new Set(repository.environments.local.companionRepositoryIds ?? [])
+  for (const build of repository.companionBuilds ?? []) {
+    if (!ids.has(build.repositoryId) || !allowed.has(build.repositoryId))
+      throw new Error('Build exige relação de repositório companheiro cadastrada no ambiente local')
+  }
+}
+
+function validateCompanionBuildGraph(repositories: Repository[]): void {
+  const byId = new Map(repositories.map((repository) => [repository.id, repository]))
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const visit = (id: string) => {
+    if (visiting.has(id)) throw new Error('Configuração de builds de repositórios companheiros contém ciclo')
+    if (visited.has(id)) return
+    visiting.add(id)
+    for (const build of byId.get(id)?.companionBuilds ?? []) visit(build.repositoryId)
+    visiting.delete(id)
+    visited.add(id)
+  }
+  for (const id of byId.keys()) visit(id)
+}
+
 function normalizeEnvironments(value: unknown): Repository['environments'] {
   if (value !== undefined && !isRecord(value)) throw new Error('Ambientes inválidos')
   const source = value as Record<string, unknown> | undefined
-  const result: Repository['environments'] = { local: emptyEnvironment(), staging: emptyEnvironment(), prod: emptyEnvironment() }
+  const result: Repository['environments'] = {
+    local: emptyEnvironment(),
+    staging: emptyEnvironment(),
+    prod: emptyEnvironment(),
+  }
   for (const key of environmentKeys) {
     const raw = source?.[key]
     if (raw === undefined) continue
@@ -414,7 +589,8 @@ function normalizeEnvironments(value: unknown): Repository['environments'] {
       }
     }
     if (raw.port !== undefined) {
-      if (!Number.isInteger(raw.port) || (raw.port as number) < 1 || (raw.port as number) > 65535) throw new Error(`Porta inválida no ambiente ${key}`)
+      if (!Number.isInteger(raw.port) || (raw.port as number) < 1 || (raw.port as number) > 65535)
+        throw new Error(`Porta inválida no ambiente ${key}`)
       environment.port = raw.port as number
     }
     for (const field of ['companionRepositoryIds', 'variableSourceRefs'] as const) {
@@ -423,8 +599,10 @@ function normalizeEnvironments(value: unknown): Repository['environments'] {
     if (raw.aws !== undefined) {
       if (!isRecord(raw.aws)) throw new Error(`AWS inválido no ambiente ${key}`)
       const aws = raw.aws
-      if (aws.accountId !== undefined && (typeof aws.accountId !== 'string' || !/^\d{12}$/.test(aws.accountId))) throw new Error(`Conta AWS inválida no ambiente ${key}`)
-      if (aws.region !== undefined && (typeof aws.region !== 'string' || !/^[a-z]{2}-[a-z]+-\d$/.test(aws.region))) throw new Error(`Região AWS inválida no ambiente ${key}`)
+      if (aws.accountId !== undefined && (typeof aws.accountId !== 'string' || !/^\d{12}$/.test(aws.accountId)))
+        throw new Error(`Conta AWS inválida no ambiente ${key}`)
+      if (aws.region !== undefined && (typeof aws.region !== 'string' || !/^[a-z]{2}-[a-z]+-\d$/.test(aws.region)))
+        throw new Error(`Região AWS inválida no ambiente ${key}`)
       environment.aws = {
         accountId: aws.accountId as string | undefined,
         region: aws.region as string | undefined,
@@ -432,32 +610,57 @@ function normalizeEnvironments(value: unknown): Repository['environments'] {
       }
     }
     if (raw.migration !== undefined) {
-      if (!isRecord(raw.migration) || typeof raw.migration.backend !== 'boolean' || !Array.isArray(raw.migration.command) || !raw.migration.command.length || !raw.migration.command.every((part: unknown) => typeof part === 'string' && part.trim() && !/[\r\n\0]/.test(part)) || typeof raw.migration.workingDirectory !== 'string' || !raw.migration.workingDirectory.trim()) throw new Error(`Migração inválida no ambiente ${key}`)
+      if (
+        !isRecord(raw.migration) ||
+        typeof raw.migration.backend !== 'boolean' ||
+        !Array.isArray(raw.migration.command) ||
+        !raw.migration.command.length ||
+        !raw.migration.command.every(
+          (part: unknown) => typeof part === 'string' && part.trim() && !/[\r\n\0]/.test(part),
+        ) ||
+        typeof raw.migration.workingDirectory !== 'string' ||
+        !raw.migration.workingDirectory.trim()
+      )
+        throw new Error(`Migração inválida no ambiente ${key}`)
       const directory = raw.migration.workingDirectory.trim()
-      if (isAbsolute(directory) || directory.split(/[\\/]/).includes('..')) throw new Error(`Diretório de migração inválido no ambiente ${key}`)
-      environment.migration = { backend: raw.migration.backend, command: raw.migration.command as string[], workingDirectory: directory }
+      if (isAbsolute(directory) || directory.split(/[\\/]/).includes('..'))
+        throw new Error(`Diretório de migração inválido no ambiente ${key}`)
+      environment.migration = {
+        backend: raw.migration.backend,
+        command: raw.migration.command as string[],
+        workingDirectory: directory,
+      }
     }
     if (environment.url) environment.url = optionalWebUrl(environment.url)
-    if (environment.envFile && !isAbsolute(environment.envFile)) throw new Error(`envFile deve ser absoluto no ambiente ${key}`)
-    if (environment.targetBranch && !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(environment.targetBranch)) throw new Error(`Branch inválida no ambiente ${key}`)
+    if (environment.envFile && !isAbsolute(environment.envFile))
+      throw new Error(`envFile deve ser absoluto no ambiente ${key}`)
+    if (environment.targetBranch && !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(environment.targetBranch))
+      throw new Error(`Branch inválida no ambiente ${key}`)
     result[key] = environment
   }
   return result
 }
 
 function stringList(value: unknown, field: string): string[] {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) throw new Error(`Lista ${field} inválida`)
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string'))
+    throw new Error(`Lista ${field} inválida`)
   return [...new Set(value.map((item: string) => item.trim()).filter(Boolean))]
 }
 function optionalWebUrl(value: unknown): string | undefined {
   if (value === undefined || value === null || value === '') return undefined
   if (typeof value !== 'string') throw new Error('URL inválida')
   let parsed: URL
-  try { parsed = new URL(value) } catch { throw new Error('URL inválida') }
+  try {
+    parsed = new URL(value)
+  } catch {
+    throw new Error('URL inválida')
+  }
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('URL deve usar HTTP ou HTTPS')
   return value
 }
-function webOrigin(origin: string | undefined): string | undefined { return origin && /^https?:\/\//i.test(origin) ? origin : undefined }
+function webOrigin(origin: string | undefined): string | undefined {
+  return origin && /^https?:\/\//i.test(origin) ? origin : undefined
+}
 function safeOrigin(origin: string | undefined): string | undefined {
   if (!origin || !/^https?:\/\//i.test(origin)) return origin
   try {
@@ -467,16 +670,36 @@ function safeOrigin(origin: string | undefined): string | undefined {
     url.search = ''
     url.hash = ''
     return url.toString()
-  } catch { return undefined }
+  } catch {
+    return undefined
+  }
 }
-function validateAlias(value: string): void { if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(value)) throw new Error('Alias deve conter letras minúsculas, números, ponto, hífen ou sublinhado') }
+function validateAlias(value: string): void {
+  if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(value))
+    throw new Error('Alias deve conter letras minúsculas, números, ponto, hífen ou sublinhado')
+}
 function validateCompanions(repository: Repository, others: Repository[]): void {
   const ids = new Set(others.map((repo) => repo.id))
-  for (const id of repository.environments.local.companionRepositoryIds ?? []) if (!ids.has(id)) throw new Error(`Repositório companheiro desconhecido: ${id}`)
+  for (const id of repository.environments.local.companionRepositoryIds ?? [])
+    if (!ids.has(id)) throw new Error(`Repositório companheiro desconhecido: ${id}`)
 }
-function slug(value: string): string { return value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63) || 'repository' }
-function isRecord(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value) }
-function message(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+function slug(value: string): string {
+  return (
+    value
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 63) || 'repository'
+  )
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
 
 function envFilename(value: unknown): string {
   if (value === 'local') return '.env.local'
@@ -484,4 +707,6 @@ function envFilename(value: unknown): string {
   if (value === 'prod') return '.env.prod'
   throw new Error('Ambiente inválido')
 }
-function quoteEnv(value: string): string { return /[\s#"'\\]/.test(value) ? JSON.stringify(value) : value }
+function quoteEnv(value: string): string {
+  return /[\s#"'\\]/.test(value) ? JSON.stringify(value) : value
+}

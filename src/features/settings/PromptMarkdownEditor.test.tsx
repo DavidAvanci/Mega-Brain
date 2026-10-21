@@ -45,6 +45,7 @@ test('the prompt editor preserves selection through formatting, undo, redo and p
   const button = (label: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
   try {
     await act(async () => root.render(<Example />))
+    await act(async () => [...host.querySelectorAll<HTMLButtonElement>('button')].find((item) => item.textContent === 'Editar')!.click())
     const textarea = host.querySelector('textarea')!
     textarea.setSelectionRange(6, 10)
     await act(async () => button('Negrito (⌘/Ctrl B)').click())

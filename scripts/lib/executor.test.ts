@@ -92,7 +92,7 @@ test.each([true, false])(
   },
 )
 
-test.each(['claude', 'chatgpt'])(
+test.skipIf(process.platform === 'win32').each(['claude', 'chatgpt'])(
   'execução %s sem teto de turns recebe mensagens e revisa antes de finalizar',
   async (provider) => {
     const path = mkdtempSync(join(tmpdir(), 'task-live-chat-'))

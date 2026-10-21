@@ -6,12 +6,12 @@ import { chatEvent, parseTranscript, resolveSession, sessionDir } from './server
 
 test('sessionDir', () => {
   expect(sessionDir('/home/user/sample-workspace/CARD-123', '/projects')).toBe(
-    '/projects/-home-user-sample-workspace-CARD-123',
+    join('/projects', '-home-user-sample-workspace-CARD-123'),
   )
 })
 
 function transcriptFixture(projects: string, card: string, ids: string[]): void {
-  const dir = join(projects, card.replace(/[/.]/g, '-'))
+  const dir = join(projects, card.replace(/[:\\/.]/g, '-'))
   mkdirSync(dir, { recursive: true })
   ids.forEach((id, index) => {
     const file = join(dir, `${id}.jsonl`)

@@ -32,7 +32,7 @@ describe('Codex profiles', () => {
       writeFileSync(join(home, name, 'auth.json'), 'credential-canary')
     }
     mkdirSync(join(home, '.codex-unrelated'))
-    symlinkSync(join(home, '.codex-personal'), join(home, '.codex-personal-link'))
+    symlinkSync(join(home, '.codex-personal'), join(home, '.codex-personal-link'), process.platform === 'win32' ? 'junction' : 'dir')
     const env = { MEGA_BRAIN_CODEX_HOME: join(home, '.codex-work') }
     const first = readCodexProfiles(settingsFile, home, env)
     expect(first.profiles).toHaveLength(3)
@@ -71,7 +71,7 @@ describe('Codex profiles', () => {
       MEGA_BRAIN_CODEX_PROFILE_ID: 'work',
     })
     const file = join(home, 'settings', 'codex-profiles.json')
-    expect(statSync(file).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600)
     expect(readdirSync(join(home, 'settings'))).toEqual(['codex-profiles.json'])
     expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({ profiles: next.profiles, activeId: 'work' })
     store.write({ ...next, activeId: profiles[0].id })
@@ -86,7 +86,7 @@ describe('Codex profiles', () => {
     const initial = store.read()
     const profile = initial.profiles[0]
     mkdirSync(join(home, 'real'))
-    symlinkSync(join(home, 'real'), join(home, 'linked'))
+    symlinkSync(join(home, 'real'), join(home, 'linked'), process.platform === 'win32' ? 'junction' : 'dir')
     const invalid = [
       { profiles: [], activeId: '' },
       { ...initial, activeId: 'absent' },

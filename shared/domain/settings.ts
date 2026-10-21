@@ -7,7 +7,7 @@ export interface ModelStageSettings {
 }
 
 export type BoardSettings = Record<
-  'task-planning' | 'run-task-checklist' | 'task-verification' | 'test-environment' | 'smart-diff-review',
+  'task-planning' | 'run-task-checklist' | 'task-verification' | 'test-environment' | 'smart-diff-review' | 'conflict-resolution',
   ModelStageSettings
 >
 
@@ -69,6 +69,7 @@ export interface PromptSettings {
   taskVerification: string
   testEnvironment: string
   smartDiffReview: string
+  conflictResolution: string
 }
 
 export { DEFAULT_PROMPTS } from './prompt-defaults'

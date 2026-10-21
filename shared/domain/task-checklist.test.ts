@@ -32,6 +32,43 @@ test('normalizes optional arrays and transmits item context and criteria', () =>
   })
 })
 
+test('preserves validated verification repair metadata and keeps legacy items valid', () => {
+  const checklist = parseTaskChecklist({
+    schemaVersion: 1,
+    items: [
+      {
+        id: 'VFY1',
+        title: 'Corrigir lint',
+        repo: 'api',
+        state: 'pending',
+        repair: {
+          checkId: 'lint',
+          fingerprint: 'failure-1',
+          profileFingerprint: 'profile-1',
+          source: 'verification',
+          wave: 1,
+          diagnostics: [{ file: 'src/a.ts', rule: 'no-unused-vars', message: 'Unused value' }],
+        },
+        origin: 'verification-repair',
+      },
+    ],
+  })
+  expect(parseTaskChecklist(JSON.stringify(checklist)).items[0]).toMatchObject({
+    origin: 'verification-repair',
+    repair: {
+      checkId: 'lint',
+      fingerprint: 'failure-1',
+      profileFingerprint: 'profile-1',
+      source: 'verification',
+      wave: 1,
+      diagnostics: [{ file: 'src/a.ts', rule: 'no-unused-vars', message: 'Unused value' }],
+    },
+  })
+  expect(
+    parseTaskChecklist({ schemaVersion: 1, items: [{ id: 'T1', title: 'Antiga', repo: 'api' }] }).items[0].repair,
+  ).toBeUndefined()
+})
+
 test.each([
   ['{', 'JSON inválido'],
   [JSON.stringify({ schemaVersion: 2, items: [] }), 'schemaVersion'],

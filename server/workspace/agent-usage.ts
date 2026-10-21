@@ -10,8 +10,10 @@ interface Run {
   id: string
   sessionId?: string
   label?: string
+  displayName?: string
   provider?: AgentProvider
   model?: string
+  effort?: string
   startedAt: string
   finishedAt?: string
   durationMs?: number
@@ -22,8 +24,10 @@ interface Run {
 
 export interface AgentUsageMetadata {
   label?: string
+  displayName?: string
   provider?: AgentProvider
   model?: string
+  effort?: string
 }
 
 function validNumber(value: unknown): value is number {
@@ -69,8 +73,10 @@ export function startAgentUsage(cardPath: string, startedAt = new Date(), metada
     id,
     startedAt: startedAt.toISOString(),
     ...(metadata.label ? { label: metadata.label } : {}),
+    ...(metadata.displayName ? { displayName: metadata.displayName } : {}),
     ...(metadata.provider ? { provider: metadata.provider } : {}),
     ...(metadata.model ? { model: metadata.model } : {}),
+    ...(metadata.effort ? { effort: metadata.effort } : {}),
   })
   return id
 }
@@ -92,6 +98,16 @@ export function setAgentUsageSessionId(cardPath: string, id: string, sessionId: 
     if (run.sessionId === sessionId) return
     save(cardPath, { ...run, sessionId })
   } catch {}
+}
+
+export function setAgentUsageSettings(cardPath: string, id: string, model: string, effort: string): void {
+  const file = fileFor(cardPath, id)
+  try {
+    const run = JSON.parse(readFileSync(file, 'utf8')) as Run
+    save(cardPath, { ...run, model: model.trim(), effort: effort.trim() })
+  } catch {
+    // A missing or malformed run must not interrupt the active agent.
+  }
 }
 
 export function finishAgentUsage(cardPath: string, id: string, costUsd?: number, finishedAt = new Date()): void {
@@ -164,8 +180,12 @@ export function readAgentUsageDetails(
         id: run.id,
         ...(run.sessionId ? { sessionId: run.sessionId } : {}),
         ...(typeof run.label === 'string' && run.label.trim() ? { label: run.label.trim() } : {}),
+        ...(typeof run.displayName === 'string' && run.displayName.trim()
+          ? { displayName: run.displayName.trim() }
+          : {}),
         ...(run.provider === 'claude' || run.provider === 'codex' ? { provider: run.provider } : {}),
         ...(typeof run.model === 'string' && run.model.trim() ? { model: run.model.trim() } : {}),
+        ...(typeof run.effort === 'string' && run.effort.trim() ? { effort: run.effort.trim() } : {}),
         startedAt: run.startedAt,
         ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}),
         durationMs,

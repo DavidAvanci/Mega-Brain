@@ -38,14 +38,44 @@ export interface ChecklistRepair {
   summary: string
   task: string
   files?: string[]
+  fingerprint?: string
+  checkId?: string
+  profileFingerprint?: string
+  wave?: number
+  diagnostics?: { file: string; rule: string; message: string }[]
 }
 
 export function appendChecklistRepairs(file: string, failures: ChecklistRepair[]): number {
+  return appendChecklistRepairsDetailed(file, failures).created
+}
+
+export interface ChecklistRepairChanges {
+  created: number
+  reused: number
+  stalled: number
+}
+
+export function appendChecklistRepairsDetailed(file: string, failures: ChecklistRepair[]): ChecklistRepairChanges {
   const checklist = parseTaskChecklist(readFileSync(file, 'utf8'))
   const existing = new Set(checklist.items.map((item) => item.id))
   let next = 1
+  let added = 0
+  let reused = 0
+  let stalled = 0
   const clean = (value: string) => value.replace(/\s+/g, ' ').trim().slice(0, 500)
   for (const failure of failures) {
+    const fingerprint =
+      failure.fingerprint ??
+      [failure.repo, failure.check, clean(failure.summary), ...(failure.files ?? []).slice().sort().join(',')].join('|')
+    const repeated = checklist.items.find((item) => item.repair?.fingerprint === fingerprint)
+    if (repeated?.state === 'done')
+      throw new Error(`Falha sem progresso: ${failure.check} repete a correção concluída ${repeated.id}`)
+    if (repeated && (repeated.state === 'pending' || repeated.state === 'blocked' || repeated.state === 'failed')) {
+      repeated.notes.push(`Falha reapareceu; vinculada ao reparo existente ${repeated.id}.`)
+      if (repeated.state === 'pending') reused++
+      else stalled++
+      continue
+    }
     while (existing.has(`VFY${next}`)) next++
     const id = `VFY${next++}`
     existing.add(id)
@@ -63,10 +93,20 @@ export function appendChecklistRepairs(file: string, failures: ChecklistRepair[]
       completionCriteria: [],
       state: 'pending',
       notes: [],
+      origin: 'verification-repair',
+      repair: {
+        checkId: failure.checkId ?? failure.check,
+        fingerprint,
+        profileFingerprint: failure.profileFingerprint ?? 'legacy',
+        source: 'verification',
+        wave: failure.wave ?? 1,
+        ...(failure.diagnostics?.length ? { diagnostics: failure.diagnostics } : {}),
+      },
     })
+    added++
   }
   if (failures.length) writeTaskChecklist(file, checklist)
-  return failures.length
+  return { created: added, reused, stalled }
 }
 
 export function matchesPattern(path: string, pattern: string): boolean {

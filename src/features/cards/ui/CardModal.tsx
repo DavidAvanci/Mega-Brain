@@ -35,6 +35,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import {
   clearLatestStage,
+  convertCardToJira,
   deleteCard,
   moveCard,
   openFolder,
@@ -44,7 +45,8 @@ import {
   stopCardAgent,
   updateCardDescription,
 } from '../model/card-commands'
-import { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
+import { AgentBadge, ScriptRunningIndicator, StartingExecutorsIndicator, activeAgents, agentName, isFormattingCardFiles, isStartingExecutors } from '@/CardAgentBadge'
+import { Badge } from '@/components/ui/badge'
 import { PrChip, StageResetButton } from './CardView'
 import { isTauriDesktop } from '@/desktopBootstrap'
 import { Markdown } from '@/Markdown'
@@ -254,8 +256,7 @@ function usageEntryTitle(entry: CardAgentUsageEntry): string {
     chat: 'Chat',
   }
   const label = entry.label ? (labels[entry.label] ?? entry.label) : 'Execução sem categoria'
-  const provider = entry.provider === 'claude' ? 'Claude' : entry.provider === 'codex' ? 'Codex' : undefined
-  return [label, provider, entry.model].filter(Boolean).join(' · ')
+  return label
 }
 
 function formatUsageDate(value: string): string {
@@ -445,8 +446,29 @@ function AgentSessionStopButton({
   )
 }
 
-export function AgentStatusRow({ agent, cardId }: { agent: AgentInfo; cardId: string }) {
+export function AgentStatusRow({ agent, cardId, development = false }: { agent: AgentInfo; cardId: string; development?: boolean }) {
   const [stopping, setStopping] = useState(false)
+  if (development && agent.stage === 'run-task-checklist' && agent.status === 'rodando' && agent.progress) {
+    return (
+      <div className="flex items-center gap-2">
+        <Progress
+          value={agent.progress.done}
+          max={agent.progress.total}
+          className="min-w-0 flex-1"
+          aria-label="Progresso do desenvolvimento"
+        />
+        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+          {agent.progress.done}/{agent.progress.total}
+        </span>
+        <StageResetButton
+          agent={agent}
+          cardId={cardId}
+          iconOnly
+          interruptLabel="Encerrar todos os agentes deste card"
+        />
+      </div>
+    )
+  }
   const progress = agent.status === 'rodando' && agent.stage !== 'task-planning' ? agent.progress : undefined
   return (
     <div className="flex flex-col gap-1.5">
@@ -529,21 +551,36 @@ export function CardModal({
   container: HTMLElement
 }) {
   const [activeTab, setActiveTab] = useState(
-    initialTab && initialTab !== 'chat' ? initialTab : (DEFAULT_TAB[card.status] ?? 'description'),
+    initialTab === 'environment-configure'
+      ? 'environments'
+      : initialTab && initialTab !== 'chat'
+        ? initialTab
+        : (DEFAULT_TAB[card.status] ?? 'description'),
   )
-  const [usageSort, setUsageSort] = useState<'duration' | 'cost'>('duration')
+  const [usageSort, setUsageSort] = useState<'recent' | 'duration' | 'cost'>('recent')
   const { files, checklist, checklistLoaded, usage, usageBreakdown, artifactError, error } = useCardDetail(card.id, activeTab, true)
-  const agents = activeAgents(card)
-  const agentWorking = agents.some((agent) => agent.status === 'rodando')
+  const allAgents = activeAgents(card)
+  const agentWorking = allAgents.some((agent) => agent.status === 'rodando')
+  const developmentProgressAgent = card.status === 'desenvolvendo'
+    ? allAgents.find((agent) => agent.stage === 'run-task-checklist' && agent.status === 'rodando')
+    : undefined
+  const agents = allAgents.filter(
+    (agent) =>
+      ['rodando', 'aguardando', 'erro'].includes(agent.status) &&
+      !(card.status === 'desenvolvendo' && agent.stage === 'run-task-checklist' && agent.status === 'rodando'),
+  )
   const sortedUsageBreakdown = [...usageBreakdown].sort((left, right) => {
     if (usageSort === 'duration') return right.durationMs - left.durationMs
-    return (right.costUsd ?? -1) - (left.costUsd ?? -1) || Date.parse(right.startedAt) - Date.parse(left.startedAt)
+    if (usageSort === 'cost') return (right.costUsd ?? -1) - (left.costUsd ?? -1) || Date.parse(right.startedAt) - Date.parse(left.startedAt)
+    return Date.parse(right.startedAt) - Date.parse(left.startedAt)
   })
   const [editingDescription, setEditingDescription] = useState(false)
   const [descriptionDraft, setDescriptionDraft] = useState(card.description)
   const [descriptionText, setDescriptionText] = useState(card.description)
   const [savingDescription, setSavingDescription] = useState(false)
   const [descriptionError, setDescriptionError] = useState<string | null>(null)
+  const [jiraConversionPending, setJiraConversionPending] = useState(false)
+  const [jiraConversionError, setJiraConversionError] = useState<string | null>(null)
   const [chatWidthRatio, setChatWidthRatio] = useState(storedChatWidthRatio)
   const [environmentRequest, setEnvironmentRequest] = useState<EnvironmentChatRequest>()
   const [environmentAgentRunning, setEnvironmentAgentRunning] = useState(false)
@@ -576,6 +613,19 @@ export function CardModal({
       setDescriptionError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setSavingDescription(false)
+    }
+  }
+
+  const convertToJira = async () => {
+    if (jiraConversionPending || /^(?!MB-)[A-Z][A-Z0-9]*-\d+$/i.test(card.id)) return
+    setJiraConversionPending(true)
+    setJiraConversionError(null)
+    try {
+      await convertCardToJira(card)
+    } catch (cause) {
+      setJiraConversionError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setJiraConversionPending(false)
     }
   }
 
@@ -643,6 +693,12 @@ export function CardModal({
             <DialogHeader className={cn('gap-2.5 border-b px-5 pt-4 pb-3', !expanded && 'pr-24 lg:pr-12')}>
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
                 <CopyId id={card.id} />
+                {!/^(?!MB-)[A-Z][A-Z0-9]*-\d+$/i.test(card.id) && (
+                  <Button type="button" variant="outline" size="xs" onClick={convertToJira} disabled={jiraConversionPending}>
+                    {jiraConversionPending && <Spinner className="size-3" />}
+                    {jiraConversionPending ? 'Criando no Jira…' : 'Converter para Jira'}
+                  </Button>
+                )}
                 <StatusSelect card={card} />
                 <FlowSelect card={card} />
                 {card.jiraStatus && <span className="uppercase">Jira: {card.jiraStatus}</span>}
@@ -658,12 +714,18 @@ export function CardModal({
                   </span>
                 )}
               </div>
+              {isFormattingCardFiles(card) && <ScriptRunningIndicator text="Formatando arquivos..." />}
+              {isStartingExecutors(card) && <StartingExecutorsIndicator />}
               {agents.map((agent, index) => (
-                <AgentStatusRow key={`${agent.stage ?? 'autonomo'}-${index}`} agent={agent} cardId={card.id} />
+                <AgentStatusRow key={`${agent.stage ?? 'autonomo'}-${index}`} agent={agent} cardId={card.id} development={card.status === 'desenvolvendo'} />
               ))}
+              {developmentProgressAgent && (
+                <AgentStatusRow agent={developmentProgressAgent} cardId={card.id} development />
+              )}
               {card.smartDiffRunning && <SmartDiffIndicator cardId={card.id} activity={card.smartDiffActivity} />}
               <ActionBar card={card} onDeleted={onClose} />
               {error && <p className="text-xs text-destructive">{error}</p>}
+              {jiraConversionError && <p className="text-xs text-destructive">{jiraConversionError}</p>}
               {card.checklistError && card.checklistError !== error && <p className="text-xs text-destructive">{card.checklistError}</p>}
             </DialogHeader>
             <Tabs value={activeTab} onValueChange={setActiveTab} className="min-h-0 flex-1 gap-0">
@@ -744,7 +806,6 @@ export function CardModal({
                       <section className="rounded-lg border bg-muted/20 p-4">
                         <p className="text-xs text-muted-foreground">Tempo acumulado</p>
                         <p className="mt-1 text-xl font-semibold tabular-nums">{formatAgentTime(usage.durationMs)}</p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">Soma do tempo de todas as execuções</p>
                       </section>
                       <section className="rounded-lg border bg-muted/20 p-4">
                         <p className="text-xs text-muted-foreground">Custo acumulado</p>
@@ -752,32 +813,38 @@ export function CardModal({
                           {usage.runs > 0 && usage.unpricedRuns === usage.runs ? 'Indisponível' : `$${usage.costUsd.toFixed(usage.costUsd > 0 && usage.costUsd < 0.01 ? 4 : 2)}`}
                           {agentWorking && <Spinner className="size-4" aria-label="Agente em execução; custo sendo atualizado" />}
                         </p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">USD reportados pelo provedor</p>
                       </section>
                       <section className="rounded-lg border bg-muted/20 p-4">
                         <p className="text-xs text-muted-foreground">Tempo em execução</p>
                         <p className="mt-1 text-xl font-semibold tabular-nums">{formatAgentTime(elapsedAgentTime(usageBreakdown))}</p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">Soma dos períodos com agentes ativos; sobreposições contam uma vez</p>
                       </section>
                     </div>
                     <section>
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <h3 className="text-sm font-medium">Execuções</h3>
                         <div className="flex items-center gap-1" role="group" aria-label="Ordenar execuções">
+                          <Button type="button" size="xs" variant={usageSort === 'recent' ? 'secondary' : 'ghost'} aria-pressed={usageSort === 'recent'} onClick={() => setUsageSort('recent')}>Recentes ↓</Button>
                           <Button type="button" size="xs" variant={usageSort === 'duration' ? 'secondary' : 'ghost'} aria-pressed={usageSort === 'duration'} onClick={() => setUsageSort('duration')}>Tempo ↓</Button>
                           <Button type="button" size="xs" variant={usageSort === 'cost' ? 'secondary' : 'ghost'} aria-pressed={usageSort === 'cost'} onClick={() => setUsageSort('cost')}>Custo ↓</Button>
                         </div>
                       </div>
                       {usageBreakdown.length ? (
                         <ol className="divide-y divide-border/70">
-                          {sortedUsageBreakdown.map((entry) => (
+                          {sortedUsageBreakdown.map((entry) => {
+                            const effort = entry.effort ?? allAgents.find((agent) => entry.sessionId && agent.sessionId === entry.sessionId)?.effort
+                            return (
                             <li key={entry.id} className="py-4 first:pt-2 last:pb-0">
                               <div className="flex min-w-0 flex-col gap-0.5">
                                 <div className="flex min-w-0 items-center justify-between gap-2">
-                                  <span className="min-w-0 truncate text-sm font-semibold" title={usageEntryTitle(entry)}>{usageEntryTitle(entry)}</span>
+                                  <span className="min-w-0 truncate text-sm font-semibold" title={`${usageEntryTitle(entry)} · ${formatUsageDate(entry.startedAt)}`}>
+                                    {usageEntryTitle(entry)} <span className="font-normal text-muted-foreground">· {formatUsageDate(entry.startedAt)}</span>
+                                  </span>
                                   {entry.sessionId && <CopyId id={entry.sessionId} compact />}
                                 </div>
-                                <span className="text-xs text-muted-foreground">{formatUsageDate(entry.startedAt)}</span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {entry.model && <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">{entry.model}</Badge>}
+                                  {effort && <Badge variant="outline" className="h-5 px-1.5 text-[10px]">{effort}</Badge>}
+                                </div>
                               </div>
                               <div className="mt-3 grid grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] items-center gap-3">
                                 <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground">{formatAgentTime(entry.durationMs)}</p>
@@ -785,7 +852,8 @@ export function CardModal({
                                 <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground">{entry.costUsd === undefined && !entry.finishedAt ? 'Em andamento' : formatUsageCost(entry.costUsd)}</p>
                               </div>
                             </li>
-                          ))}
+                            )
+                          })}
                         </ol>
                       ) : <Placeholder>Nenhuma execução de agente registrada.</Placeholder>}
                     </section>
@@ -821,6 +889,7 @@ export function CardModal({
                     key={card.id}
                     card={card}
                     agentRunning={environmentAgentRunning}
+                    openConfigurationOnMount={initialTab === 'environment-configure'}
                     onEnvironmentChat={(text, configuration) =>
                       setEnvironmentRequest((previous) => ({
                         id: (previous?.id ?? 0) + 1,

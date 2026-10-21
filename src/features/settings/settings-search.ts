@@ -179,6 +179,13 @@ const ENTRIES: SettingsSearchEntry[] = [
     keywords: 'prompts modelos esforço effort claude codex review agente',
   },
   {
+    target: 'prompt-conflictResolution',
+    tab: 'models',
+    title: 'Conflitos Git: prompt, modelo e esforço',
+    description: 'Instruções e modelo para resolver conflitos de cherry-pick e rebase.',
+    keywords: 'prompts modelos esforço effort claude codex git staging cherry-pick rebase conflito',
+  },
+  {
     target: 'island',
     tab: 'island',
     title: 'Ilha Dinâmica',

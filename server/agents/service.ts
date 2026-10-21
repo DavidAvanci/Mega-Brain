@@ -164,6 +164,7 @@ function sessionFromFile(
   let startedAt: string | undefined
   let activity: string | undefined
   let narration: string | undefined
+  let error: string | undefined
   let model: string | undefined
   let effort: string | undefined
   let failed = false
@@ -242,7 +243,14 @@ function sessionFromFile(
         }
       }
       if (event.type === 'result') {
-        if (event.is_error || event.subtype !== 'success') failed = true
+        if (event.is_error || event.subtype !== 'success') {
+          failed = true
+          error = typeof event.result === 'string' && event.result.trim()
+            ? event.result.trim()
+            : typeof event.subtype === 'string'
+              ? `Execução encerrada: ${event.subtype}`
+              : 'O agente terminou com erro'
+        }
         if (explicitQuestion) {
           waiting = false
           question = undefined
@@ -283,7 +291,12 @@ function sessionFromFile(
         }
         if (!waiting) visualState = 'idle'
       }
-      if (event.type === 'turn.failed' || event.type === 'error') failed = true
+      if (event.type === 'turn.failed' || event.type === 'error') {
+        failed = true
+        const details = record(payload?.error)
+        const messageText = typeof details?.message === 'string' ? details.message : typeof payload?.message === 'string' ? payload.message : undefined
+        error = messageText?.trim() || 'O agente terminou com erro'
+      }
       if (event.type === 'response_item' && payload) {
         if (payload.type === 'reasoning') visualState = 'thinking'
         if (payload.type === 'message' && payload.role === 'assistant') {
@@ -371,6 +384,7 @@ function sessionFromFile(
     updatedAt: new Date(file.mtimeMs).toISOString(),
     activity,
     narration,
+    ...(status === 'erro' ? { error: error ?? 'O agente terminou com erro' } : {}),
     visualState:
       status === 'aguardando'
         ? 'waiting'
@@ -656,7 +670,9 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
             (normalizedCwd ? cardIdFromWorkspaceCwd(normalizedCwd, options.workspaceDir, cardIds) : undefined) ??
             canonicalCardId(namedCardId, cardIds) ??
             canonicalCardId(worktreeCardId, cardIds)
-          const displayName = name ?? (session.provider === 'codex' ? cardId : undefined)
+          let displayName = name ?? (session.provider === 'codex' ? cardId : undefined)
+          let model = session.model
+          let effort = session.effort
           let usage: AgentSession['usage']
           if (cardId && options.workspaceDir) {
             let entries = usageByCard.get(cardId)
@@ -665,6 +681,10 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
               usageByCard.set(cardId, entries)
             }
             const matching = entries.filter((entry) => entry.sessionId === session.id)
+            const persistedName = matching.find((entry) => entry.displayName)?.displayName
+            if (persistedName) displayName = persistedName
+            model ??= matching.find((entry) => entry.model)?.model
+            effort ??= matching.find((entry) => entry.effort)?.effort
             if (matching.length) {
               usage = {
                 durationMs: matching.reduce((total, entry) => total + entry.durationMs, 0),
@@ -676,6 +696,8 @@ export function createAgentSessionService(options: AgentSessionServiceOptions): 
           }
           return [{
             ...session,
+            ...(model ? { model } : {}),
+            ...(effort ? { effort } : {}),
             ...(displayName ? { name: displayName } : {}),
             ...(cardId ? { cardId } : {}),
             ...(usage ? { usage } : {}),

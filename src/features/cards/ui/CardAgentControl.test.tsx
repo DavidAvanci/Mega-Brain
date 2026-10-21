@@ -34,7 +34,7 @@ test('pauses and resumes from an accessible card control without opening the car
     )
     const button = host.querySelector<HTMLButtonElement>('button')!
     expect(button.getAttribute('aria-label')).toBe('Pausar agentes deste card')
-    expect(button.className).toContain('size-10')
+    expect(button.className).toContain('size-5')
     await act(async () => button.click())
     expect(actions.pauseCardAgents).toHaveBeenCalledWith('CARD-1', 'run-task-checklist')
     expect(button.disabled).toBe(true)

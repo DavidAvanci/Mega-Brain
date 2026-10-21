@@ -58,11 +58,14 @@ afterEach(async () => {
 })
 
 test('adds a discovered profile, chooses it for new launches and persists editable labels and colors', async () => {
-  const select = host.querySelector<HTMLSelectElement>('select[aria-label="Adicionar perfil encontrado"]')!
+  const select = host.querySelector<HTMLButtonElement>('button[aria-label="Adicionar perfil encontrado"]')!
   await act(async () => {
-    select.value = '/Users/test/.codex-work'
-    select.dispatchEvent(new Event('change', { bubbles: true }))
+    select.click()
   })
+  const discovered = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) =>
+    option.textContent?.includes('/Users/test/.codex-work'),
+  )!
+  await act(async () => discovered.click())
   await setInput('Nome do perfil Trabalho', 'Takeat')
   await setInput('Cor do perfil Takeat', '#123456')
   await act(async () => input('Usar Takeat em novas execuções').click())

@@ -33,3 +33,15 @@ test('keeps complementary PLAN context for migrated cards without sending unrela
   expect(prompt).not.toContain('Outra tarefa')
   expect(prompt).toContain('Arquivos permitidos: (não especificado)')
 })
+
+test('includes only the profile-authorized check and evidence for a repair task', () => {
+  const prompt = taskItemPrompt(checklistItem('VFY1', { origin: 'verification-repair' }), 'Regras', [], '', undefined, {
+    id: 'eslint',
+    argv: ['eslint', '--format', 'json'],
+    diagnostics: [{ file: 'src/a.ts', rule: 'no-unused-vars', message: 'Unused variable' }],
+  })
+  expect(prompt).toContain('Comando de leitura autorizado')
+  expect(prompt).toContain('eslint')
+  expect(prompt).toContain('src/a.ts · no-unused-vars: Unused variable')
+  expect(prompt).toContain('Não execute checks ou builds diferentes')
+})

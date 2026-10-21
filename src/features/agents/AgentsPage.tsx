@@ -138,7 +138,7 @@ function AgentRow({ session, card, historical = false }: { session: AgentSession
   return (
     <article
       className={cn(
-        'flex min-h-32 min-w-0 flex-col gap-2 rounded-lg border bg-card p-3',
+        'flex min-w-0 flex-col gap-2 rounded-lg border bg-card p-3',
         historical && '[content-visibility:auto] [contain-intrinsic-size:auto_128px]',
       )}
     >
@@ -149,11 +149,7 @@ function AgentRow({ session, card, historical = false }: { session: AgentSession
         </h3>
         {isActive(session) && session.pid ? <StopAgentButton session={session} /> : null}
       </div>
-      {session.name && session.name !== session.title ? (
-        <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">{session.title}</p>
-      ) : session.activity ? (
-        <p className="line-clamp-3 text-[11px] leading-snug text-muted-foreground">{session.activity}</p>
-      ) : !card ? (
+      {!card ? (
         <span className="flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground" title={session.cwd}>
           <HugeiconsIcon icon={Task01Icon} strokeWidth={1.8} className="size-3 shrink-0" />
           <span className="truncate font-mono">{session.cwd || 'Diretório não identificado'}</span>
@@ -284,7 +280,7 @@ function AgentGroup({
           <h3 className="min-w-0 truncate font-sans font-semibold">Sem card</h3>
         )}
         {card ? (
-          <Badge variant="outline" className="font-mono" aria-label={`ID do card: ${card.id}`}>
+          <Badge variant="outline" className="w-[100px] shrink-0 justify-center font-mono" aria-label={`ID do card: ${card.id}`}>
             {card.id}
           </Badge>
         ) : null}
@@ -296,7 +292,10 @@ function AgentGroup({
         </span>
       </div>
       <div
-        className={cn('grid grid-cols-2 gap-2 lg:grid-cols-4', group.length > 8 && 'max-h-96 overflow-y-auto pr-1')}
+        className={cn(
+          'grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-2',
+          group.length > 8 && 'max-h-96 overflow-y-auto pr-1',
+        )}
         tabIndex={group.length > 8 ? 0 : undefined}
         aria-label={`Agentes de ${card?.title ?? 'sessões sem card'}`}
       >

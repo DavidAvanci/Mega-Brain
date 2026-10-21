@@ -112,6 +112,8 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
         info.activity = undefined
         info.error = undefined
       }
+      if (stage.script && event?.type === 'mega_brain.script_activity')
+        info.activity = typeof event.description === 'string' ? event.description : undefined
       if (typeof event?.session_id === 'string') info.sessionId = event.session_id
       if (event?.type === 'thread.started' && typeof event.thread_id === 'string') info.sessionId = event.thread_id
       if (event?.type === 'result') {
@@ -126,7 +128,7 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
               : subtype
                 ? (RESULT_SUBTYPE_ERRORS[subtype] ?? subtype)
                 : undefined
-          if (detail) info.error = String(detail).trim().replace(/\s+/g, ' ').slice(0, 300)
+          if (detail) info.error = String(detail).trim()
         }
       }
       if (event?.type === 'turn.completed') {
@@ -137,7 +139,7 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
         finished = true
         info.status = 'erro'
         const detail = record(event.error)?.message ?? event.message ?? 'O ChatGPT não concluiu a execução'
-        info.error = String(detail).trim().replace(/\s+/g, ' ').slice(0, 300)
+        info.error = String(detail).trim()
       }
       const narration = agentNarration(event)
       if (narration && !stage.script) info.activity = narration

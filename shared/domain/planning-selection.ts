@@ -1,7 +1,7 @@
 import type { Effort, LlmProvider, ModelStageSettings } from './settings'
 
 export const JEV_PLANNING_MODEL = 'jev'
-export const PLANNING_SELECTION_POLICY = 'planning-jev-1-independent-model-effort'
+export const PLANNING_SELECTION_POLICY = 'planning-jev-2-effort-capped-at-high'
 export const PLANNING_SELECTION_FILE = 'planning-selection.json'
 
 export interface PlanningChoice {

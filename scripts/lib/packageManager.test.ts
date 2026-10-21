@@ -1,8 +1,8 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { detectPackageManager, installCommand, lockfilesMatch, runScriptCommand } from './packageManager'
+import { detectPackageManager, installCommand, lockfilesMatch, resolvePackageManagerCommand, runScriptCommand } from './packageManager'
 
 const repo = (files: Record<string, string>) => {
   const dir = mkdtempSync(join(tmpdir(), 'pm-'))
@@ -14,12 +14,28 @@ test('repo sem pista nenhuma é npm', () => {
   expect(detectPackageManager(repo({ 'package.json': '{}' }))).toBe('npm')
 })
 
+test('Windows resolves npm shim to the selected Node installation without a shell', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'package-launcher-'))
+  try {
+    const node = join(dir, 'node.exe')
+    const cli = join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+    mkdirSync(join(dir, 'node_modules', 'npm', 'bin'), { recursive: true })
+    writeFileSync(cli, '')
+    expect(resolvePackageManagerCommand('npm', ['ci'], node, { PATH: '' }, 'win32')).toEqual({
+      cmd: node,
+      args: [cli, 'ci'],
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('pnpm declarado ou detectado pelo lockfile instala e executa scripts com pnpm', () => {
   const fixtures: Record<string, string>[] = [{ 'package.json': '{"packageManager":"pnpm@10.33.0"}', 'pnpm-lock.yaml': 'lockfileVersion: 9' }, { 'pnpm-lock.yaml': 'lockfileVersion: 9' }]
   for (const files of fixtures) {
     const dir = repo(files)
     expect(detectPackageManager(dir)).toBe('pnpm')
-    expect(installCommand(dir)).toEqual({ cmd: 'pnpm', args: ['install'] })
+    expect(installCommand(dir)).toEqual({ cmd: 'pnpm', args: ['install', '--frozen-lockfile'] })
     expect(runScriptCommand(dir, 'test', ['--run'])).toEqual({ cmd: 'pnpm', args: ['run', 'test', '--run'] })
     const other = repo(files)
     expect(lockfilesMatch(dir, other)).toBe(true)

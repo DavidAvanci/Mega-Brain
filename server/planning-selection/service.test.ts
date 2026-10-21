@@ -42,7 +42,7 @@ function fetcher(model = 'gpt-6-luna', effort = 'high') {
 }
 
 describe('independent Jev planning selection', () => {
-  test.each(['low', 'high', 'max'])(
+  test.each(['low', 'high'])(
     'selects Luna with %s effort using two questions in a single request',
     async (effort) => {
       const fetch = fetcher('gpt-6-luna', effort)
@@ -69,18 +69,20 @@ describe('independent Jev planning selection', () => {
       expect(JSON.stringify(result)).not.toContain('private-key')
     },
   )
-  test('adjusts only an incompatible effort and retains both independent decisions', async () => {
-    const result = await createPlanningSelectionService(config(), async () => catalog, fetcher('gpt-6-luna', 'ultra'))(
+  test('does not offer or select an effort above high', async () => {
+    const fetch = fetcher('gpt-6-luna', 'high')
+    const result = await createPlanningSelectionService(config(), async () => catalog, fetch)(
       card,
       saved,
       new AbortController().signal,
     )
+    const request = JSON.parse(String(fetch.mock.calls[0][1]?.body))
+    expect(Object.keys(request.questions.planningEffort.criteria)).toEqual(['low', 'medium', 'high'])
     expect(result).toMatchObject({
       source: 'jev',
-      settings: { model: 'gpt-6-luna', effort: 'medium' },
-      requestedEffort: 'ultra',
-      effortAdjusted: true,
-      answers: { planningEffort: { choice: 'ultra' } },
+      settings: { model: 'gpt-6-luna', effort: 'high' },
+      requestedEffort: 'high',
+      effortAdjusted: false,
     })
   })
   test('Claude uses its own model options, independently of Codex', async () => {

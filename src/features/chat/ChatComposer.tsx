@@ -50,16 +50,16 @@ export function ChatComposer({
     const element = textareaRef.current
     if (!element) return
     element.style.height = 'auto'
-    element.style.height = `${Math.min(element.scrollHeight, 176)}px`
+    element.style.height = `${element.scrollHeight}px`
   }, [input, textareaRef])
   const textareaProps = {
     'aria-label': label,
     placeholder,
-    rows: 2,
+    rows: 1,
     maxLength: 12000,
     disabled: loading,
     className:
-      'min-h-16 max-h-44 w-full resize-none overflow-y-auto rounded-none border-0 bg-transparent px-1 py-2 text-sm shadow-none outline-none focus-visible:ring-0 dark:bg-transparent',
+      'min-h-0 w-full resize-none overflow-y-hidden rounded-none border-0 bg-transparent px-1 py-2 text-sm shadow-none outline-none focus-visible:ring-0 dark:bg-transparent',
     onCompositionStart: () => {
       composing.current = true
     },

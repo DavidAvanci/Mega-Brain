@@ -6,7 +6,7 @@ Com o Jev habilitado, **Configurações → Prompts e modelos → Planejamento**
 
 Antes de cada nova execução, o backend envia título e descrição à TypeSafe com duas perguntas Choice independentes na mesma chamada: `planningModel` escolhe o modelo; `planningEffort` escolhe a profundidade de raciocínio. Não há perfis que amarrem modelo e effort, nem uma regra que derive essas escolhas do fluxo Simples/Médio/Difícil.
 
-No Codex, as opções de modelo vêm do catálogo do perfil ativo. A pergunta sobre esforço inclui os valores suportados por pelo menos um modelo; depois das duas respostas, o backend valida a combinação. Quando o esforço escolhido não é suportado pelo modelo, aplica o padrão compatível desse modelo e registra a escolha original e o ajuste. Em empates, usa a primeira opção na ordem enviada.
+No Codex, as opções de modelo vêm do catálogo do perfil ativo. A pergunta sobre esforço inclui os valores suportados por pelo menos um modelo, limitados a `low`, `medium` e `high`; o Jev nunca pode selecionar acima de `high`. Depois das duas respostas, o backend valida a combinação. Quando o esforço escolhido não é suportado pelo modelo, aplica o padrão compatível desse modelo e registra a escolha original e o ajuste. Em empates, usa a primeira opção na ordem enviada.
 
 O effort salvo é preservado enquanto os controles estão ocultos. Se o Jev estiver desabilitado, sem chave, indisponível ou retornar uma resposta inválida, o planejamento usa o modelo padrão da etapa e o effort salvo, ajustado quando necessário. Se o catálogo ao vivo do Codex não puder ser consultado, a seleção também usa esse fallback sem pedir ao Jev que escolha entre modelos cuja disponibilidade não foi confirmada.
 

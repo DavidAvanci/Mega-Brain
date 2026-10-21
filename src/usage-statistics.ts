@@ -5,7 +5,7 @@ const DAY = 24 * HOUR
 export function formatUsageReset(resetsAt: string | null, now: number) {
   const resetAt = resetsAt ? Date.parse(resetsAt) : NaN
   if (!Number.isFinite(resetAt)) {
-    return { label: 'Reset não informado', dateTime: null, dateLabel: null, fullDateLabel: null }
+    return { label: 'Reset não informado', remainingLabel: '—', dateTime: null, dateLabel: null, fullDateLabel: null }
   }
 
   const date = new Date(resetAt)
@@ -17,15 +17,15 @@ export function formatUsageReset(resetsAt: string | null, now: number) {
     .filter(Boolean)
     .join(' ')
 
+  const remainingLabel = remaining <= 0 ? 'Aguardando atualização' : duration || '< 1min'
   return {
-    label: remaining <= 0 ? 'Aguardando atualização' : `Reseta em ${duration || '< 1min'}`,
+    label: remaining <= 0 ? 'Aguardando atualização' : `Reseta em ${remainingLabel}`,
+    remainingLabel,
     dateTime: date.toISOString(),
     dateLabel: date.toLocaleString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
+    }) + ' - ' + date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
     fullDateLabel: `Reset: ${date.toLocaleString('pt-BR', { timeZoneName: 'short' })}`,
   }
 }

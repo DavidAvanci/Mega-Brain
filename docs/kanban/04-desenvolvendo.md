@@ -75,3 +75,11 @@ No caso Claude, a exigência de saída é transmitida por `--json-schema` com `s
 `▂▃▅` indica o nível do fluxo. Cada agente ativo ligado a um item da `TASK-CHECKLIST.json` aparece em sua linha, com o código do item e um botão para interrompê-lo. Antes de chegar atividade do Claude, a linha mostra `Iniciando <código>...`. A barra abaixo das linhas mostra o progresso global da checklist, com percentual e um botão para interromper toda a etapa e seus agentes. `⚠` sinaliza erro de agente ou ambiente, ou agente aguardando ação. Tempo, PRs, Jira e ambiente seguem os dados do card, inclusive se vierem de uma passagem anterior. O status Jira fica oculto quando há objeto de PRs.
 
 **Fontes:** `scripts/commands/dev-stage.ts`, `scripts/lib/scheduler.ts`; `server/workspace/stage-catalog.ts`, `stage-transition.ts`; `src/features/cards/model/card-commands.ts`; `src/features/cards/ui/CardView.tsx`.
+
+# Runtime de projetos em Tasks
+
+Comandos do projeto usam o runtime registrado no catálogo ou indicado em `.nvmrc`, `.node-version` e `engines.node`, nessa ordem. Configure `nodeRuntime.override` e `nodeRuntime.policy` no registro do repositório quando necessário. O fallback de mesma major precisa ser explícito; sem requisito declarado, o Node resolvido pelo PATH do processo é usado, com o Node do servidor como último fallback. Essa situação aparece como `server-default` nas tentativas. O Mega Brain não instala versões de Node.
+
+As tentativas distinguem o runtime do servidor, da CLI do agente e dos comandos do projeto. Dependências compartilhadas só são reutilizadas quando o lockfile coincide; installs necessários ficam na worktree e respeitam lockfile congelado. O ambiente dev seleciona Node por projeto para install, build e start.
+
+O verificador continua desabilitado. `done` representa implementação concluída e integrada, não aprovação de lint, build ou testes. Não habilite o pipeline até que baseline, relatório baseado em evidência e confirmação de checks em reparos estejam integrados.

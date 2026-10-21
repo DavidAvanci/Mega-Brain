@@ -131,7 +131,7 @@ describe('standalone chat SSE', () => {
 
   test('a disconnected client cancels the fake child and does not attempt further SSE writes', async () => {
     const { base, fixture } = await start()
-    await new Promise<void>((resolve, reject) => {
+    const disconnectedClient = new Promise<void>((resolve, reject) => {
       const req = nodeRequest(
         `${base}/api/chat/send`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } },
@@ -139,13 +139,23 @@ describe('standalone chat SSE', () => {
           response.once('data', () => undefined)
         },
       )
-      req.once('error', (error: NodeJS.ErrnoException) => (error.code === 'ECONNRESET' ? resolve() : reject(error)))
+      req.once('error', (error: NodeJS.ErrnoException) =>
+        error.code === 'ECONNRESET' ? resolve() : reject(error),
+      )
+      req.once('close', resolve)
       req.end(JSON.stringify({ name: 'card', text: 'oi' }))
-      setTimeout(() => {
+      void (async () => {
+        for (let attempt = 0; attempt < 100 && !fixture.child; attempt++)
+          await new Promise((ready) => setTimeout(ready, 10))
+        if (!fixture.child) {
+          req.destroy()
+          reject(new Error('chat child was not started before disconnect'))
+          return
+        }
         req.destroy()
-        resolve()
-      }, 20)
+      })()
     })
+    await disconnectedClient
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(fixture.child!.kills).toEqual(['SIGTERM'])
     fixture.child!.stdout.emit(
@@ -154,5 +164,5 @@ describe('standalone chat SSE', () => {
         '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"ignored"}}}\n',
       ),
     )
-  })
+  }, 15_000)
 })

@@ -41,6 +41,7 @@ export interface JiraService {
   ready(): Promise<JiraReadyIssue[]>
   statuses(keys: string): Promise<Record<string, string>>
   transition(key: string, status: string): Promise<{ status?: string }>
+  createIssue(input: { project: string; summary: string; description: string }): Promise<{ key: string }>
 }
 export interface JiraServiceDependencies {
   clock?: Clock
@@ -159,6 +160,32 @@ export function createJiraService(
       const value = transition.to?.name ?? target
       cache.set(key, { value, expires: clock.now() + TTL })
       return { status: value }
+    },
+    async createIssue(input) {
+      if (!enabled()) throw new Error('Integração com Jira não configurada. Informe site, e-mail e token em Configurações.')
+      const project = input.project.trim().toUpperCase()
+      const summary = input.summary.trim()
+      if (!/^[A-Z][A-Z0-9]+$/.test(project) || !summary) throw new Error('Projeto ou título inválido')
+      const paragraphs = input.description.split(/\r?\n/).map((line) => ({
+        type: 'paragraph',
+        content: line ? [{ type: 'text', text: line }] : [],
+      }))
+      const response = await api('/rest/api/3/issue', {
+        method: 'POST',
+        body: JSON.stringify({
+          fields: {
+            project: { key: project },
+            summary,
+            description: { type: 'doc', version: 1, content: paragraphs },
+            issuetype: { name: 'Task' },
+          },
+        }),
+      })
+      if (!response.ok) throw new Error(`Jira respondeu HTTP ${response.status}`)
+      const result = record(await response.json())
+      if (typeof result?.key !== 'string' || !JIRA_KEY_PATTERN.test(result.key))
+        throw new Error('Jira criou a issue, mas não retornou uma chave válida')
+      return { key: result.key.toUpperCase() }
     },
   }
 }
