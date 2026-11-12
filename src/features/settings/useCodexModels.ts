@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { requestJson } from '@/shared/api/request-json'
 import { FALLBACK_CODEX_CATALOG, type CodexModelCatalog } from '../../../shared/domain/codex-models'
 
-export function useCodexModels(enabled: boolean) {
+export function useCodexModels(enabled = true) {
   const [catalog, setCatalog] = useState(FALLBACK_CODEX_CATALOG)
   const [loading, setLoading] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)

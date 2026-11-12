@@ -4,6 +4,7 @@ import { Download01Icon } from '@hugeicons/core-free-icons'
 import { Button } from '@/components/ui/button'
 import type { ChatEntry } from '../../../shared/contracts/chat'
 import { downloadChat } from './chat-download'
+import { separateChatParagraphs, structuredChatMessage } from './structured-chat-message'
 
 function fenced(text: string, language: string): string {
   const runs = text.match(/`{3,}/g) ?? []
@@ -23,7 +24,16 @@ export function chatMarkdown(cardId: string, conversation: string, entries: Chat
             ? fenced(entry.tool, 'sh')
             : entry.output !== undefined
               ? fenced(entry.output, 'text')
-              : (entry.text ?? '')
+              : entry.role === 'assistant' && entry.text
+                ? (() => {
+                    const result = structuredChatMessage(entry.text)
+                    return result
+                      ? `**${result.status}**\n\n${separateChatParagraphs(result.note)}`
+                      : separateChatParagraphs(entry.text)
+                  })()
+                : entry.text
+                  ? separateChatParagraphs(entry.text)
+                  : ''
         return `## ${title}${entry.source ? ` · ${entry.source}` : ''}\n\n${entry.queued ? '*Mensagem pendente.*\n\n' : ''}${content}`
       }),
     ].join('\n\n') + '\n'
@@ -46,7 +56,8 @@ export function ChatExport({
       <Button
         type="button"
         variant="ghost"
-        className="size-10"
+        size="icon-xs"
+        className="size-6"
         aria-label="Exportar chat"
         title="Exportar histórico carregado (.md)"
         disabled={!entries.length || exporting}

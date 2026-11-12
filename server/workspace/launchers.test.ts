@@ -36,6 +36,7 @@ const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
 const scripts: string[] = []
 const roots: string[] = []
 const defaultTerminal = '/System/Applications/Utilities/Terminal.app'
+const hostPlatform = process.platform
 
 beforeEach(() => {
   Object.defineProperty(process, 'platform', { value: 'darwin' })
@@ -84,8 +85,10 @@ test('macOS opens Terminal by default with a private executable script in the ca
   const content = readFileSync(scripts[0], 'utf8')
   expect(content).toContain("cd '/cards/Meu card' || exit 1")
   expect(content).toContain("exec '/opt/bin/claude' '--resume' 'session-id'")
-  expect(statSync(scripts[0]).mode & 0o777).toBe(0o700)
-  expect(statSync(dirname(scripts[0])).mode & 0o777).toBe(0o700)
+  if (hostPlatform !== 'win32') {
+    expect(statSync(scripts[0]).mode & 0o777).toBe(0o700)
+    expect(statSync(dirname(scripts[0])).mode & 0o777).toBe(0o700)
+  }
 })
 
 test.each(['iTerm', 'iTerm2', '/Applications/iTerm.app', '/Applications/iTerm.app/Contents/MacOS/iTerm2'])(
@@ -98,7 +101,7 @@ test.each(['iTerm', 'iTerm2', '/Applications/iTerm.app', '/Applications/iTerm.ap
   },
 )
 
-test('the generated script round-trips cwd and argv without executing prompt contents, then removes itself', async () => {
+test.skipIf(hostPlatform === 'win32')('the generated script round-trips cwd and argv without executing prompt contents, then removes itself', async () => {
   const root = temporaryRoot()
   const card = join(root, "Card com espaço e ç ' $dollar `ticks`")
   mkdirSync(card)
@@ -213,7 +216,7 @@ test('custom CLI terminals preserve direct argv and cwd', async () => {
   ])
 })
 
-test('a selected shell receives the agent arguments as positional data through the Mac terminal script', async () => {
+test.skipIf(hostPlatform === 'win32')('a selected shell receives the agent arguments as positional data through the Mac terminal script', async () => {
   const { runner } = recordingRunner()
   await openTerminal('/cards/card', ['claude', 'multi\nline "prompt" $HOME'], undefined, runner, { shell: '/bin/sh' })
   const content = readFileSync(scripts[0], 'utf8')

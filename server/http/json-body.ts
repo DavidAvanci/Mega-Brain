@@ -20,9 +20,13 @@ export const DEFAULT_HTTP_LIMITS: HttpLimits = {
 export class RequestBodyTooLargeError extends Error {}
 export class RequestTimeoutError extends Error {}
 
-export async function readJsonBody(request: IncomingMessage, limits: HttpLimits): Promise<unknown> {
+export async function readJsonBody(
+  request: IncomingMessage,
+  limits: HttpLimits,
+  maxBodyBytes = limits.maxBodyBytes,
+): Promise<unknown> {
   const declaredLength = request.headers['content-length']
-  if (declaredLength && (!/^\d+$/.test(declaredLength) || Number(declaredLength) > limits.maxBodyBytes)) {
+  if (declaredLength && (!/^\d+$/.test(declaredLength) || Number(declaredLength) > maxBodyBytes)) {
     request.resume()
     throw new RequestBodyTooLargeError()
   }
@@ -39,7 +43,7 @@ export async function readJsonBody(request: IncomingMessage, limits: HttpLimits)
       resetIdleTimer()
       const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       bytes += value.length
-      if (bytes > limits.maxBodyBytes) {
+      if (bytes > maxBodyBytes) {
         request.resume()
         throw new RequestBodyTooLargeError()
       }

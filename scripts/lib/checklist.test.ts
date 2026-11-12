@@ -73,6 +73,24 @@ test('preserves prerequisites, created files, limits, context and criteria', () 
   })
 })
 
+test('deduplicates equivalent repairs and reports a repeated failure after done', () => {
+  const { file, read } = fixture(checklistJson([]))
+  const failure = {
+    repo: 'sample-api',
+    check: 'lint',
+    summary: 'Unexpected token',
+    task: 'Fix parser',
+    files: ['src/a.ts'],
+    fingerprint: 'lint-token-a',
+  }
+  expect(appendChecklistRepairs(file, [failure])).toBe(1)
+  expect(appendChecklistRepairs(file, [failure])).toBe(0)
+  expect(read().items).toHaveLength(1)
+  const repair = read().items[0]
+  markItem(file, repair, 'done')
+  expect(() => appendChecklistRepairs(file, [failure])).toThrow(/sem progresso/)
+})
+
 test('matches file scope patterns', () => {
   expect(matchesPattern('src/components/summary.tsx', 'src/components/*')).toBe(true)
   expect(matchesPattern('src/components/deep/file.ts', 'src/components/*')).toBe(true)

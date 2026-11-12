@@ -31,7 +31,7 @@ function cardWithWorktree(root: string, status = 'a-fazer') {
   writeFileSync(join(card, 'card.json'), JSON.stringify({ title: 'Card', status }))
   writeFileSync(join(worktree, '.git'), 'gitdir: /fixture/.git/worktrees/card')
   writeFileSync(join(itemWorktree, '.git'), 'gitdir: /fixture/.git/worktrees/card-item')
-  symlinkSync(worktree, join(card, 'repo'), 'dir')
+  symlinkSync(worktree, join(card, 'repo'), process.platform === 'win32' ? 'junction' : 'dir')
   return { card, worktree, itemWorktree }
 }
 

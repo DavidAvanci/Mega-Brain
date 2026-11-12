@@ -1,19 +1,39 @@
-import { existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
 import { TASK_CHECKLIST_FILE } from '../../shared/domain/task-checklist.ts'
 import { readTaskChecklist } from '../../shared/storage/task-checklist.ts'
-import { dirname, join, posix, resolve } from 'node:path'
-import { runsAsCommand } from '../lib/env.ts'
-import { appendChecklistRepairs, markItem, matchesPattern, parseChecklist, pendingRequires, resetUnfinished, type Item } from '../lib/checklist.ts'
+import { delimiter, dirname, join, posix, resolve } from 'node:path'
+import { runsAsCommand, WORKTREES } from '../lib/env.ts'
+import {
+  appendChecklistRepairsDetailed,
+  markItem,
+  matchesPattern,
+  parseChecklist,
+  pendingRequires,
+  resetUnfinished,
+  type Item,
+} from '../lib/checklist.ts'
 import { CmdError, changedFiles, defaultBranch, git, hasRef } from '../lib/git.ts'
-import { activity, finish } from '../lib/log.ts'
+import { activity, finish, scriptActivity } from '../lib/log.ts'
 import { readPlan } from '../lib/plan.ts'
 import { preflight } from '../lib/preflight.ts'
 import { formatDuration, runChecklist, type ItemOutcome } from '../lib/scheduler.ts'
-import { runClaudeItem } from '../lib/executor.ts'
+import { agentCliRuntime, runClaudeItem } from '../lib/executor.ts'
+import { resolveProjectNode } from '../lib/project-node.ts'
+import { activeRepositories } from '../../server/repositories/catalog.ts'
+import { discoverVerificationProfile, loadValidVerificationProfile } from '../lib/verification-profile.ts'
+import { runProjectCommand } from '../lib/project-command.ts'
+import { cardChangeScope } from '../lib/card-change-scope.ts'
+import { formatProjectFiles } from '../lib/project-format.ts'
+import { runVerificationChecks } from '../lib/verification-runner.ts'
 import { megaBrainPrompt } from '../lib/prompts.ts'
 import { taskItemPrompt } from '../lib/task-item-prompt.ts'
+import { parseVerificationReport, verificationChecksSucceeded, verificationChecksSummary } from '../lib/verification-report.ts'
+import { applyProjectCheckRelevance, verificationPrompt } from '../lib/verification-prompt.ts'
+import { isRepairableCheck } from '../../shared/domain/verification.ts'
 import {
   assertFeatureBranch,
+  DefaultBranchDirtyError,
   dropItemWorktree,
   ensureItemWorktree,
   ensureWorktree,
@@ -32,6 +52,7 @@ import {
   realRepoPath,
   repoLinkPath,
   taskInfo,
+  updateDefaultBranch,
 } from '../lib/workspace.ts'
 
 const wsPath = resolve(process.argv[2] ?? process.cwd())
@@ -54,22 +75,52 @@ function positiveInt(value: string | undefined, fallback: number, label: string)
   return parsed
 }
 
+function redactNote(value: string): string {
+  return value
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, '$1[redacted]')
+    .replace(/\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API_KEY))\s*=\s*[^\s]+/gi, '$1=[redacted]')
+    .replace(/\bAKIA[0-9A-Z]{16}\b/g, '[redacted AWS key]')
+    .slice(0, 4000)
+}
+
 function limitsFor(item: Item): { timeoutMs: number; maxAttempts: number } {
-  const timeoutMinutes = item.timeoutMinutes ?? positiveInt(process.env.CHECKLIST_TIMEOUT_MINUTES, 20, 'CHECKLIST_TIMEOUT_MINUTES')
+  const timeoutMinutes =
+    item.timeoutMinutes ?? positiveInt(process.env.CHECKLIST_TIMEOUT_MINUTES, 20, 'CHECKLIST_TIMEOUT_MINUTES')
   const maxAttempts = item.maxAttempts ?? positiveInt(process.env.CHECKLIST_MAX_ATTEMPTS, 3, 'CHECKLIST_MAX_ATTEMPTS')
   return { timeoutMs: timeoutMinutes * 60_000, maxAttempts }
 }
 
-function buildPrompt(item: Item, planRaw: string): string {
+function buildPrompt(
+  item: Item,
+  planRaw: string,
+  runtime?: { version: string; execPath: string; warning?: string },
+): string {
   const repositories = [...new Set(parseChecklist(readFileSync(file, 'utf8')).map((entry) => entry.repo))]
     .filter((repo) => existsSync(repoPath(repo)))
     .map((repo) => ({ repo, path: repoPath(repo) }))
-  return taskItemPrompt(item, megaBrainPrompt('taskItem'), repositories, planRaw)
+  const profile = verificationProfiles.get(item.repo)
+  const command =
+    item.origin === 'verification-repair' &&
+    item.repair &&
+    item.repair.profileFingerprint === profile?.fingerprint
+      ? profile.commands.find((entry) => entry.id === item.repair?.checkId)
+      : undefined
+  return taskItemPrompt(
+    item,
+    megaBrainPrompt('taskItem'),
+    repositories,
+    planRaw,
+    runtime,
+    command && item.repair
+      ? { id: command.id, argv: command.argv, diagnostics: item.repair.diagnostics ?? [] }
+      : undefined,
+  )
 }
 
 const itemCwd = new Map<string, string>()
 const unrecovered = new Map<string, string>()
 const repoLocks = new Map<string, Promise<unknown>>()
+const verificationProfiles = new Map<string, ReturnType<typeof discoverVerificationProfile>>()
 
 function withRepoLock<T>(repo: string, fn: () => T): Promise<T> {
   const previous = repoLocks.get(repo) ?? Promise.resolve()
@@ -106,10 +157,15 @@ async function commitItem(
     const integration = await withRepoLock(item.repo, () => integrateItemBranch(main, branch))
     if (!integration.ok) {
       unrecovered.set(item.id, branch)
-      return { status: 'failed', note: `Trabalho preservado em \`${branch}\`; conflito de integração: ${integration.conflict}.` }
+      return {
+        status: 'failed',
+        note: `Trabalho preservado em \`${branch}\`; conflito de integração: ${integration.conflict}.`,
+      }
     }
     discard()
-    return integration.commits ? { status: 'done', note: `${integration.commits} commit(s) existentes foram integrados.` } : null
+    return integration.commits
+      ? { status: 'done', note: `${integration.commits} commit(s) existentes foram integrados.` }
+      : null
   }
 
   stageItemChanges(cwd)
@@ -143,24 +199,7 @@ async function commitItem(
   }
 }
 
-interface VerificationReport {
-  checks: { repo: string; name: string; command: string; status: 'passed' | 'failed' | 'skipped'; summary: string }[]
-  failures: { repo: string; check: string; command: string; summary: string; task: string; files?: string[] }[]
-}
-
-function verificationPrompt(projects: { repo: string; path: string; files: string[] }[], reportPath: string, round: number): string {
-  return [
-    `Item: VFY${round} — Verificar os projetos após a execução dos agentes`,
-    'Você é o agente de verificação final. Em cada projeto, execute os checks relevantes (lint, formatação em modo check, typecheck, testes e hooks Husky) somente contra os arquivos listados para aquele projeto. Use argumentos de arquivo para limitar os checks. Se uma verificação não aceitar escopo por arquivo, registre-a como skipped; nunca rode um comando global do projeto.',
-    'Descubra os comandos pelos manifests e configurações do projeto. Use scripts e binários que já estejam instalados localmente; não instale dependências nem use npx para baixar ferramentas. Não corrija arquivos, não faça commits e não altere TASK-CHECKLIST.json. Execute apenas comandos de verificação; não use modos que formatem ou modifiquem arquivos. Se um hook modificar arquivos ou não puder ser executado sem mudanças, registre-o como skipped com a razão. Projetos sem arquivos alterados também devem ser registrados com uma verificação skipped.',
-    'Rode cada verificação relevante em cada projeto e registre resultado, comando e resumo. Para cada verificação que falhar, crie uma correção implementável, específica, em linguagem pt-BR, indicando os arquivos preferenciais quando identificáveis. Não crie correções para verificações skipped.',
-    'Grave somente o relatório JSON no caminho indicado. Use exatamente este formato: {"checks":[{"repo":"alias","name":"lint","command":"comando executado","status":"passed|failed|skipped","summary":"resumo curto"}],"failures":[{"repo":"alias","check":"nome exato da verificação","command":"comando","summary":"erro observado","task":"ação de correção","files":["caminho/relativo"]}]}. Toda verificação failed deve ter pelo menos uma entrada correspondente em failures. Use arrays vazios quando não houver registros.',
-    `Projetos, paths e lista exata de arquivos alterados pelo card: ${JSON.stringify(projects)}`,
-    `Relatório JSON: ${reportPath}`,
-  ].join('\n\n')
-}
-
-function cardChangedFiles(repo: string): string[] {
+function cardChangedScope(repo: string) {
   const cwd = repoPath(repo)
   let base: string
   try {
@@ -174,44 +213,12 @@ function cardChangedFiles(repo: string): string[] {
     const remoteDefault = `origin/${defaultBranch(cwd)}`
     base = git(cwd, 'merge-base', 'HEAD', remoteDefault)
   }
-  const output = git(cwd, 'diff', '--name-only', '--diff-filter=ACMR', `${base}...HEAD`)
-  return output.split('\n').map((path) => path.trim()).filter(Boolean)
+  return cardChangeScope(cwd, base)
 }
 
-function readVerificationReport(path: string, repos: Set<string>): VerificationReport {
-  const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
-  if (!parsed || typeof parsed !== 'object') throw new Error('Relatório de verificações inválido')
-  const value = parsed as Record<string, unknown>
-  if (!Array.isArray(value.checks) || !Array.isArray(value.failures)) throw new Error('Relatório de verificações sem checks/failures')
-  const checks = value.checks.map((entry) => {
-    if (!entry || typeof entry !== 'object') throw new Error('Verificação inválida no relatório')
-    const check = entry as Record<string, unknown>
-    if (!repos.has(String(check.repo)) || typeof check.name !== 'string' || typeof check.command !== 'string' || typeof check.summary !== 'string' || !['passed', 'failed', 'skipped'].includes(String(check.status)))
-      throw new Error('Campos ou repositório inválido em uma verificação')
-    return { repo: String(check.repo), name: check.name, command: check.command, status: check.status as 'passed' | 'failed' | 'skipped', summary: check.summary }
-  })
-  const failures = value.failures.map((entry) => {
-    if (!entry || typeof entry !== 'object') throw new Error('Correção inválida no relatório')
-    const failure = entry as Record<string, unknown>
-    if (!repos.has(String(failure.repo)) || typeof failure.check !== 'string' || typeof failure.command !== 'string' || typeof failure.summary !== 'string' || typeof failure.task !== 'string' || !failure.task.trim())
-      throw new Error('Campos ou repositório inválido em uma correção')
-    const files = Array.isArray(failure.files) ? failure.files.filter((path): path is string => typeof path === 'string' && Boolean(path.trim())) : []
-    if (files.some((path) => path.startsWith('/') || path.includes('\\') || path.split('/').includes('..') || /[{},;]/.test(path)))
-      throw new Error('A correção contém um caminho de arquivo inválido')
-    return { repo: String(failure.repo), check: failure.check, command: failure.command, summary: failure.summary, task: failure.task.trim(), files }
-  })
-  for (const check of checks.filter((entry) => entry.status === 'failed')) {
-    if (!failures.some((failure) => failure.repo === check.repo && failure.check === check.name))
-      throw new Error('A falha ' + check.name + ' em ' + check.repo + ' não gerou task de correção')
-  }
-  for (const failure of failures) {
-    if (!checks.some((check) => check.repo === failure.repo && check.name === failure.check && check.status === 'failed'))
-      throw new Error('A correção não corresponde a uma verificação reprovada: ' + failure.check)
-  }
-  for (const repo of repos) {
-    if (!checks.some((check) => check.repo === repo)) throw new Error('Nenhuma verificação foi reportada para ' + repo)
-  }
-  return { checks, failures }
+function cardChangedFiles(repo: string): string[] {
+  const scope = cardChangedScope(repo)
+  return [...new Set([...scope.added, ...scope.modified, ...scope.renamed.map((entry) => entry.to)])].sort()
 }
 
 function existsInRef(real: string, ref: string, path: string): boolean {
@@ -316,14 +323,45 @@ export async function runDevStage(): Promise<void> {
   const repos = [...new Set(parsed.map((item) => item.repo).filter(Boolean))]
   const skippedRepos = new Map<string, string>()
   const prepared: string[] = []
+  const branchUpdateErrors: string[] = []
+  const defaultBranchDirty: import('../../shared/domain/agents.ts').DefaultBranchDirtyChange[] = []
+  for (const repo of repos) {
+    activity('Branch principal', `Atualizando ${repo}`)
+    try {
+      updateDefaultBranch(realRepoPath(repo), repo)
+    } catch (error) {
+      branchUpdateErrors.push(`${repo}: ${error instanceof Error ? error.message : String(error)}`)
+      if (error instanceof DefaultBranchDirtyError) defaultBranchDirty.push(error.details)
+    }
+  }
+  if (branchUpdateErrors.length) {
+    finish(
+      false,
+      [
+        'Não foi possível atualizar a branch principal de todos os repositórios; nenhum agente foi iniciado:',
+        ...branchUpdateErrors,
+      ].join('\n'),
+      defaultBranchDirty.length ? { defaultBranchDirty } : undefined,
+    )
+    process.exit(1)
+  }
+
   for (const repo of repos) {
     activity('Worktree', `Preparando ${repo}`)
     try {
       const worktree = ensureWorktree(wsPath, repo, task.id, task.branch)
       const bases = prepareRequiredBases(worktree, repo, readRequiredBases(wsPath, repo))
       if (bases.length) recordPreparedBases(wsPath, repo, bases)
-      const environment = projectEnvironmentIssue(worktree)
+      const environment = projectEnvironmentIssue(worktree, repo)
       if (environment) throw new Error(environment)
+      const runtimeConfig = activeRepositories().find(
+        (entry) => entry.alias.toLowerCase() === repo.toLowerCase(),
+      )?.nodeRuntime
+      const profile = loadValidVerificationProfile(join(wsPath, `verification-profile-${repo}.json`), worktree, repo, {
+        override: runtimeConfig?.override,
+        policy: runtimeConfig?.policy,
+      })
+      verificationProfiles.set(repo, profile)
       if (bases.length) activity('Worktree', `${repo}: base obrigatória conferida (${bases.join(', ')})`)
       prepared.push(repo)
     } catch (error) {
@@ -350,7 +388,9 @@ export async function runDevStage(): Promise<void> {
 
   const missingRequirements = parsed.flatMap((item) =>
     item.repo && prepared.includes(item.repo)
-      ? pendingRequires(item, parsed, (pattern) => existsSync(join(repoPath(item.repo), pattern.replace(/\/?\*+$/, '')))).map((pattern) => `${item.id}: ${pattern}`)
+      ? pendingRequires(item, parsed, (pattern) =>
+          existsSync(join(repoPath(item.repo), pattern.replace(/\/?\*+$/, ''))),
+        ).map((pattern) => `${item.id}: ${pattern}`)
       : [],
   )
   if (missingRequirements.length) {
@@ -367,158 +407,405 @@ export async function runDevStage(): Promise<void> {
   resetUnfinished(file)
   recoverOrphans(task, prepared)
 
-  const runExecutorWave = () => runChecklist({
-    file,
-    max: 4,
-    execute: async (item) => {
-      const skipReason = skippedRepos.get(item.repo)
-      if (skipReason) return { status: 'blocked' as const, note: `Repositório "${item.repo}" indisponível: ${skipReason}` }
-      if (!item.repo || !existsSync(repoPath(item.repo))) {
-        return { status: 'blocked' as const, note: `Repo desconhecido: ${item.repo || '(sem repo)'}` }
-      }
-      const pending = unrecovered.get(item.id)
-      if (pending) {
-        return {
-          status: 'blocked' as const,
-          note: `Não re-executado: já existe trabalho commitado em \`${pending}\` que não integrou. Resolva o cherry-pick ou apague a branch para refazer o item do zero.`,
+  const runExecutorWave = () =>
+    runChecklist({
+      file,
+      max: 4,
+      execute: async (item) => {
+        const skipReason = skippedRepos.get(item.repo)
+        if (skipReason)
+          return { status: 'blocked' as const, note: `Repositório "${item.repo}" indisponível: ${skipReason}` }
+        if (!item.repo || !existsSync(repoPath(item.repo))) {
+          return { status: 'blocked' as const, note: `Repo desconhecido: ${item.repo || '(sem repo)'}` }
         }
-      }
-      let cwd: string
-      try {
-        cwd = ensureItemWorktree(repoPath(item.repo), task.id, item.repo, item.id)
-      } catch (error) {
-        return {
-          status: 'failed' as const,
-          note: `Falha ao criar a worktree do item: ${error instanceof Error ? error.message : error}`,
+        if (item.repair && item.origin === 'verification-repair') {
+          const profile = verificationProfiles.get(item.repo)
+          const authorized = profile?.commands.some((command) => command.id === item.repair?.checkId)
+          if (!profile || profile.fingerprint !== item.repair.profileFingerprint || !authorized)
+            return {
+              status: 'blocked' as const,
+              note: 'Reparo bloqueado antes do agente: perfil alterado ou checkId sem autorização atual.',
+            }
         }
-      }
-      itemCwd.set(item.id, cwd)
-      const limits = limitsFor(item)
-      let previousAttempts = 0
-      let pausedAttempt: PreservedAttempt | undefined
-      try {
-        const saved: unknown = JSON.parse(readFileSync(join(wsPath, 'execution-attempts.json'), 'utf8'))
-        if (Array.isArray(saved)) {
-          const attempts = saved.filter((entry: PreservedAttempt) => entry.itemId === item.id)
-          if (process.env.MEGA_BRAIN_RESUMING_STAGE === '1')
-            pausedAttempt = attempts.findLast((entry: PreservedAttempt) => entry.status === 'running')
-          previousAttempts = attempts.filter((entry) => entry !== pausedAttempt).length
+        const pending = unrecovered.get(item.id)
+        if (pending) {
+          return {
+            status: 'blocked' as const,
+            note: `Não re-executado: já existe trabalho commitado em \`${pending}\` que não integrou. Resolva o cherry-pick ou apague a branch para refazer o item do zero.`,
+          }
         }
-      } catch {}
-      if (previousAttempts >= limits.maxAttempts) {
-        return {
-          status: 'blocked' as const,
-          note: `Teto de ${limits.maxAttempts} tentativas atingido; trabalho salvo em \`${itemBranch(task.id, item.id)}\`. Corrija a causa ou divida o item antes de retomar.`,
+        let cwd: string
+        try {
+          cwd = ensureItemWorktree(repoPath(item.repo), task.id, item.repo, item.id)
+        } catch (error) {
+          return {
+            status: 'failed' as const,
+            note: `Falha ao criar a worktree do item: ${error instanceof Error ? error.message : error}`,
+          }
         }
-      }
-      const attemptId = pausedAttempt?.id ?? `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      const startedAt = pausedAttempt?.startedAt ?? new Date().toISOString()
-      recordAttempt(wsPath, {
-        id: attemptId,
-        itemId: item.id,
-        repo: item.repo,
-        status: 'running',
-        startedAt,
-        model: AGENT.model,
-        timeoutMs: limits.timeoutMs,
-        branch: itemBranch(task.id, item.id),
-        worktree: cwd,
-        commitBefore: git(cwd, 'rev-parse', 'HEAD'),
-        environment: process.version,
-      })
-      const result = await runClaudeItem({
-        cwd,
-        prompt: buildPrompt(item, plan.raw),
-        model: AGENT.model,
-        effort: AGENT.effort,
-        tools: AGENT.tools,
-        timeoutMs: limits.timeoutMs,
-      })
-      recordAttempt(wsPath, {
-        id: attemptId,
-        itemId: item.id,
-        repo: item.repo,
-        status: result.status,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-        model: AGENT.model,
-        timeoutMs: limits.timeoutMs,
-        durationMs: result.durationMs,
-        costUsd: result.costUsd,
-        note: result.note,
-        branch: itemBranch(task.id, item.id),
-        worktree: cwd,
-        commitAfter: git(cwd, 'rev-parse', 'HEAD'),
-        environment: process.version,
-      })
-      return result
-    },
-    afterDone: (item) => commitItem(task, item),
-  })
+        itemCwd.set(item.id, cwd)
+        const runtimeConfig = activeRepositories().find(
+          (entry) => entry.alias.toLowerCase() === item.repo.toLowerCase(),
+        )?.nodeRuntime
+        const nodeResolution = resolveProjectNode(cwd, {
+          override: runtimeConfig?.override,
+          policy:
+            runtimeConfig?.policy ??
+            (process.env.CHECKLIST_NODE_POLICY === 'same-major-fallback' ? 'same-major-fallback' : 'strict'),
+          allowServerDefault: true,
+        })
+        if (nodeResolution.status !== 'resolved' || !nodeResolution.runtime?.project)
+          return { status: 'blocked' as const, note: nodeResolution.diagnostic ?? 'Node do projeto indisponível' }
+        const projectNode = nodeResolution.runtime.project
+        const projectEnv = {
+          ...process.env,
+          PATH: [dirname(projectNode.execPath), process.env.PATH].filter(Boolean).join(delimiter),
+          MEGA_BRAIN_PROJECT_NODE: projectNode.execPath,
+        }
+        const limits = limitsFor(item)
+        let previousAttempts = 0
+        let pausedAttempt: PreservedAttempt | undefined
+        try {
+          const saved: unknown = JSON.parse(readFileSync(join(wsPath, 'execution-attempts.json'), 'utf8'))
+          if (Array.isArray(saved)) {
+            const attempts = saved.filter((entry: PreservedAttempt) => entry.itemId === item.id)
+            if (process.env.MEGA_BRAIN_RESUMING_STAGE === '1')
+              pausedAttempt = attempts.findLast((entry: PreservedAttempt) => entry.status === 'running')
+            previousAttempts = attempts.filter((entry) => entry !== pausedAttempt).length
+          }
+        } catch {}
+        if (previousAttempts >= limits.maxAttempts) {
+          return {
+            status: 'blocked' as const,
+            note: `Teto de ${limits.maxAttempts} tentativas atingido; trabalho salvo em \`${itemBranch(task.id, item.id)}\`. Corrija a causa ou divida o item antes de retomar.`,
+          }
+        }
+        const attemptId = pausedAttempt?.id ?? `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        const startedAt = pausedAttempt?.startedAt ?? new Date().toISOString()
+        recordAttempt(wsPath, {
+          id: attemptId,
+          itemId: item.id,
+          repo: item.repo,
+          status: 'running',
+          startedAt,
+          model: AGENT.model,
+          timeoutMs: limits.timeoutMs,
+          branch: itemBranch(task.id, item.id),
+          worktree: cwd,
+          commitBefore: git(cwd, 'rev-parse', 'HEAD'),
+          environment: process.version,
+          runtime: {
+            requirement: nodeResolution.runtime.requirement.value ?? 'server-default',
+            source: nodeResolution.runtime.requirement.source,
+            version: projectNode.version,
+            execPath: projectNode.execPath,
+            server: { version: process.version, execPath: process.execPath },
+            cli: agentCliRuntime(),
+            warning: nodeResolution.runtime.warning,
+          },
+        })
+        const result = await runClaudeItem({
+          cwd,
+          prompt: buildPrompt(item, plan.raw, { ...projectNode, warning: nodeResolution.runtime.warning }),
+          model: AGENT.model,
+          effort: AGENT.effort,
+          tools: AGENT.tools,
+          timeoutMs: limits.timeoutMs,
+          env: projectEnv,
+          role: item.repair && item.origin === 'verification-repair' ? 'repair' : 'executor',
+        })
+        recordAttempt(wsPath, {
+          id: attemptId,
+          itemId: item.id,
+          repo: item.repo,
+          status: result.status,
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          model: AGENT.model,
+          timeoutMs: limits.timeoutMs,
+          durationMs: result.durationMs,
+          costUsd: result.costUsd,
+          note: result.note,
+          branch: itemBranch(task.id, item.id),
+          worktree: cwd,
+          commitAfter: git(cwd, 'rev-parse', 'HEAD'),
+          environment: process.version,
+          runtime: {
+            requirement: nodeResolution.runtime.requirement.value ?? 'server-default',
+            source: nodeResolution.runtime.requirement.source,
+            version: projectNode.version,
+            execPath: projectNode.execPath,
+            server: { version: process.version, execPath: process.execPath },
+            cli: agentCliRuntime(),
+            warning: nodeResolution.runtime.warning,
+          },
+        })
+        return result
+      },
+      afterDone: async (item) => {
+        if (item.repair && item.origin === 'verification-repair') {
+          const profile = verificationProfiles.get(item.repo)
+          const check = profile?.commands.find((command) => command.id === item.repair?.checkId)
+          const cwd = itemCwd.get(item.id)
+          if (
+            !profile ||
+            profile.fingerprint !== item.repair.profileFingerprint ||
+            !check ||
+            !cwd ||
+            !profile.runtime.project
+          )
+            return {
+              status: 'blocked' as const,
+              note: 'Reparo sem perfil de verificação autorizado ou checkId inválido; a alteração não foi integrada.',
+            }
+          const touched = changedFiles(cwd).filter((path) => !isInjected(path))
+          const checkFiles = touched.filter(
+            (path) => !item.files.length || item.files.some((pattern) => matchesPattern(path, pattern)),
+          )
+          if (!checkFiles.length)
+            return {
+              status: 'blocked' as const,
+              note: 'Reparo sem arquivo alterado dentro do escopo autorizado; a alteração não foi integrada.',
+            }
+          const node = profile.runtime.project
+          const result = await runProjectCommand(
+            {
+              id: check.id,
+              argv: check.scope === 'project' ? check.argv : [...check.argv, ...checkFiles],
+              cwd,
+              timeoutMs: check.timeoutMs,
+              recordFile: join(wsPath, 'project-command-runs.jsonl'),
+            },
+            node,
+          )
+          if (result.status !== 'passed')
+            return {
+              status:
+                result.status === 'timeout' || result.status === 'cancelled'
+                  ? ('blocked' as const)
+                  : ('failed' as const),
+              note: `Check obrigatório ${check.id} não passou (${result.status}). ${result.stderr.slice(-1000)}`,
+            }
+        }
+        return commitItem(task, item)
+      },
+    })
   let totalTaskCost = 0
+  let taskCostReported = false
   let totalTaskDuration = 0
   const waveFailures: { id: string; note: string }[] = []
   const executeWave = async () => {
     const result = await runExecutorWave()
     totalTaskCost += result.costUsd
+    taskCostReported ||= result.costReported
     totalTaskDuration += result.durationMs
     waveFailures.push(...result.failures)
     return result
   }
   await executeWave()
 
-  const allowedRepos = new Set(repos)
-  const maxRepairWaves = positiveInt(process.env.CHECKLIST_MAX_VERIFICATION_WAVES, 5, 'CHECKLIST_MAX_VERIFICATION_WAVES')
+  const maxRepairWaves = positiveInt(
+    process.env.CHECKLIST_MAX_VERIFICATION_WAVES,
+    5,
+    'CHECKLIST_MAX_VERIFICATION_WAVES',
+  )
   let repairWaves = 0
-  let verificationCost = 0
   let verificationDuration = 0
+  let verificationAgentDuration = 0
+  let verificationAgentCost = 0
+  let verificationAgentCostReported = false
   let verificationOk = true
-  let verificationSummary = ''
-  for (let round = 1; ; round++) {
+  let verificationSummary = 'nenhuma rodada executada'
+  // Mantém o pipeline desligado temporariamente enquanto o fluxo é investigado.
+  // Isso pula checks de projeto, formatação e o agente verificador.
+  const verificationEnabled = false
+  for (let round = 1; verificationEnabled; round++) {
+    for (const repo of repos) {
+      try {
+        const runtimeConfig = activeRepositories().find(
+          (entry) => entry.alias.toLowerCase() === repo.toLowerCase(),
+        )?.nodeRuntime
+        const profile = loadValidVerificationProfile(
+          join(wsPath, `verification-profile-${repo}.json`),
+          repoPath(repo),
+          repo,
+          { override: runtimeConfig?.override, policy: runtimeConfig?.policy },
+        )
+        verificationProfiles.set(repo, profile)
+      } catch {
+        verificationProfiles.delete(repo)
+      }
+    }
+    scriptActivity('Formatando arquivos...')
+    const formatted = await formatCardFiles(round)
+    scriptActivity()
+    if (!formatted.ok) {
+      verificationOk = false
+      verificationSummary = formatted.summary
+      break
+    }
     const reportPath = join(wsPath, `verification-round-${round}.json`)
-    try { unlinkSync(reportPath) } catch {}
-    let projects: { repo: string; path: string; files: string[] }[]
+    let projects: { repo: string; path: string; baseRef: string; files: string[]; renamed: { from: string; to: string }[] }[]
     try {
-      projects = repos.map((repo) => ({ repo, path: repoPath(repo), files: cardChangedFiles(repo) }))
+      projects = repos.map((repo) => {
+        const scope = cardChangedScope(repo)
+        return {
+          repo,
+          path: realRepoPath(repo),
+          baseRef: scope.base,
+          files: [...new Set([...scope.added, ...scope.modified, ...scope.renamed.map((entry) => entry.to)])].sort(),
+          renamed: scope.renamed,
+        }
+      })
     } catch (error) {
       verificationOk = false
       verificationSummary = `Não foi possível identificar os arquivos alterados pelo card: ${error instanceof Error ? error.message : error}`
       break
     }
-    activity('Verificação', `Rodada ${round}: verificando ${projects.length} projeto(s) somente nos arquivos alterados pelo card`)
-    const result = await runClaudeItem({
-      cwd: wsPath,
-      prompt: verificationPrompt(projects, reportPath, round),
-      model: AGENT.model,
-      effort: AGENT.effort,
-      tools: AGENT.tools,
-      timeoutMs: positiveInt(process.env.CHECKLIST_VERIFICATION_TIMEOUT_MINUTES, 60, 'CHECKLIST_VERIFICATION_TIMEOUT_MINUTES') * 60_000,
+    activity(
+      'Verificação',
+      `Rodada ${round}: checks por arquivo e scripts integrais em ${projects.length} projeto(s)`,
+    )
+    const startedAt = Date.now()
+    let checks = await runVerificationChecks({
+      projects,
+      profiles: verificationProfiles,
+      round,
+      baselineRoot: join(realpathSync(WORKTREES), task.id, 'baselines'),
+      recordFile: join(wsPath, 'project-command-runs.jsonl'),
     })
-    verificationCost += result.costUsd ?? 0
-    verificationDuration += result.durationMs ?? 0
-    if (result.status !== 'done' || !existsSync(reportPath)) {
-      verificationOk = false
-      verificationSummary = `O agente de verificação não concluiu: ${result.note || 'relatório ausente'}`
+    const previousChecks = (() => {
+      if (round <= 1) return []
+      try {
+        const raw: unknown = JSON.parse(readFileSync(join(wsPath, `verification-round-${round - 1}.json`), 'utf8'))
+        if (!raw || typeof raw !== 'object' || !Array.isArray((raw as Record<string, unknown>).profiles)) return []
+        const record = raw as Record<string, unknown>
+        const historicalProfiles = new Map(verificationProfiles)
+        for (const entry of record.profiles as unknown[]) {
+          if (!entry || typeof entry !== 'object') continue
+          const historical = entry as Record<string, unknown>
+          if (typeof historical.repo !== 'string' || typeof historical.fingerprint !== 'string') continue
+          const current = verificationProfiles.get(historical.repo)
+          if (current)
+            historicalProfiles.set(historical.repo, {
+              ...current,
+              fingerprint: historical.fingerprint,
+              commands: current.commands,
+            })
+        }
+        const previous = parseVerificationReport(raw, { profiles: historicalProfiles, round: round - 1 })
+        return previous.checks
+      } catch { return [] }
+    })()
+    const reviewer = await runClaudeItem({
+      cwd: wsPath,
+      prompt: verificationPrompt({
+        round,
+        projects,
+        profiles: verificationProfiles,
+        checks,
+        previousChecks,
+        waveNotes: waveFailures.slice(-100).map((entry) => ({
+          id: entry.id,
+          state: parseChecklist(readFileSync(file, 'utf8')).find((item) => item.id === entry.id)?.state ?? 'failed',
+          note: entry.note,
+        })),
+      }),
+      model: process.env.CHECKLIST_VERIFICATION_MODEL ?? AGENT.model,
+      effort: process.env.CHECKLIST_VERIFICATION_EFFORT ?? AGENT.effort,
+      tools: 'Read,Grep,Glob',
+      timeoutMs: positiveInt(process.env.CHECKLIST_VERIFICATION_TIMEOUT_MINUTES, 60, 'CHECKLIST_VERIFICATION_TIMEOUT_MINUTES') * 60_000,
+      role: 'verification',
+    })
+    verificationAgentDuration += reviewer.durationMs ?? 0
+    verificationAgentCost += reviewer.costUsd ?? 0
+    verificationAgentCostReported ||= reviewer.costUsd !== undefined
+    const pendingProjectChecks = checks.filter((check) => check.relevance?.result === 'pending').length
+    if (reviewer.status === 'done') checks = applyProjectCheckRelevance(checks, reviewer.note)
+    const unresolvedProjectChecks = checks.filter((check) => check.relevance?.result === 'pending').length
+    const reviewerNote = redactNote(reviewer.status === 'done'
+      ? pendingProjectChecks
+        ? unresolvedProjectChecks
+          ? 'A análise não classificou todos os checks integrais; os pendentes continuam bloqueando.'
+          : 'Análise de relevância aplicada aos checks integrais.'
+        : reviewer.note
+      : `Verificador indisponível (${reviewer.status}): ${reviewer.note}`)
+    verificationDuration += Date.now() - startedAt
+    const repairs = checks.filter(isRepairableCheck)
+    let changes = { created: 0, reused: 0, stalled: 0 }
+    if (repairs.length && repairWaves < maxRepairWaves) {
+      try {
+        changes = appendChecklistRepairsDetailed(file, repairs.map((check) => {
+          const profile = verificationProfiles.get(check.repo)
+          const projectScope = check.relevance?.result === 'relevant' && profile?.commands.find((entry) => entry.id === check.commandId)?.scope === 'project'
+          const files = projectScope ? [] : check.files ?? []
+          const fingerprint = createHash('sha256')
+            .update([check.repo, check.commandId ?? check.id, ...files.slice().sort(), ...(check.diagnostics ?? []).map((diagnostic) => `${diagnostic.rule}:${diagnostic.message}`).sort()].join('\n'))
+            .digest('hex')
+          return {
+            repo: check.repo,
+            check: check.commandId ?? check.id,
+            summary: check.summary,
+            task: projectScope ? `Corrigir falhas relevantes de ${check.name} no projeto ${check.repo}` : `Corrigir ${check.name} nos arquivos ${files.join(', ')}`,
+            files,
+            fingerprint,
+            checkId: check.commandId,
+            profileFingerprint: profile?.fingerprint,
+            wave: round,
+            diagnostics: check.diagnostics,
+          }
+        }))
+      } catch (error) {
+        changes.stalled = 1
+        verificationSummary = `Reparo sem progresso: ${error instanceof Error ? error.message : String(error)}`
+      }
+    }
+    const statusCounts = Object.fromEntries(['passed', 'failed', 'skipped', 'environment', 'inconclusive', 'ignored'].map((status) => [status, checks.filter((check) => check.status === status).length])) as Record<'passed' | 'failed' | 'skipped' | 'environment' | 'inconclusive' | 'ignored', number>
+    const report = parseVerificationReport({
+      schemaVersion: 1,
+      profiles: [...verificationProfiles].map(([repo, profile]) => ({ repo, fingerprint: profile.fingerprint })),
+      round,
+      checks,
+      generatedAt: new Date().toISOString(),
+      roundSummary: {
+        durationMs: Date.now() - startedAt,
+        agentDurationMs: reviewer.durationMs ?? 0,
+        ...(reviewer.costUsd !== undefined ? { agentCostUsd: reviewer.costUsd } : {}),
+        repairsCreated: changes.created,
+        repairsReused: changes.reused,
+        statusCounts,
+        reviewerNote,
+      },
+    }, { profiles: verificationProfiles, round })
+    const temporaryReport = `${reportPath}.${randomUUID()}.tmp`
+    writeFileSync(temporaryReport, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx' })
+    renameSync(temporaryReport, reportPath)
+    for (const check of report.checks)
+      activity('Verificação', `${check.repo} · ${check.name}: ${check.status} — ${check.summary}`.slice(0, 240))
+    verificationSummary = verificationChecksSummary(checks)
+    const nonActionableCheckDetails = checks
+      .filter((check) => ['skipped', 'inconclusive', 'ignored', 'failed', 'environment'].includes(check.status))
+      .map((check) => `  ${check.status === 'skipped' ? 'Não executada' : check.status === 'inconclusive' ? 'Inconclusiva' : check.status === 'ignored' ? 'Irrelevante para o card' : check.status === 'environment' ? 'Problema de ambiente' : 'Falha relevante'} · ${check.repo} · ${check.name}: ${check.summary}`)
+    if (nonActionableCheckDetails.length)
+      verificationSummary += `\n${nonActionableCheckDetails.join('\n')}`
+    if (!repairs.length) {
+      verificationOk = verificationChecksSucceeded(checks)
       break
     }
-
-    let report: VerificationReport
-    try {
-      report = readVerificationReport(reportPath, allowedRepos)
-    } catch (error) {
-      verificationOk = false
-      verificationSummary = `Relatório de verificações inválido: ${error instanceof Error ? error.message : error}`
-      break
-    }
-    for (const check of report.checks) activity('Verificação', `${check.repo} · ${check.name}: ${check.status} — ${check.summary}`.slice(0, 240))
-    verificationSummary = `${report.checks.filter((check) => check.status === 'passed').length} aprovadas, ${report.checks.filter((check) => check.status === 'failed').length} falhas, ${report.checks.filter((check) => check.status === 'skipped').length} ignoradas`
-    if (!report.failures.length) break
-
-    const added = appendChecklistRepairs(file, report.failures)
-    activity('Verificação', `${added} task(s) de correção adicionadas à TASK-CHECKLIST.json`)
     if (repairWaves >= maxRepairWaves) {
       verificationOk = false
-      verificationSummary += ` · limite de ${maxRepairWaves} levas de correção atingido; tasks pendentes foram preservadas`
+      verificationSummary += ` · limite de ${maxRepairWaves} levas de correção atingido; novos reparos não foram agendados e o relatório foi preservado`
+      break
+    }
+    if (changes.stalled) {
+      verificationOk = false
+      verificationSummary += ` · ${changes.stalled} reparo(s) sem progresso; execução interrompida`
+      break
+    }
+    activity('Verificação', `${changes.created} task(s) de correção criadas; ${changes.reused} reutilizadas`)
+    if (!changes.created && !changes.reused) {
+      verificationOk = false
+      verificationSummary += ' · nenhuma correção segura pôde ser agendada'
       break
     }
     repairWaves++
@@ -528,11 +815,18 @@ export async function runDevStage(): Promise<void> {
   const finalItems = parseChecklist(readFileSync(file, 'utf8'))
   const allTasksDone = finalItems.length > 0 && finalItems.every((item) => item.state === 'done')
   const stageOk = allTasksDone && verificationOk
+  const projectRuntimeSummary = [...verificationProfiles.values()]
+    .map((profile) => `${profile.repo}: Node ${profile.runtime.project?.version ?? 'indisponível'} (${profile.runtime.project?.execPath ?? 'sem caminho'})${profile.runtime.warning ? ` · ${profile.runtime.warning}` : ''}`)
+  const costReported = taskCostReported || verificationAgentCostReported
+  const costSummary = costReported
+    ? `Custo informado: $${(totalTaskCost + verificationAgentCost).toFixed(2)}`
+    : 'Custo: indisponível no provider'
 
   finish(
     stageOk,
     [
-      `Itens: ${finalItems.filter((item) => item.state === 'done').length}/${finalItems.length} concluídos, ${finalItems.filter((item) => item.state === 'failed').length} falhas, ${finalItems.filter((item) => item.state === 'blocked').length} bloqueados · Custo: $${(totalTaskCost + verificationCost).toFixed(2)} · Tempo de agente: ${formatDuration(totalTaskDuration + verificationDuration)}`,
+      `Itens: ${finalItems.filter((item) => item.state === 'done').length}/${finalItems.length} concluídos, ${finalItems.filter((item) => item.state === 'failed').length} falhas, ${finalItems.filter((item) => item.state === 'blocked').length} bloqueados · ${costSummary} · Tempo de agente: ${formatDuration(totalTaskDuration)} · Tempo de verificações: ${formatDuration(verificationDuration)}`,
+      ...projectRuntimeSummary,
       ...waveFailures.map((failure) => `${failure.id}: ${failure.note.split('\n')[0]}`),
       `Verificações: ${verificationSummary}`,
       ...(repairWaves ? [`Levas de correção executadas: ${repairWaves}`] : []),
@@ -546,6 +840,86 @@ export async function runDevStage(): Promise<void> {
     ].join('\n'),
   )
   process.exit(stageOk ? 0 : 1)
+}
+
+async function formatCardFiles(round: number): Promise<{ ok: boolean; summary: string }> {
+  const outcomes: string[] = []
+  for (const repo of [...new Set(parseChecklist(readFileSync(file, 'utf8')).map((item) => item.repo))]) {
+    const profile = verificationProfiles.get(repo)
+    if (!profile || profile.formatting.mode === 'disabled') {
+      outcomes.push(`${repo}: skipped (${profile?.formatting.reason ?? 'perfil ausente'})`)
+      continue
+    }
+    const formatter = profile.commands.some((command) => command.id === 'biome')
+      ? 'biome'
+      : profile.commands.some((command) => command.id === 'format-check')
+        ? 'prettier'
+        : undefined
+    if (!formatter) {
+      outcomes.push(`${repo}: skipped (formatter local não configurado)`)
+      continue
+    }
+    const files = cardChangedFiles(repo)
+    if (!files.length) {
+      outcomes.push(`${repo}: passed (sem arquivos atuais no escopo)`)
+      continue
+    }
+    const id = `FORMAT${round}_${repo.replace(/[^A-Za-z0-9_-]/g, '_')}`
+    let cwd: string
+    try {
+      cwd = ensureItemWorktree(repoPath(repo), taskInfo(wsPath).id, repo, id)
+    } catch (error) {
+      return { ok: false, summary: `${repo}: não foi possível criar worktree exclusiva para formatação: ${error instanceof Error ? error.message : error}` }
+    }
+    const item: Item = {
+      id,
+      title: `Formatar arquivos do card na rodada ${round}`,
+      repo,
+      files,
+      requires: [],
+      creates: [],
+      deps: [],
+      context: 'Formatação determinística autorizada pelo perfil do projeto.',
+      completionCriteria: [],
+      state: 'pending',
+      notes: [],
+    }
+    itemCwd.set(id, cwd)
+    const result = await formatProjectFiles({
+      cwd,
+      files,
+      formatter,
+      node: profile.runtime.project!,
+      allowWholeFile: profile.formatting.mode === 'whole-file',
+      recordFile: join(wsPath, 'project-command-runs.jsonl'),
+    })
+    if (result.status === 'skipped') {
+      outcomes.push(`${repo}: skipped (${result.stderr})`)
+      dropItemWorktree(repoPath(repo), taskInfo(wsPath).id, repo, id)
+      itemCwd.delete(id)
+      continue
+    }
+    if (result.status !== 'passed') {
+      outcomes.push(`${repo}: failed (${result.status})`)
+      unrecovered.set(id, itemBranch(taskInfo(wsPath).id, id))
+      return { ok: false, summary: `Formatação interrompida: ${outcomes.join('; ')}` }
+    }
+    const touched = changedFiles(cwd).filter((path) => !isInjected(path))
+    const outsideScope = touched.filter((path) => !files.includes(path))
+    if (outsideScope.length) {
+      unrecovered.set(id, itemBranch(taskInfo(wsPath).id, id))
+      return { ok: false, summary: `${repo}: formatador alterou arquivos fora do escopo: ${outsideScope.join(', ')}` }
+    }
+    if (touched.length) {
+      const integrated = await commitItem(taskInfo(wsPath), item, id)
+      if (integrated && integrated.status !== 'done') return { ok: false, summary: `${repo}: formatação não integrada: ${integrated.note}` }
+    } else {
+      dropItemWorktree(repoPath(repo), taskInfo(wsPath).id, repo, id)
+      itemCwd.delete(id)
+    }
+    outcomes.push(`${repo}: passed (${touched.length} arquivo(s) formatado(s))`)
+  }
+  return { ok: true, summary: outcomes.join('; ') }
 }
 
 if (runsAsCommand(import.meta.url)) {

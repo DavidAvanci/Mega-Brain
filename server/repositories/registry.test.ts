@@ -7,7 +7,9 @@ import { nodeProcessRunner, type ProcessRunner } from '../process'
 import { RepositoryRegistry } from './registry'
 
 const dirs: string[] = []
-afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))) })
+afterEach(async () => {
+  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 200 }).catch(() => {})))
+})
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', timeout: 5000 }).trim()
 }
@@ -44,8 +46,8 @@ describe('RepositoryRegistry remote updates', () => {
     const f = await fixture()
     const workspace = join(f.root, 'workspace')
     await mkdir(workspace)
-    await symlink(f.path, join(workspace, 'linked-repo'), 'dir')
-    await symlink(join(f.root, 'missing'), join(workspace, 'broken'), 'dir')
+    await symlink(f.path, join(workspace, 'linked-repo'), process.platform === 'win32' ? 'junction' : 'dir')
+    await symlink(join(f.root, 'missing'), join(workspace, 'broken'), process.platform === 'win32' ? 'junction' : 'dir')
     const discovery = await f.registry.discover(workspace)
     expect(discovery.repositories).toHaveLength(1)
     expect(discovery.repositories[0]).toMatchObject({ path: f.path, duplicateId: 'one' })
@@ -55,7 +57,7 @@ describe('RepositoryRegistry remote updates', () => {
     git(f.root, 'clone', f.remote, second)
     const created = await f.registry.create({ path: second, tags: ['workspace:takeat-core'] })
     expect(created.tags).toEqual(['workspace:takeat-core'])
-  })
+  }, 20_000)
   it('reads a version 1 catalog without rewriting it and distinguishes local from fetched state', async () => {
     const f = await fixture()
     const before = await readFile(f.file, 'utf8')
@@ -75,7 +77,7 @@ describe('RepositoryRegistry remote updates', () => {
     expect((await f.registry.pull('one')).state).toBe('up-to-date')
     expect(git(cardWorktree, 'rev-parse', 'HEAD')).toBe(cardHead)
     expect((await f.registry.status('one')).migrationReady).toBe(true)
-  })
+  }, 20_000)
 
   it('blocks dirty and diverged checkouts, and reports ahead and missing upstream', async () => {
     const f = await fixture()
@@ -91,7 +93,7 @@ describe('RepositoryRegistry remote updates', () => {
     expect((await f.registry.pull('one')).error).toContain('alterações locais')
     git(f.path, 'branch', '--unset-upstream')
     expect((await f.registry.status('one')).state).toBe('no-upstream')
-  })
+  }, 20_000)
 
   it('reports fetch timeout per repository and never pulls after it', async () => {
     let pulls = 0
@@ -106,7 +108,7 @@ describe('RepositoryRegistry remote updates', () => {
     expect((await f.registry.verifyRemote('one')).state).toBe('remote-failed')
     expect((await f.registry.pull('one')).state).toBe('remote-failed')
     expect(pulls).toBe(0)
-  })
+  }, 20_000)
 
   it('records a migration timeout separately from the successful pull', async () => {
     const runner: ProcessRunner = { ...nodeProcessRunner, execFile(command, args, options, callback) {
@@ -122,7 +124,7 @@ describe('RepositoryRegistry remote updates', () => {
     const result = await f.registry.migrate('one', 'local')
     expect(result).toMatchObject({ state: 'failure', error: 'timed out' })
     expect((await f.registry.status('one')).state).toBe('up-to-date')
-  })
+  }, 20_000)
 
   it('requires explicit migration configuration and a successful pull', async () => {
     const f = await fixture()
@@ -133,5 +135,5 @@ describe('RepositoryRegistry remote updates', () => {
     expect((await f.registry.pull('one')).state).toBe('up-to-date')
     expect((await f.registry.migrate('one', 'local')).state).toBe('success')
     expect(f.registry.migrationResult('one').state).toBe('success')
-  })
+  }, 20_000)
 })

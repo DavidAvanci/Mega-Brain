@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { writeFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
 import { resolveOptionalExecutable, desktopCandidates } from './platform'
 import { COFFEE_ARGS, createCoffeeService } from './coffee/service'
@@ -21,10 +24,10 @@ describe('optional desktop executable discovery', () => {
       resolveOptionalExecutable({
         candidates: ['wt.exe'],
         label: 'Windows Terminal',
-        path: '/opt/bin:/usr/bin',
-        exists: (path) => path === '/opt/bin/wt.exe',
+        path: `C:\\opt\\bin;C:\\usr\\bin`,
+        exists: (path) => path === 'C:\\opt\\bin\\wt.exe',
       }),
-    ).toBe('/opt/bin/wt.exe')
+    ).toBe('C:\\opt\\bin\\wt.exe')
     expect(() =>
       resolveOptionalExecutable({ candidates: ['chrome.exe'], label: 'Chrome', path: '', exists: () => false }),
     ).toThrow('Chrome não está disponível')
@@ -49,7 +52,9 @@ describe('optional desktop executable discovery', () => {
 
 test('Coffee clears its session when stopped or when spawning fails', () => {
   const child = Object.assign(new EventEmitter(), { kill: () => true }) as any
-  const coffee = createCoffeeService(() => child, '/bin/sh')
+  const shell = join(tmpdir(), `shell-fixture-${process.pid}.exe`)
+  writeFileSync(shell, '')
+  const coffee = createCoffeeService(() => child, shell)
   coffee.start()
   expect(coffee.active()).toBe(true)
   coffee.stop()
@@ -57,7 +62,7 @@ test('Coffee clears its session when stopped or when spawning fails', () => {
 
   const broken = createCoffeeService(() => {
     throw new Error('spawn failed')
-  }, '/bin/sh')
+  }, shell)
   expect(() => broken.start()).toThrow('spawn failed')
   expect(broken.active()).toBe(false)
   expect(COFFEE_ARGS).toEqual(expect.arrayContaining(['-EncodedCommand']))

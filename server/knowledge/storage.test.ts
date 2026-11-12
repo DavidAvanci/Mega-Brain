@@ -43,7 +43,7 @@ test('copies the legacy catalog beside cards with all references and revisions i
   expect(readGeneralSettings(config).knowledgeDir).toBe(dirname(destination))
   expect(readFileSync(destination, 'utf8')).toBe(original)
   expect(readFileSync(source, 'utf8')).toBe(original)
-  expect(statSync(destination).mode & 0o777).toBe(0o600)
+  if (process.platform !== 'win32') expect(statSync(destination).mode & 0o777).toBe(0o600)
   expect(readdirSync(dirname(destination))).toEqual(['catalog.json'])
   const migrated = knowledgeService(destination)
   expect(migrated.get(page.id)).toMatchObject({ parentId: folder.id, revision: 2, history: [{ revision: 1 }] })

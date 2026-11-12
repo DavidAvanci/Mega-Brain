@@ -24,6 +24,8 @@ export interface Repository {
   tags: string[]
   githubUrl?: string
   environments: Record<RepositoryEnvironmentKey, RepositoryEnvironment>
+  nodeRuntime?: { override?: string; policy?: 'strict' | 'same-major-fallback' | 'server-default' }
+  companionBuilds?: { repositoryId: string; artifacts: string[]; command: string[]; timeoutMs?: number }[]
 }
 
 export interface RepositoryStatus {

@@ -20,7 +20,7 @@ const TASK_CHECKLIST_SCOPE = [
   'Não crie tasks de testes de qualquer tipo, criação ou alteração de arquivos de teste, validação, conferência, QA, smoke test, revisão visual, screenshots ou verificações manuais/automatizadas.',
   'Não inclua tarefas de teste ou verificação na checklist de implementação.',
   'Cada item deve ser uma entrega pequena e verificável. Divida páginas extensas em estrutura, filtros, ações e integração; dê a cada parte completionCriteria próprios e deps explícitas. Preserve itens substituídos com state=discarded e atualize deps.',
-  'Declare arquivos compartilhados (helpers, exports e rotas) em files para serializar itens que os alterem. Para pré-condições use requires e para arquivos novos use creates, nunca trate uma criação prevista como requisito existente.',
+  'Declare arquivos compartilhados (helpers, exports e rotas) em files para serializar itens que os alterem. `requires` é somente para pré-condições que já existem no repositório antes da execução, como arquivos, migrações ou bases presentes. Cada valor de `requires` deve ser apenas um caminho de arquivo real, sem texto explicativo; nunca inclua nomes de funções, flags, campos, exports ou arquivos que o próprio plano cria ou altera. Arquivos novos vão em `creates`; contratos entregues por outro item são referenciados em `deps` pelo ID do item produtor. Nunca trate uma criação prevista como requisito existente.',
   'Quando uma migração ou base for obrigatória, registre em card.json requiredBases por repositório e use deps no item; não dependa só da descrição. Limites específicos podem ser declarados como timeoutMinutes e maxAttempts.',
   TASK_CHECKLIST_CONTRACT,
 ]
@@ -62,7 +62,7 @@ export const STAGES: Stage[] = [
   {
     name: 'run-task-checklist',
     status: 'desenvolvendo',
-    next: 'code-review',
+    next: 'revisao-de-codigo',
     script: 'scripts/commands/dev-stage.ts',
     progress: checklistProgress(),
   },
@@ -94,19 +94,19 @@ export const FLOW_PROFILES: Record<FlowLevel, FlowProfile> = {
   simples: {
     next: {
       'task-planning': 'desenvolvendo',
-      'run-task-checklist': 'code-review',
+      'run-task-checklist': 'revisao-de-codigo',
     },
   },
   medio: {
     next: {
       'task-planning': 'revisao-de-plano',
-      'run-task-checklist': 'code-review',
+      'run-task-checklist': 'revisao-de-codigo',
     },
   },
   dificil: {
     next: {
       'task-planning': 'revisao-de-plano',
-      'run-task-checklist': 'code-review',
+      'run-task-checklist': 'revisao-de-codigo',
     },
   },
 }

@@ -9,6 +9,7 @@ import { appendConversation } from '../../chat/task-conversation'
 import { loadMegaBrainConfig } from '../../config'
 import { createProcessOwner, type ProcessRunner } from '../../process'
 import { createDevEnvAgentService } from './dev-env-agent'
+import { writeStageSettings } from '../../workspace/stage-settings'
 import type { ChatEvent } from '../../../shared/contracts/chat'
 
 const roots: string[] = []
@@ -54,6 +55,28 @@ function fixture(provider: 'claude' | 'chatgpt' = 'claude') {
 function output(child: ChildProcess, value: unknown) {
   child.stdout?.emit('data', JSON.stringify(value) + '\n')
 }
+
+test.each(['claude', 'chatgpt'] as const)(
+  'environment uses the configured prompt, model and effort for %s',
+  async (provider) => {
+    const fake = fixture(provider)
+    const model = provider === 'claude' ? 'sonnet' : 'gpt-6-luna'
+    writeStageSettings(
+      fake.config.workspaceDir,
+      { 'test-environment': { model, effort: 'high', fastMode: true } },
+      provider,
+    )
+    fake.config.preferences.prompts!.testEnvironment = 'Instruções personalizadas do ambiente.'
+    const service = createDevEnvAgentService(fake.config, fake.runner, createProcessOwner(), new Set())
+    expect((await service.history('card')).selection).toEqual({ provider, model })
+    service.send('card', 'Prepare o ambiente', () => {})
+    expect(fake.calls[0].args).toContain(model)
+    expect(fake.calls[0].args.join(' ')).toContain('Instruções personalizadas do ambiente.')
+    expect(fake.calls[0].args).toContain(provider === 'claude' ? 'high' : 'model_reasoning_effort="high"')
+    if (provider === 'claude') expect(fake.calls[0].args).toContain('{"fastMode":true}')
+    fake.children[0].emit('close', 0)
+  },
+)
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })

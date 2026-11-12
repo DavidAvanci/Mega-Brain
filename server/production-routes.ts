@@ -20,7 +20,7 @@ import { claudeUsageHttp } from './claude-usage/http'
 import { createClaudeUsageService } from './claude-usage/service'
 import { coffeeHttp } from './coffee/http'
 import { createCoffeeService } from './coffee/service'
-import { jiraReadyHttp, jiraStatusesHttp, jiraTransitionHttp } from './jira/http'
+import { jiraCreateHttp, jiraReadyHttp, jiraStatusesHttp, jiraTransitionHttp } from './jira/http'
 import { createJiraService } from './jira/service'
 import type { ProcessOwner, ProcessRunner } from './process'
 import { createProcessOwner, nodeProcessRunner } from './process'
@@ -210,13 +210,16 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['POST', '/api/workspace/dev-env/logs'],
     ['GET', '/api/workspace/dev-env'],
     ['POST', '/api/workspace/dev-env/stop'],
+    ['POST', '/api/workspace/dev-env/stop-project'],
     ['POST', '/api/workspace/dev-env/open'],
     ['POST', '/api/workspace/dev-env/agent'],
     ['POST', '/api/workspace/stage/pause'],
     ['POST', '/api/workspace/stage/resume'],
+    ['POST', '/api/workspace/stage/retry'],
     ['POST', '/api/workspace/stage/reset'],
     ['POST', '/api/workspace/update'],
     ['POST', '/api/workspace/delete'],
+    ['POST', '/api/workspace/jira-id'],
   ] as const)
     add(method, path, workspace)
   const triage = cardTriageHttp(createCardTriageService(config, { logger: stderrJsonlLogger(process.stderr) }))
@@ -228,6 +231,7 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
   add('GET', '/api/jira/ready', jiraReadyHttp(jira))
   add('GET', '/api/jira/statuses', jiraStatusesHttp(jira))
   add('POST', '/api/jira/transition', jiraTransitionHttp(jira))
+  add('POST', '/api/jira/create', jiraCreateHttp(jira))
   add('GET', '/api/claude/usage', claudeUsageHttp(usage))
   add('GET', '/api/codex/usage', claudeUsageHttp(codexUsage))
   add('GET', '/api/agents', agents)

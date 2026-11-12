@@ -90,7 +90,11 @@ export async function handleHttpRequest(
     return
   }
   try {
-    const body = await readJsonBody(request, diagnostics.limits)
+    const body = await readJsonBody(
+      request,
+      diagnostics.limits,
+      url.pathname === '/api/chat/send' ? 8 * 1_048_576 : diagnostics.limits.maxBodyBytes,
+    )
     const routeTimeout = isLongRunningRoute(request.method, url.pathname)
       ? undefined
       : diagnostics.limits.shortRouteTimeoutMs

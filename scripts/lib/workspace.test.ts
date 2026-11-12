@@ -1,8 +1,12 @@
-import { mkdtempSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { expect, test } from 'vitest'
-import {
+import { join, resolve } from 'node:path'
+import { afterAll, beforeAll, beforeEach, expect, test } from 'vitest'
+const isolatedRoot = mkdtempSync(join(tmpdir(), 'mega-brain-workspace-test-'))
+process.env.MEGA_BRAIN_WORKTREES_DIR = join(isolatedRoot, 'worktrees')
+process.env.MEGA_BRAIN_SETTINGS_FILE = join(isolatedRoot, 'settings.json')
+const isolatedWorktrees = process.env.MEGA_BRAIN_WORKTREES_DIR!
+const {
   addDetachedWorktree,
   assertFeatureBranch,
   checkoutTaskBranch,
@@ -17,10 +21,19 @@ import {
   stageItemChanges,
   taskInfo,
   projectEnvironmentIssue,
-} from './workspace'
+} = await import('./workspace')
 import { currentBranch } from './git'
-import { existsSync, lstatSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync as writeFile } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { diagnoseProjectEnvironment } from './project-environment'
+
+const isolatedSettings = join(isolatedRoot, 'repositories.json')
+beforeAll(() => {
+  rmSync(isolatedRoot, { recursive: true, force: true })
+  mkdirSync(isolatedRoot, { recursive: true })
+})
+beforeEach(() => rmSync(isolatedWorktrees, { recursive: true, force: true }))
+afterAll(() => rmSync(isolatedRoot, { recursive: true, force: true }))
 
 test('preparação valida o lockfile pnpm sem exigir package-lock npm', () => {
   const root = mkdtempSync(join(tmpdir(), 'pnpm-environment-'))
@@ -29,7 +42,8 @@ test('preparação valida o lockfile pnpm sem exigir package-lock npm', () => {
   mkdirSync(join(root, 'node_modules'))
   expect(projectEnvironmentIssue(root)).toBeNull()
   unlinkSync(join(root, 'pnpm-lock.yaml'))
-  expect(projectEnvironmentIssue(root)).toContain('pnpm-lock.yaml para pnpm')
+  expect(projectEnvironmentIssue(root)).toBeNull()
+  expect(diagnoseProjectEnvironment(root).diagnostics[0]?.message).toContain('pnpm-lock.yaml para pnpm')
 })
 
 test('taskInfo card mode', () => {
@@ -68,7 +82,7 @@ test('registeredWorktreePaths considera somente worktrees declaradas pelo Git', 
     ].join('\n'),
   )
 
-  expect(paths).toEqual(['/tmp/repo', '/tmp/repo-feature'])
+  expect(paths).toEqual(['/tmp/repo', '/tmp/repo-feature'].map((path) => resolve(path)))
 })
 
 test('mergeCardPrs preserves the other environment', () => {
@@ -94,8 +108,10 @@ test('linkProjectRuntimeFiles aponta node_modules e .env para o checkout origina
   linkProjectRuntimeFiles(original, worktree)
 
   expect(lstatSync(join(worktree, 'node_modules')).isSymbolicLink()).toBe(true)
-  expect(lstatSync(join(worktree, '.env')).isSymbolicLink()).toBe(true)
-  expect(readFileSync(join(worktree, '.env'), 'utf8')).toBe('TOKEN=secret\n')
+  if (process.platform !== 'win32') {
+    expect(lstatSync(join(worktree, '.env')).isSymbolicLink()).toBe(true)
+    expect(readFileSync(join(worktree, '.env'), 'utf8')).toBe('TOKEN=secret\n')
+  }
 })
 
 function repoWithOrigin(at?: string): string {
@@ -132,6 +148,10 @@ test('assertFeatureBranch accepts a feature branch', () => {
 function featureRepo(): string {
   const cwd = repoWithOrigin(join(mkdtempSync(join(tmpdir(), 'task-')), 'repo'))
   execFileSync('git', ['checkout', '-qb', 'feature/x'], { cwd })
+  writeFile(isolatedSettings.replace(/settings\.json$/, 'repositories.json'), JSON.stringify({
+    version: 1,
+    repositories: [{ id: 'repo', alias: 'repo', displayName: 'Repo', path: cwd, active: true, tags: [], environments: { local: { enabled: true }, staging: { enabled: false }, prod: { enabled: false } } }],
+  }))
   return cwd
 }
 
@@ -213,7 +233,7 @@ test('o node_modules symlinkado não entra no commit do item', () => {
   expect(staged.split('\n').filter(Boolean)).toEqual(['a'])
 })
 
-test('o .env symlinkado não entra no commit do item', () => {
+test.skipIf(process.platform === 'win32')('o .env symlinkado não entra no commit do item', () => {
   const main = featureRepo()
   writeFileSync(join(main, '.env'), 'TOKEN=secret\n')
   const cwd = ensureItemWorktree(main, 'TAT-1', 'repo', 'T1')

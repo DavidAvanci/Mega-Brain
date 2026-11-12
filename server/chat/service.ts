@@ -10,7 +10,7 @@ import {
 } from './task-conversation'
 import { STAGES } from '../workspace/stage-catalog'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { readTail, summarizeAgentInput } from '../agent-log'
 import { claudeBin, codexBin } from '../agent-executable'
@@ -29,13 +29,61 @@ import {
   agentSessionIdFromOutput,
   finishAgentUsage,
   setAgentUsageSessionId,
+  setAgentUsageSettings,
   startAgentUsage,
 } from '../workspace/agent-usage'
 import { redactDevEnvOutput } from '../modules/dev-environments/dev-env-logs'
+import type { ModelStageSettings } from '../../shared/domain/settings'
+import { readStageSettings } from '../workspace/stage-settings'
+import { agentModelArgs } from '../agent-model-args'
 
 const DEFAULT_PROJECTS_ROOT = loadMegaBrainConfig().directories.claudeProjects
 const TRANSCRIPT_TAIL_BYTES = 512 * 1024
 const HISTORY_LIMIT = 80
+const CHAT_IMAGE_LIMIT = 4
+const CHAT_IMAGE_BYTES_LIMIT = 5 * 1_048_576
+const IMAGE_TYPES: Record<string, { extension: string; signature: (data: Buffer) => boolean }> = {
+  'image/jpeg': { extension: '.jpg', signature: (data) => data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff },
+  'image/png': { extension: '.png', signature: (data) => data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) },
+  'image/gif': { extension: '.gif', signature: (data) => ['GIF87a', 'GIF89a'].includes(data.subarray(0, 6).toString('ascii')) },
+  'image/webp': { extension: '.webp', signature: (data) => data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WEBP' },
+}
+
+function persistChatImages(path: string, value: unknown): { prompt: string; attachments: ChatEntry['attachments'] } {
+  if (value === undefined) return { prompt: '', attachments: undefined }
+  if (!Array.isArray(value) || value.length > CHAT_IMAGE_LIMIT) throw new Error('Anexe no máximo 4 imagens por mensagem')
+  if (!value.length) return { prompt: '', attachments: undefined }
+  const directory = join(path, '.chat-attachments')
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  let totalBytes = 0
+  const rows = value.map((raw) => {
+    const item = record(raw)
+    const mimeType = typeof item?.mimeType === 'string' ? item.mimeType : ''
+    const type = IMAGE_TYPES[mimeType]
+    const encoded = typeof item?.data === 'string' ? item.data : ''
+    const originalName = typeof item?.name === 'string' ? item.name : 'imagem'
+    if (!type || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
+      throw new Error('Formato de imagem inválido. Use JPEG, PNG, GIF ou WebP.')
+    const bytes = Buffer.from(encoded, 'base64')
+    totalBytes += bytes.length
+    if (!bytes.length || bytes.length > CHAT_IMAGE_BYTES_LIMIT || totalBytes > CHAT_IMAGE_BYTES_LIMIT)
+      throw new Error('As imagens devem somar no máximo 5 MB por mensagem')
+    if (!type.signature(bytes)) throw new Error('O conteúdo do arquivo não corresponde ao formato da imagem')
+    const safeName = originalName.replace(/[\\/]/g, '_').replace(/[^\p{L}\p{N}._ -]/gu, '_').slice(0, 120) || 'imagem'
+    const filename = `${randomUUID()}${type.extension}`
+    const imagePath = join(directory, filename)
+    writeFileSync(imagePath, bytes, { mode: 0o600, flag: 'wx' })
+    return { name: safeName, mimeType, path: imagePath }
+  })
+  return {
+    prompt: `Imagens anexadas pelo usuário (abra e analise cada arquivo):\n${rows.map((row) => `- ${row.name}: ${row.path}`).join('\n')}`,
+    attachments: rows.map(({ name, mimeType, path: imagePath }) => ({
+      name,
+      mimeType,
+      path: imagePath.slice(path.length + 1),
+    })),
+  }
+}
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined
@@ -50,7 +98,9 @@ function jsonRecord(line: string): Record<string, unknown> | undefined {
 }
 
 export function sessionDir(cwd: string, projectsRoot = DEFAULT_PROJECTS_ROOT): string {
-  return join(projectsRoot, cwd.replace(/[/.]/g, '-'))
+  // Claude encodes the absolute cwd as one directory name. Normalize both
+  // separator styles because transcripts can contain POSIX paths on Windows.
+  return join(projectsRoot, cwd.replace(/[:\\/.]/g, '-'))
 }
 
 export function resolveSession(path: string, projectsRoot = DEFAULT_PROJECTS_ROOT): string | undefined {
@@ -237,15 +287,20 @@ function streamChat(
   environment?: NodeJS.ProcessEnv,
   terminal = false,
   model = 'default',
+  stageSettings?: ModelStageSettings,
 ): void {
   const usageId = startAgentUsage(path, new Date(), {
     label: terminal ? 'dev-environment' : 'chat',
     provider: 'claude',
+    ...(stageSettings ? { model, effort: stageSettings.effort } : {}),
   })
   let costUsd: number | undefined
   const child = runner.spawn(
     claudeBin(executable),
-    chatArgs(text, terminal ? undefined : resolveSession(path, projectsRoot), model),
+    [
+      ...chatArgs(text, terminal ? undefined : resolveSession(path, projectsRoot), stageSettings ? 'default' : model),
+      ...(stageSettings ? agentModelArgs('claude', { ...stageSettings, model }) : []),
+    ],
     {
       cwd: path,
       detached: terminal && process.platform !== 'win32',
@@ -272,7 +327,10 @@ function streamChat(
       if (usageEvent?.type === 'result' && typeof usageEvent.total_cost_usd === 'number')
         costUsd = usageEvent.total_cost_usd
       const settings = settingsEvent(line)
-      if (settings) emit(settings)
+      if (settings?.type === 'settings') {
+        setAgentUsageSettings(path, usageId, settings.settings.model, settings.settings.effort)
+        emit(settings)
+      }
       const event = chatEvent(line, terminal)
       if (!event) continue
       if (event.type === 'done') finish(event)
@@ -304,13 +362,22 @@ function streamCodexChat(
   environment?: NodeJS.ProcessEnv,
   terminal = false,
   model = 'default',
+  stageSettings?: ModelStageSettings,
 ): void {
-  const usageId = startAgentUsage(path, new Date(), { label: terminal ? 'dev-environment' : 'chat', provider: 'codex' })
+  const usageId = startAgentUsage(path, new Date(), {
+    label: terminal ? 'dev-environment' : 'chat',
+    provider: 'codex',
+    ...(stageSettings ? { model, effort: stageSettings.effort } : {}),
+  })
   const args = [
     'exec',
     '--json',
     '--dangerously-bypass-approvals-and-sandbox',
-    ...(model === 'default' ? [] : ['--model', model]),
+    ...(stageSettings
+      ? agentModelArgs('chatgpt', { ...stageSettings, model })
+      : model === 'default'
+        ? []
+        : ['--model', model]),
     text,
   ]
   const child = runner.spawn(codexBin(executable), args, {
@@ -382,7 +449,14 @@ export interface ChatService {
     executionRunning?: boolean
     pendingMessages?: number
   }>
-  send(name: string, text: string, emit: (event: ChatEvent) => void, refs?: KnowledgeRef[], selection?: unknown): void
+  send(
+    name: string,
+    text: string,
+    emit: (event: ChatEvent) => void,
+    refs?: KnowledgeRef[],
+    selection?: unknown,
+    images?: unknown,
+  ): void
   abort(name: string): boolean
   shutdown?(): Promise<void>
 }
@@ -406,6 +480,11 @@ export function createChatService(
   let closing = false
   const terminal = options.purpose === 'environment'
   const conversationPath = (path: string) => (terminal ? join(path, '.dev-env', 'agent') : path)
+  const modelSelection = (path: string) => {
+    const provider = config.preferences?.llmProvider ?? 'claude'
+    const model = terminal ? readStageSettings(config.workspaceDir, provider)['test-environment'].model : 'default'
+    return readChatModelSelection(conversationPath(path), provider, model)
+  }
   const folderPath = (name: unknown): string => {
     const root = resolve(config.workspaceDir)
     assertTestWorkspace(root)
@@ -414,7 +493,7 @@ export function createChatService(
   return {
     async history(name) {
       const path = folderPath(name)
-      const selection = readChatModelSelection(conversationPath(path), config.preferences?.llmProvider)
+      const selection = modelSelection(path)
       if (terminal)
         return {
           sessionId: null,
@@ -433,8 +512,7 @@ export function createChatService(
               .flatMap((line) => executionEntries(line).map((entry) => ({ ...entry, source: stage.name })))
           : []
       })
-      const legacy =
-        selection.provider === 'chatgpt' ? { entries: [], settings: null } : transcript(path, projectsRoot)
+      const legacy = selection.provider === 'chatgpt' ? { entries: [], settings: null } : transcript(path, projectsRoot)
       return {
         sessionId: resolveSession(path, projectsRoot) ?? null,
         settings: legacy.settings,
@@ -444,22 +522,23 @@ export function createChatService(
         pendingMessages: pendingTaskMessages(path).length,
       }
     },
-    send(name, text, emit, refs, requestedSelection) {
+    send(name, text, emit, refs, requestedSelection, requestedImages) {
       if (closing) throw new Error('O serviço de chat está encerrando.')
       const path = folderPath(name)
-      const selection =
-        parseChatModelSelection(requestedSelection) ??
-        readChatModelSelection(conversationPath(path), config.preferences?.llmProvider)
+      const selection = parseChatModelSelection(requestedSelection) ?? modelSelection(path)
       const message = String(text ?? '').trim()
-      if (!message) throw new Error('Mensagem vazia')
+      const imageCount = Array.isArray(requestedImages) ? requestedImages.length : 0
+      if (!message && !imageCount) throw new Error('Escreva uma mensagem ou anexe uma imagem')
       if (message.length > 12_000) throw new Error('A mensagem deve ter no máximo 12000 caracteres')
       if (!terminal && ['rodando', 'pausado'].includes(readAgent(path)?.status ?? '')) {
+        const images = persistChatImages(path, requestedImages)
+        const contextualText = [message, images.prompt].filter(Boolean).join('\n\n')
         const prompt = knowledgeContext(
-          repositoryMentionContext(message, config.preferences?.settingsFile),
+          repositoryMentionContext(contextualText, config.preferences?.settingsFile),
           [...(readCard(path, String(name)).knowledgeRefs ?? []), ...knowledgeRefs(refs)],
           config.preferences?.settingsFile,
         )
-        appendConversation(path, { role: 'user', text: message }, true, prompt)
+        appendConversation(path, { role: 'user', text: message, attachments: images.attachments }, true, prompt)
         emit({ type: 'queued' })
         emit({ type: 'done' })
         return
@@ -470,6 +549,8 @@ export function createChatService(
         throw new Error(
           'Já há um agente trabalhando neste card. Aguarde ou interrompa a execução antes de iniciar outra.',
         )
+      const images = persistChatImages(path, requestedImages)
+      const contextualText = [message, images.prompt].filter(Boolean).join('\n\n')
       const conversation = conversationPath(path)
       if (terminal) mkdirSync(conversation, { recursive: true, mode: 0o700 })
       saveChatModelSelection(conversation, selection)
@@ -477,11 +558,14 @@ export function createChatService(
         for (const entry of transcript(path, config.directories.claudeProjects).entries) appendConversation(path, entry)
       const previous = taskConversation(conversation)
         .slice(-30)
-        .map((entry) => entry.text ?? entry.tool ?? entry.output ?? '')
+        .map((entry) => [
+          entry.text ?? entry.tool ?? entry.output ?? '',
+          ...(entry.attachments ?? []).flatMap((attachment) => attachment.path ? [`Imagem anexada: ${attachment.path}`] : []),
+        ].filter(Boolean).join('\n'))
         .join('\n')
       const prior = terminal ? previous.slice(-12_000) : previous
       const messages = terminal ? { prompt: '', acknowledge: () => {} } : taskMessageContext(path)
-      const contextualMessage = options.preparePrompt?.(path, message) ?? message
+      const contextualMessage = options.preparePrompt?.(path, contextualText) ?? contextualText
       const prompt = knowledgeContext(
         repositoryMentionContext(
           `${prior ? `Conversa e execuções anteriores desta task:\n${prior}\n\nNova mensagem do usuário:\n` : ''}${contextualMessage}${messages.prompt}`,
@@ -512,9 +596,13 @@ export function createChatService(
       const source = profileEnvironment.MEGA_BRAIN_CODEX_PROFILE_NAME
         ? `Codex · ${profileEnvironment.MEGA_BRAIN_CODEX_PROFILE_NAME}`
         : undefined
+      const stageSettings = terminal
+        ? readStageSettings(config.workspaceDir, selection.provider)['test-environment']
+        : undefined
       appendConversation(conversation, {
         role: 'user',
         text: terminal ? redactDevEnvOutput(message) : message,
+        attachments: images.attachments,
         ...(source ? { source } : {}),
       })
       let response = ''
@@ -529,7 +617,10 @@ export function createChatService(
         if (terminal && event.type === 'tool') event = { ...event, tool: redactDevEnvOutput(event.tool).slice(0, 4000) }
         if (terminal && event.type === 'done' && event.error)
           event = { ...event, error: redactDevEnvOutput(event.error) }
-        if (event.type === 'text') response += event.text
+        if (event.type === 'text') {
+          if (terminal && response && event.text) event = { ...event, text: `\n\n${event.text}` }
+          response += event.text
+        }
         if (event.type === 'tool')
           appendConversation(conversation, { role: 'assistant', tool: event.tool, ...(source ? { source } : {}) })
         if (event.type === 'output') appendConversation(conversation, { role: 'assistant', output: event.text })
@@ -553,6 +644,7 @@ export function createChatService(
           environment,
           terminal,
           selection.model,
+          stageSettings,
         )
       else
         streamChat(
@@ -568,6 +660,7 @@ export function createChatService(
           environment,
           terminal,
           selection.model,
+          stageSettings,
         )
       options.busyPaths?.add(path)
       running.get(path)?.once('close', () => options.busyPaths?.delete(path))

@@ -61,10 +61,10 @@ export function createCard(root: string, data: Record<string, unknown>): { folde
   const card = {
     title: String(data.title ?? '').trim() || name,
     knowledgeRefs: knowledgeRefs(data.knowledgeRefs),
-    description: String(data.description ?? '').trim(),
     status: 'a-fazer',
     flow: readFlow(data.flow),
   }
   writeFileSync(join(path, 'card.json'), `${JSON.stringify(card, null, 2)}\n`)
+  writeFileSync(join(path, 'description.md'), `${String(data.description ?? '').trim()}\n`)
   return { folder: name, path }
 }

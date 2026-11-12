@@ -2,7 +2,7 @@ import { loadEnv } from './env.ts'
 import { activeRepositoryPath } from '../../server/repositories/catalog.ts'
 import { readRepositoryEnvironmentVariables } from '../../server/repositories/environment-files.ts'
 
-export const JIRA_KEY = /^(?!MB-)[A-Z][A-Z0-9]*-\d+$/i
+export { JIRA_KEY } from './task-id.ts'
 
 export interface JiraEnv {
   site: string

@@ -8,6 +8,7 @@ Esta documentação descreve o comportamento implementado em outubro de 2026. Ca
 | Plano    | Planejando        | [02 — Planejando](02-planejando.md)               |
 | Plano    | Revisão de plano  | [03 — Revisão de plano](03-revisao-de-plano.md)   |
 | Execução | Desenvolvendo     | [04 — Desenvolvendo](04-desenvolvendo.md)         |
+| Execução | Auto review        | [05 — Auto review](05-revisao-de-codigo.md) |
 | Execução | Code Review       | [06 — Code Review](06-code-review.md)             |
 | Entrega  | Staging           | [07 — Staging](07-staging.md)                     |
 | Entrega  | Aguardando deploy | [08 — Aguardando deploy](08-aguardando-deploy.md) |
@@ -16,8 +17,8 @@ Esta documentação descreve o comportamento implementado em outubro de 2026. Ca
 ## Regras transversais
 
 - Arrastar um card ou escolher uma etapa no modal atualiza `card.json`. A interface mostra a mudança imediatamente e consulta o servidor a cada 5 segundos. Ao **entrar em uma etapa automática por mudança de status**, o servidor inicia sua execução se não houver outra execução ativa no card. Salvar o mesmo status ou mudar só a complexidade não reinicia a etapa.
-- O fluxo **simples** vai de Planejando a Desenvolvendo e daí a Code Review. Os fluxos **médio** e **difícil** passam por Revisão de plano antes de Desenvolvendo; todos seguem diretamente para Code Review quando o desenvolvimento termina. Essas passagens são processadas na leitura do quadro quando o agente conclui com sucesso. Staging e Aguardando deploy não avançam automaticamente depois que seus scripts terminam.
-- Após uma **movimentação feita na interface**, cards com chave Jira válida (`PROJ-123`, por exemplo) tentam atualizar o status no Jira apenas nas etapas mapeadas: Desenvolvendo → `em desenvolvimento`; Code Review → `CODE REVIEW`; Staging → `STAGING`; Aguardando deploy → `AGUARDANDO DEPLOY`; Produção → `EM PRODUÇÃO`. A transição não é chamada por esse caminho quando o servidor avança uma etapa sozinho. Os scripts de PR também podem atualizar o Jira, conforme os documentos das etapas.
+- O fluxo **simples** vai de Planejando a Desenvolvendo; os fluxos **médio** e **difícil** passam por Revisão de plano antes de Desenvolvendo. Ao terminar, o desenvolvimento leva o card a Auto review e inicia o agente Revisor automaticamente. Quando o Revisor conclui, o card avança para Code Review, que continua sendo a etapa para inspeção e ações manuais. Staging e Aguardando deploy não avançam automaticamente depois que seus scripts terminam.
+- Após uma **movimentação feita na interface**, cards com chave Jira válida (`PROJ-123`, por exemplo) tentam atualizar o status no Jira apenas nas etapas mapeadas: Revisão de plano → `IDEIA`; Desenvolvendo → `em desenvolvimento`; Code Review → `CODE REVIEW`; Staging → `STAGING`; Aguardando deploy → `AGUARDANDO DEPLOY`; Produção → `PRODUÇÃO`. Planejando não dispara transição no Jira. A transição não é chamada por esse caminho quando o servidor avança uma etapa sozinho. Os scripts de PR também podem atualizar o Jira, conforme os documentos das etapas.
 - Cada agente em execução tem um controle individual para interrompê-lo junto à sua linha; na etapa Desenvolvendo, o progresso também oferece um controle para interromper toda a etapa e seus agentes. Para etapas automáticas, a interrupção restaura os artefatos acompanhados e limpa logs/progresso da etapa; código, commits e PRs já criados permanecem. O botão “Limpar <etapa>” no modal remove os artefatos e registros da última etapa executada. Não há reinício automático depois da interrupção enquanto o status não mudar.
 - O desenho de cada documento usa `[sempre]` e `[se ...]`. Os elementos condicionais dependem dos dados disponíveis, não são uma promessa de que apareçam em toda visita à coluna. Informações de etapas anteriores, como PRs ou um ambiente dev ainda ligado, podem continuar visíveis em etapas posteriores.
 
@@ -37,10 +38,10 @@ Os arquivos abaixo são cópias UTF-8 **sem paráfrase** dos valores em `shared/
 
 - [Planejamento: `taskPlanning`](prompts/task-planning-default.txt)
 - [Item de desenvolvimento: `taskItem`](prompts/task-item-default.txt)
-- [Revisão Smart Diff, acionada manualmente: `smartDiffReview`](prompts/smart-diff-review-default.txt)
+- [Revisor de código, acionado manualmente: `smartDiffReview`](prompts/reviewer-default.txt)
 - [Agente de ambiente dev, acionado manualmente: `testEnvironment`](prompts/test-environment-default.txt)
 
-Os prompts opcionais de Smart Diff e do agente de ambiente dev dependem de um clique e podem aparecer em cards de outras colunas se o estado do card permitir. A montagem está detalhada em [Code Review](06-code-review.md); a entrada em Code Review não executa essas ações.
+O prompt de revisão é configurado em Smart Diff e roda automaticamente ao entrar em Auto review. As ações manuais de executar novamente o Revisor e iniciar ambiente dev estão detalhadas em [Code Review](06-code-review.md); a entrada em Code Review não executa essas ações.
 
 ## Dependência de skills do Claude
 
@@ -54,3 +55,7 @@ O prompt padrão de Smart Diff usa o marcador `<script-de-revisao>`, substituíd
 - `src/features/cards/model/card-commands.ts`, `src/features/cards/integrations/jira.ts`: movimentação pela interface e Jira.
 - `server/workspace/stage-catalog.ts`, `stage-transition.ts`, `card-update.ts`, `board-list.ts`, `worktree-lifecycle.ts`: execução, avanço e limpeza.
 - `scripts/commands/`: trabalhos de desenvolvimento, testes e PRs.
+
+# Runtime por repositório
+
+Tasks e ambientes dev selecionam runtime Node por projeto. Consulte [desenvolvimento](04-desenvolvendo.md) e [runtime e verificação](../architecture/project-runtime-and-verification.md) para políticas, limites e estado de ativação do verificador.

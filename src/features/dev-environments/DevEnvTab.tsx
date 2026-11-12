@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { openDevEnv, stopDevEnv } from '@/features/cards/model/card-commands'
@@ -13,10 +13,12 @@ import { DevEnvPorts } from './DevEnvPorts'
 export function DevEnvTab({
   card,
   agentRunning,
+  openConfigurationOnMount = false,
   onEnvironmentChat,
 }: {
   card: Card
   agentRunning: boolean
+  openConfigurationOnMount?: boolean
   onEnvironmentChat: (text?: string, configuration?: DevEnvStartOptions) => void
 }) {
   const [env, setEnv] = useState<DevEnvInfo | null>(card.devEnv ?? null)
@@ -25,6 +27,7 @@ export function DevEnvTab({
   const [planError, setPlanError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const initialConfigurationOpened = useRef(false)
   const configurationKey = JSON.stringify(env?.configuration)
   useEffect(() => {
     let cancelled = false
@@ -61,7 +64,7 @@ export function DevEnvTab({
       clearInterval(timer)
     }
   }, [card.id])
-  const configure = async () => {
+  const configure = useCallback(async () => {
     setPending(true)
     setError(null)
     try {
@@ -74,7 +77,13 @@ export function DevEnvTab({
     } finally {
       setPending(false)
     }
-  }
+  }, [card.id])
+  useEffect(() => {
+    if (openConfigurationOnMount && !initialConfigurationOpened.current) {
+      initialConfigurationOpened.current = true
+      void configure()
+    }
+  }, [configure, openConfigurationOnMount])
   const stop = async () => {
     setPending(true)
     setError(null)

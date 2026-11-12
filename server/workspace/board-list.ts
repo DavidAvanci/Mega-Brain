@@ -37,11 +37,12 @@ export function listBoardCards(
   sessions: readonly AgentSession[] = [],
   isSmartDiffRunning: (path: string) => boolean = () => false,
   smartDiffActivity: (path: string) => AgentInfo | undefined = () => undefined,
+  onReviewEntry: (path: string) => void = () => undefined,
 ) {
   mkdirSync(root, { recursive: true })
   const activeSessionsByCard = new Map<string, AgentSession[]>()
   for (const session of sessions) {
-    if (!session.cardId || (session.status !== 'rodando' && session.status !== 'aguardando')) continue
+    if (!session.cardId || !['rodando', 'aguardando', 'erro'].includes(session.status)) continue
     const group = activeSessionsByCard.get(session.cardId)
     if (group) group.push(session)
     else activeSessionsByCard.set(session.cardId, [session])
@@ -81,11 +82,12 @@ export function listBoardCards(
         agent = readAgent(path)
       }
       const advanced = advanceStage(path, card, agent, startStage)
+      if (advanced.status === 'revisao-de-codigo' && card.status !== advanced.status) onReviewEntry(path)
       if (advanced !== card) agent = readAgent(path)
       const activeSessions = agent?.status === 'pausado' ? [] : (activeSessionsByCard.get(entry.name) ?? [])
         .filter((session) => session.id !== diffActivity?.sessionId)
       const stageSession =
-        agent?.status === 'rodando'
+        agent?.status === 'rodando' && agent.stage !== 'run-task-checklist'
           ? activeSessions.find((session) => session.id === agent.sessionId || session.cwd === realpathSync(path))
           : undefined
       const agents: AgentInfo[] = agent
@@ -99,14 +101,19 @@ export function listBoardCards(
       for (const session of activeSessions) {
         if (session === stageSession) continue
         const taskId = taskIdForSession(session)
+        const displayName = session.name?.startsWith('Verificação') ? 'Verificador' : session.name
         agents.push({
           execution: 'agent',
           status: session.status,
           provider: session.provider,
+          model: session.model,
+          effort: session.effort,
+          ...(displayName ? { displayName } : {}),
           sessionControlId: session.id,
-          ...(taskId ? { taskId, phase: `Iniciando ${taskId}` } : {}),
+          ...(taskId ? { taskId, phase: `Implementando ${taskId}` } : {}),
           startedAt: session.startedAt,
           activity: session.narration,
+          error: session.error,
         })
       }
       const prUrls = Object.values(advanced.prs?.staging ?? {}).concat(Object.values(advanced.prs?.master ?? {}))

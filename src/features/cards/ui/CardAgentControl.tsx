@@ -50,7 +50,7 @@ export function CardAgentControl({ agent, cardId }: { agent?: AgentInfo; cardId:
             onKeyDown={(event) => event.stopPropagation()}
             onClick={async (event) => {
               event.stopPropagation()
-              if (busy.current || !agent.stage) return
+              if (busy.current || !agent?.stage) return
               busy.current = true
               setPending(true)
               try {

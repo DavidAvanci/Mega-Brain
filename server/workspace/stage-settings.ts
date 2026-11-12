@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { LlmProvider, ModelStageSettings } from '../../shared/domain/settings'
+import { JEV_PLANNING_MODEL } from '../../shared/domain/planning-selection'
 import {
   compatibleEffort,
   defaultStageSettings,
@@ -27,11 +28,15 @@ export function readStageSettings(
   const entries = configured && typeof configured === 'object' ? (configured as Record<string, unknown>) : {}
   return Object.fromEntries(
     Object.entries(defaultStageSettings(provider, catalog)).map(([name, defaults]) => {
-      const value = entries[name]
+      const value = entries[name] ?? (name === 'task-verification' ? entries['run-task-checklist'] : undefined)
       if (!value || typeof value !== 'object') return [name, defaults]
       const { model, effort, fastMode } = value as { model?: unknown; effort?: unknown; fastMode?: unknown }
       const savedModel = typeof model === 'string' && model.trim() ? model.trim() : defaults.model
-      const effectiveModel = provider === 'chatgpt' && isClaudeModelAlias(savedModel) ? defaults.model : savedModel
+      const effectiveModel =
+        (provider === 'chatgpt' && isClaudeModelAlias(savedModel)) ||
+        (savedModel === JEV_PLANNING_MODEL && name !== 'task-planning')
+          ? defaults.model
+          : savedModel
       return [
         name,
         {
@@ -55,7 +60,13 @@ export function validateStageSettings(
     if (!value || typeof value !== 'object') continue
     const { model, effort, fastMode } = value as { model?: unknown; effort?: unknown; fastMode?: unknown }
     if (typeof model !== 'string' || !model.trim()) throw new Error(`Modelo inválido para ${name}`)
-    if (!isEffort(effort) || !supportedEfforts(provider, model.trim(), catalog).includes(effort))
+    if (model.trim() === JEV_PLANNING_MODEL && name !== 'task-planning')
+      throw new Error('Usar Jev está disponível apenas para o planejamento')
+    const effortModel =
+      model.trim() === JEV_PLANNING_MODEL
+        ? defaultStageSettings(provider, catalog)['task-planning'].model
+        : model.trim()
+    if (!isEffort(effort) || !supportedEfforts(provider, effortModel, catalog).includes(effort))
       throw new Error(`Effort inválido para ${name}: não suportado pelo modelo ${model.trim()}`)
     if (fastMode !== undefined && typeof fastMode !== 'boolean') throw new Error(`Fast Mode inválido para ${name}`)
   }
@@ -75,7 +86,14 @@ export function writeStageSettings(
     const { model, effort, fastMode } = value as ModelStageSettings
     settings[name] = {
       model: model.trim(),
-      effort: compatibleEffort(provider, model.trim(), effort, catalog),
+      effort: compatibleEffort(
+        provider,
+        model.trim() === JEV_PLANNING_MODEL
+          ? defaultStageSettings(provider, catalog)['task-planning'].model
+          : model.trim(),
+        effort,
+        catalog,
+      ),
       fastMode: fastMode === true,
     }
   }

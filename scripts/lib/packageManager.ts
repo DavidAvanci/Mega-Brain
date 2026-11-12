@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 
 export type PackageManager = 'npm' | 'yarn' | 'pnpm'
 
@@ -12,6 +12,32 @@ const LOCKFILES: Record<PackageManager, string> = {
 export interface Command {
   cmd: string
   args: string[]
+}
+
+/** Resolves Windows command shims to local JavaScript launchers, without shell invocation or Corepack downloads. */
+export function resolvePackageManagerCommand(
+  cmd: string,
+  args: string[],
+  nodePath: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform = process.platform,
+): Command {
+  if (platform !== 'win32') return { cmd, args }
+  const manager = cmd.toLowerCase().replace(/\.cmd$|\.exe$/, '')
+  if (!['npm', 'yarn', 'pnpm'].includes(manager)) return { cmd, args }
+  const roots = [...new Set([dirname(nodePath), ...(env.PATH ?? '').split(delimiter)].filter(Boolean))]
+  const candidates = roots.flatMap((root) => {
+    const packageRoot = join(root, 'node_modules', manager)
+    return manager === 'npm'
+      ? [join(packageRoot, 'bin', 'npm-cli.js')]
+      : manager === 'yarn'
+        ? [join(packageRoot, 'bin', 'yarn.js'), join(packageRoot, 'bin', 'yarn.cjs')]
+        : [join(packageRoot, 'bin', 'pnpm.cjs'), join(packageRoot, 'bin', 'pnpm.js')]
+  })
+  const launcher = candidates.find(existsSync)
+  if (!launcher)
+    throw new Error(`${manager} launcher não encontrado para o Node selecionado; instale-o explicitamente nesse runtime`)
+  return { cmd: nodePath, args: [launcher, ...args] }
 }
 
 export function detectPackageManager(dir: string): PackageManager {
@@ -29,7 +55,12 @@ export function lockfileName(manager: PackageManager): string {
 }
 
 export function installCommand(dir: string): Command {
-  return { cmd: detectPackageManager(dir), args: ['install'] }
+  const manager = detectPackageManager(dir)
+  if (!existsSync(join(dir, lockfileName(manager)))) return { cmd: manager, args: ['install'] }
+  if (manager === 'npm') return { cmd: manager, args: ['ci'] }
+  if (manager === 'pnpm') return { cmd: manager, args: ['install', '--frozen-lockfile'] }
+  const version = readDeclaredManagerVersion(dir)
+  return { cmd: manager, args: version && Number(version.split('.')[0]) < 2 ? ['install', '--frozen-lockfile'] : ['install', '--immutable'] }
 }
 
 export function lockfilesMatch(left: string, right: string): boolean {
@@ -60,4 +91,11 @@ function readDeclaredManager(dir: string): PackageManager | null {
   } catch {
     return null
   }
+}
+
+function readDeclaredManagerVersion(dir: string): string | undefined {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { packageManager?: string }
+    return typeof pkg.packageManager === 'string' ? /@(\d+\.\d+\.\d+)/.exec(pkg.packageManager)?.[1] : undefined
+  } catch { return undefined }
 }

@@ -56,7 +56,7 @@ export function PromptMarkdownEditor({
   const pendingSelection = useRef<PromptSelection | null>(null)
   const history = useRef<History>({ past: [], future: [], lastTypedAt: 0, cursor: -1 })
   const [historyVersion, setHistoryVersion] = useState(0)
-  const [preview, setPreview] = useState(false)
+  const [preview, setPreview] = useState(true)
   const [expanded, setExpanded] = useState(false)
   const [limitReached, setLimitReached] = useState(false)
   const helpId = useId()
@@ -126,19 +126,6 @@ export function PromptMarkdownEditor({
           <Button
             type="button"
             size="xs"
-            variant={preview ? 'ghost' : 'secondary'}
-            aria-pressed={!preview}
-            onClick={() => {
-              if (!preview) return
-              pendingSelection.current = snapshot()
-              setPreview(false)
-            }}
-          >
-            Editar
-          </Button>
-          <Button
-            type="button"
-            size="xs"
             variant={preview ? 'secondary' : 'ghost'}
             aria-pressed={preview}
             onClick={() => {
@@ -147,6 +134,20 @@ export function PromptMarkdownEditor({
             }}
           >
             Prévia
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            variant={preview ? 'ghost' : 'secondary'}
+            aria-pressed={!preview}
+            onClick={() => {
+              if (preview) {
+                pendingSelection.current = snapshot()
+                setPreview(false)
+              }
+            }}
+          >
+            Editar
           </Button>
         </div>
         <Tip label={expanded ? 'Reduzir editor' : 'Ampliar editor'}>

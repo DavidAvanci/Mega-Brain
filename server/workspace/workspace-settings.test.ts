@@ -1,9 +1,36 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { completeWorkspaceConfig } from './workspace-config'
 import { readWorkspaceSettings, writeWorkspaceSettings } from './workspace-settings'
+import { loadMegaBrainConfig } from '../config'
+
+test('persists the verifier prompt and model together and reloads defaults for older prompts', () => {
+  const root = mkdtempSync(join(tmpdir(), 'workspace-verifier-settings-'))
+  try {
+    const config = completeWorkspaceConfig({ workspaceDir: join(root, 'cards'), executables: {} })
+    config.preferences.settingsFile = join(root, 'settings.json')
+    mkdirSync(config.workspaceDir, { recursive: true })
+    writeWorkspaceSettings(config, {
+      prompts: { taskVerification: 'Confira os arquivos alterados.' },
+      stages: { 'task-verification': { model: 'sonnet', effort: 'high', fastMode: true } },
+    })
+    const reloaded = loadMegaBrainConfig({
+      homeDir: root,
+      env: {
+        MEGA_BRAIN_SETTINGS_FILE: config.preferences.settingsFile,
+        WORKSPACE_DIR: config.workspaceDir,
+      },
+    })
+    const settings = readWorkspaceSettings(reloaded, config.workspaceDir)
+    expect(settings.prompts.taskVerification).toBe('Confira os arquivos alterados.')
+    expect(settings.prompts.taskItem).toContain('executor de item único')
+    expect(settings.stages['task-verification']).toEqual({ model: 'sonnet', effort: 'high', fastMode: true })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test('reads general and per-stage settings from the workspace boundary', () => {
   const root = mkdtempSync(join(tmpdir(), 'workspace-settings-'))

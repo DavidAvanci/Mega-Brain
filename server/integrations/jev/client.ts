@@ -1,10 +1,9 @@
 import { REQUESTED_MODEL } from '../../card-triage/policy-config'
-import { QUESTIONS, type QuestionId } from '../../card-triage/questions'
+import { QUESTIONS } from '../../card-triage/questions'
 import type { CardTriageInput } from '../../../shared/domain/card-triage'
-import { JevFailure, type JevEvaluation, type ChoiceAnswer } from './types'
+import { JevFailure, type JevEvaluation, type ChoiceAnswer, type JevChoiceQuestion } from './types'
 import { DEFAULT_JEV_BASE_URL, normalizeJevBaseUrl } from './url'
 
-const entries = Object.entries(QUESTIONS) as [QuestionId, (typeof QUESTIONS)[QuestionId]][]
 const record = (v: unknown): v is Record<string, unknown> => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 const probability = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1
 function retryAfterSeconds(value: string | null): number | undefined {
@@ -14,7 +13,10 @@ function retryAfterSeconds(value: string | null): number | undefined {
   return Number.isFinite(delay) && delay > 0 ? Math.min(delay, 3600) : undefined
 }
 
-export function parseJevEvaluation(value: unknown): JevEvaluation {
+export function parseJevEvaluation<Q extends Record<string, JevChoiceQuestion> = typeof QUESTIONS>(
+  value: unknown,
+  questions: Q = QUESTIONS as unknown as Q,
+): JevEvaluation<keyof Q & string> {
   if (
     !record(value) ||
     !record(value.answers) ||
@@ -31,8 +33,8 @@ export function parseJevEvaluation(value: unknown): JevEvaluation {
     Number(usage.output_tokens) < 0
   )
     throw new JevFailure('external_error')
-  const answers = {} as Record<QuestionId, ChoiceAnswer>
-  for (const [id, question] of entries) {
+  const answers = {} as Record<keyof Q & string, ChoiceAnswer>
+  for (const [id, question] of Object.entries(questions)) {
     const answer = value.answers[id]
     if (
       !record(answer) ||
@@ -55,7 +57,7 @@ export function parseJevEvaluation(value: unknown): JevEvaluation {
       probabilities[answer.choice] < Math.max(...Object.values(probabilities))
     )
       throw new JevFailure('external_error')
-    answers[id] = { choice: answer.choice, confidence: answer.confidence, probabilities }
+    answers[id as keyof Q & string] = { choice: answer.choice, confidence: answer.confidence, probabilities }
   }
   return {
     modelVersion: value.model,
@@ -64,13 +66,16 @@ export function parseJevEvaluation(value: unknown): JevEvaluation {
   }
 }
 
-export function createJevClient(fetchImpl: typeof fetch = fetch) {
+export function createJevClient<Q extends Record<string, JevChoiceQuestion> = typeof QUESTIONS>(
+  fetchImpl: typeof fetch = fetch,
+  questions: Q = QUESTIONS as unknown as Q,
+) {
   return async (
     input: CardTriageInput,
     key: string,
     baseUrl: string = DEFAULT_JEV_BASE_URL,
     signal?: AbortSignal,
-  ): Promise<JevEvaluation> => {
+  ): Promise<JevEvaluation<keyof Q & string>> => {
     const endpoint = `${normalizeJevBaseUrl(baseUrl)}/v1/systemone`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 30000)
@@ -81,7 +86,7 @@ export function createJevClient(fetchImpl: typeof fetch = fetch) {
       const response = await fetchImpl(endpoint, {
         method: 'POST',
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state: input, model: REQUESTED_MODEL, questions: QUESTIONS }),
+        body: JSON.stringify({ state: input, model: REQUESTED_MODEL, questions }),
         signal: controller.signal,
       })
       if (!response.ok) {
@@ -93,7 +98,7 @@ export function createJevClient(fetchImpl: typeof fetch = fetch) {
         if (response.status === 504) throw new JevFailure('timeout')
         throw new JevFailure('external_error')
       }
-      const evaluation = parseJevEvaluation(await response.json())
+      const evaluation = parseJevEvaluation(await response.json(), questions)
       return evaluation
     } catch (error) {
       if (error instanceof JevFailure) throw error

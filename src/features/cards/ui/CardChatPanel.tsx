@@ -40,13 +40,13 @@ export function CardChatPanel({
       <TabsList
         variant="line"
         aria-label="Conversas do card"
-        className="w-full shrink-0 justify-start border-b px-3 group-data-horizontal/tabs:h-12"
+        className="w-full shrink-0 justify-start border-b px-3 group-data-horizontal/tabs:h-9"
       >
-        <TabsTrigger value="executions" className="min-h-10 flex-none px-3">
+        <TabsTrigger value="executions" className="min-h-8 flex-none px-3 py-1">
           Execuções
         </TabsTrigger>
-        <TabsTrigger value="environment" className="min-h-10 flex-none px-3">
-          Ambiente{running && <Spinner aria-label="Agente de ambiente em execução" className="size-3" />}
+        <TabsTrigger value="environment" className="min-h-8 flex-none px-3 py-1">
+          Ambiente{running && <Spinner aria-label="Execução do ambiente em andamento" className="size-3" />}
         </TabsTrigger>
       </TabsList>
       <TabsContent value="executions" keepMounted className="min-h-0 overflow-hidden">

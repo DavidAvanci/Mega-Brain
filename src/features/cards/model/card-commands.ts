@@ -10,20 +10,16 @@ import {
   updateWorkspaceCard,
   workspaceAction,
 } from '../api/cards-api'
-import { fetchJiraStatuses, fetchReadyJiraIssues, transitionJiraStatus } from '../integrations/jira'
+import { createJiraIssue, fetchJiraStatuses, fetchReadyJiraIssues, transitionJiraStatus } from '../integrations/jira'
 import { toCards } from './card-mappers'
+import type { DiffState } from '../api/card-detail-api'
 import { cardsState, cardsSubscriberCount, setCardsState, subscribeCards, type CardsState } from './cards-state'
 
 const LEGACY_TITLES_KEY = 'mega-brain-titles'
 const LEGACY_STATUSES_KEY = 'mega-brain-statuses'
 const POLL_INTERVAL = 5000
 const USER_ACTION_WINDOW_MS = 10_000
-const AGENT_STATUSES: ReadonlySet<Status> = new Set([
-  'planejando',
-  'desenvolvendo',
-  'staging',
-  'aguardando-deploy',
-])
+const AGENT_STATUSES: ReadonlySet<Status> = new Set(['planejando', 'desenvolvendo', 'staging', 'aguardando-deploy'])
 const userInitiatedStatusChanges = new BoundedCache<string, { status: Status; expiresAt: number }>(1000)
 const pendingMoves = new Map<string, Pick<Card, 'status' | 'agents'>>()
 let refreshVersion = 0
@@ -59,12 +55,24 @@ async function migrateLegacy(folders: Awaited<ReturnType<typeof listWorkspace>>)
 export async function refresh(): Promise<void> {
   userInitiatedStatusChanges.prune((change) => change.expiresAt < Date.now())
   const version = ++refreshVersion
+  const cardsBeforeRequest = new Map(cardsState().cards.map((card) => [card.id, card]))
   try {
     const folders = await listWorkspace()
     if (version !== refreshVersion) return
     if (await migrateLegacy(folders)) return refresh()
     if (version !== refreshVersion) return
+    const currentCards = new Map(cardsState().cards.map((card) => [card.id, card]))
     const cards = toCards(folders, jiraStatuses).map((card) => {
+      const before = cardsBeforeRequest.get(card.id)
+      const current = currentCards.get(card.id)
+      // The modal may receive a newer Smart Diff step while the board request is in flight.
+      if (
+        current &&
+        (current.smartDiffRunning !== before?.smartDiffRunning ||
+          current.smartDiffActivity !== before?.smartDiffActivity)
+      ) {
+        card = { ...card, smartDiffRunning: current.smartDiffRunning, smartDiffActivity: current.smartDiffActivity }
+      }
       const pending = pendingMoves.get(card.id)
       return pending ? { ...card, ...pending } : card
     })
@@ -81,6 +89,22 @@ export async function refresh(): Promise<void> {
     reportDesktopApiFailure(error)
     setCardsState({ error: message(error), loaded: true })
   }
+}
+
+export function syncCardSmartDiff(id: string, state: Pick<DiffState, 'status' | 'activity' | 'steps'>): void {
+  if (!cardsState().cards.some((card) => card.id === id)) return
+  const smartDiffRunning = state.status === 'running'
+  const smartDiffActivity = smartDiffRunning
+    ? (state.activity ?? {
+        stage: 'smart-diff-review',
+        execution: 'script' as const,
+        status: 'rodando' as const,
+        phase: state.steps?.at(-1) ?? 'Iniciando revisão Smart Diff',
+      })
+    : undefined
+  setCardsState({
+    cards: cardsState().cards.map((card) => (card.id === id ? { ...card, smartDiffRunning, smartDiffActivity } : card)),
+  })
 }
 
 export async function createCard(
@@ -100,6 +124,16 @@ export async function syncJiraCards(): Promise<number> {
   await Promise.all(missing.map((issue) => createWorkspaceCard(issue.summary, issue.description, 'dificil', issue.key)))
   await refresh()
   return missing.length
+}
+
+export async function convertCardToJira(card: Card): Promise<Awaited<ReturnType<typeof createJiraIssue>>> {
+  const issue = await createJiraIssue(card.title, card.description, card.status)
+  await workspaceAction('/api/workspace/jira-id', 'Issue criada, mas não foi possível atualizar o ID local', {
+    name: card.id,
+    key: issue.key,
+  })
+  await refresh()
+  return issue
 }
 
 export async function deleteCard(name: string): Promise<void> {
@@ -187,14 +221,19 @@ export const pauseCardAgents = (name: string, stage: string) =>
   action('/api/workspace/stage/pause', 'Falha ao pausar os agentes', { name, stage }, true)
 export const resumeCardAgents = (name: string, stage: string) =>
   action('/api/workspace/stage/resume', 'Falha ao retomar os agentes', { name, stage }, true)
+export async function retryCardStage(name: string, stage: string): Promise<void> {
+  await workspaceAction('/api/workspace/stage/retry', 'Falha ao tentar novamente a etapa', { name, stage })
+  await refresh()
+}
 export const resetAutomaticStage = (name: string, stage: string) =>
   action('/api/workspace/stage/reset', 'Falha ao interromper e limpar a etapa', { name, stage }, true)
-export const stopCardAgent = (id: string) =>
-  action('/api/agents/stop', 'Falha ao interromper o agente', { id }, true)
+export const stopCardAgent = (id: string) => action('/api/agents/stop', 'Falha ao interromper o agente', { id }, true)
 export const clearLatestStage = (name: string, stage: string) =>
   action('/api/workspace/stage/clear', 'Falha ao limpar a etapa', { name, stage }, true)
 export const stopDevEnv = (name: string) =>
   action('/api/workspace/dev-env/stop', 'Falha ao parar o ambiente dev', { name }, true)
+export const stopDevEnvProject = (name: string, repo: string) =>
+  action('/api/workspace/dev-env/stop-project', 'Falha ao parar o projeto', { name, repo }, true)
 export const openDevEnv = (name: string, repo: string) =>
   action('/api/workspace/dev-env/open', 'Falha ao abrir o ambiente dev', { name, repo })
 

@@ -6,6 +6,9 @@ import { DEFAULT_PROMPTS } from '../../shared/domain/settings'
 import { readCard } from './card-record'
 import { openBrowser, openTerminal } from './launchers'
 import { readAgent } from './stage-agent-status'
+import { readStageSettings } from './stage-settings'
+import { dirname } from 'node:path'
+import { agentModelArgs } from '../agent-model-args'
 
 type ActionConfig = Pick<MegaBrainConfig, 'executables' | 'preferences'>
 
@@ -79,10 +82,22 @@ export async function openDevEnvironmentAgent(
   runner: ProcessRunner,
 ): Promise<void> {
   const prompt = config.preferences.prompts?.testEnvironment ?? DEFAULT_PROMPTS.testEnvironment
+  const provider = config.preferences.llmProvider
+  const settings = readStageSettings(dirname(cardPath), provider)['test-environment']
   const command =
-    config.preferences.llmProvider === 'chatgpt'
-      ? [codexBin(config.executables.codex), '--dangerously-bypass-approvals-and-sandbox', prompt]
-      : [claudeBin(config.executables.claude), '--model', 'haiku', '--dangerously-skip-permissions', prompt]
+    provider === 'chatgpt'
+      ? [
+          codexBin(config.executables.codex),
+          '--dangerously-bypass-approvals-and-sandbox',
+          ...agentModelArgs(provider, settings),
+          prompt,
+        ]
+      : [
+          claudeBin(config.executables.claude),
+          ...agentModelArgs(provider, settings),
+          '--dangerously-skip-permissions',
+          prompt,
+        ]
   await openTerminal(cardPath, command, config.executables.terminal ?? config.preferences.terminalCommand, runner, {
     shell: config.preferences.shellCommand,
   })

@@ -8,6 +8,7 @@ import { STAGES } from './stage-catalog'
 import { createCodexProfilesStore } from '../codex-profiles/service'
 import type { ProcessRunner } from '../process'
 import { readAgent } from './stage-agent-status'
+import { writeStageSettings } from './stage-settings'
 
 const card = { title: 'Refatorar serviço', description: '', status: 'planejando', flow: 'dificil' as const }
 
@@ -110,10 +111,27 @@ test('workflow launches use profile routing and retain provider/profile identity
       undefined,
       settingsFile,
     )
+  writeStageSettings(
+    root,
+    {
+      'task-verification': { model: 'gpt-6-luna', effort: 'high', fastMode: false },
+    },
+    'chatgpt',
+  )
   launch()
   expect(calls[0]).toMatchObject({
     command: 'codex-fixture',
-    options: { cwd: path, env: { CODEX_HOME: profiles[0].home, MEGA_BRAIN_CODEX_PROFILE_ID: 'personal' } },
+    options: {
+      cwd: path,
+      env: {
+        CODEX_HOME: profiles[0].home,
+        MEGA_BRAIN_CODEX_PROFILE_ID: 'personal',
+        CHECKLIST_MODEL: 'gpt-6.1-sol',
+        CHECKLIST_VERIFICATION_MODEL: 'gpt-6-luna',
+        CHECKLIST_VERIFICATION_EFFORT: 'high',
+        CHECKLIST_VERIFICATION_FAST_MODE: '0',
+      },
+    },
   })
   expect(JSON.parse(readFileSync(join(path, AGENT_FILE), 'utf8'))).toMatchObject({
     provider: 'codex',

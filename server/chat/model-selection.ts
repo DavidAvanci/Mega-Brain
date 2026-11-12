@@ -15,13 +15,15 @@ export function parseChatModelSelection(value: unknown): ChatModelSelection | un
   return { provider: value.provider, model: value.model }
 }
 
-export function readChatModelSelection(path: string, provider: LlmProvider = 'claude'): ChatModelSelection {
+export function readChatModelSelection(
+  path: string,
+  provider: LlmProvider = 'claude',
+  model = 'default',
+): ChatModelSelection {
   try {
-    return (
-      parseChatModelSelection(JSON.parse(readFileSync(join(path, filename), 'utf8'))) ?? { provider, model: 'default' }
-    )
+    return parseChatModelSelection(JSON.parse(readFileSync(join(path, filename), 'utf8'))) ?? { provider, model }
   } catch {
-    return { provider, model: 'default' }
+    return { provider, model }
   }
 }
 

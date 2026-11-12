@@ -3,10 +3,10 @@
 ## Ao entrar na etapa
 
 1. O status é salvo e inicia `run-task-checklist`, se não houver outra execução ativa. Em movimentação feita na interface, uma chave Jira válida tenta mudar para `em desenvolvimento`.
-2. O script exige `TASK-CHECKLIST.json` e faz validação prévia da checklist, das dependências e das worktrees. Prepara os repositórios citados, confere bases obrigatórias e impede a execução se uma worktree de integração estiver suja ou faltar pré-condição. Recupera trabalho de itens preservado de execuções anteriores quando possível.
+2. O script exige `TASK-CHECKLIST.json` e faz validação prévia da checklist, das dependências e das worktrees. Antes de preparar qualquer worktree, atualiza a branch local padrão (`main` ou `master`) de todos os repositórios citados com `git fetch origin` e fast-forward para `origin/<branch>`. Se qualquer atualização falhar porque a branch divergiu do remoto ou está suja enquanto checked out, interrompe a etapa sem iniciar agentes. Para branch suja, o modal de erro lista as alterações por arquivo e oferece stash, commit ou descarte; após resolver, o Mega Brain tenta atualizar a branch e reiniciar a etapa. Depois confere bases obrigatórias e impede a execução se uma worktree de integração estiver suja ou faltar pré-condição. Recupera trabalho de itens preservado de execuções anteriores quando possível.
 3. Executa itens com até **quatro agentes em paralelo**, em worktrees próprias. Respeita dependências, limites de tempo e tentativas definidos nos itens, registra tentativas, faz commits ignorando hooks Git (`--no-verify`) e integra o trabalho. Também tenta reparar testes que tenham falhado durante o desenvolvimento.
-4. Quando a leva de executores termina, mesmo com falhas, inicia um agente de verificação para rodar os checks configurados em cada projeto, limitados aos arquivos alterados pelo card. Checks sem suporte a escopo por arquivo e hooks que modificariam arquivos são registrados como ignorados. Para cada check reprovado, ele gera uma task de correção na `TASK-CHECKLIST.json`; o scheduler executa outra leva e a verificação se repete. O padrão permite até cinco levas de correção (`CHECKLIST_MAX_VERIFICATION_WAVES`) e 60 minutos por agente de verificação (`CHECKLIST_VERIFICATION_TIMEOUT_MINUTES`).
-5. O progresso vem dos estados dos itens em `TASK-CHECKLIST.json`. Se todas as tasks e verificações terminam com sucesso, a próxima leitura do quadro move o card para **Code Review**. Uma falha ou o limite de correções atingido deixa o card na etapa e mostra atenção.
+4. **Temporariamente desativado:** após a leva de executores, o scheduler não roda formatação, checks de projeto, reparos automáticos nem agente verificador.
+5. O progresso vem dos estados dos itens em `TASK-CHECKLIST.json`. Com a verificação desativada, se todas as tasks terminarem, a próxima leitura do quadro move o card para **Code Review**; tasks pendentes ou com falha mantêm o card na etapa e mostram atenção.
 
 ## Contrato técnico
 
@@ -75,3 +75,11 @@ No caso Claude, a exigência de saída é transmitida por `--json-schema` com `s
 `▂▃▅` indica o nível do fluxo. Cada agente ativo ligado a um item da `TASK-CHECKLIST.json` aparece em sua linha, com o código do item e um botão para interrompê-lo. Antes de chegar atividade do Claude, a linha mostra `Iniciando <código>...`. A barra abaixo das linhas mostra o progresso global da checklist, com percentual e um botão para interromper toda a etapa e seus agentes. `⚠` sinaliza erro de agente ou ambiente, ou agente aguardando ação. Tempo, PRs, Jira e ambiente seguem os dados do card, inclusive se vierem de uma passagem anterior. O status Jira fica oculto quando há objeto de PRs.
 
 **Fontes:** `scripts/commands/dev-stage.ts`, `scripts/lib/scheduler.ts`; `server/workspace/stage-catalog.ts`, `stage-transition.ts`; `src/features/cards/model/card-commands.ts`; `src/features/cards/ui/CardView.tsx`.
+
+# Runtime de projetos em Tasks
+
+Comandos do projeto usam o runtime registrado no catálogo ou indicado em `.nvmrc`, `.node-version` e `engines.node`, nessa ordem. Configure `nodeRuntime.override` e `nodeRuntime.policy` no registro do repositório quando necessário. O fallback de mesma major precisa ser explícito; sem requisito declarado, o Node resolvido pelo PATH do processo é usado, com o Node do servidor como último fallback. Essa situação aparece como `server-default` nas tentativas. O Mega Brain não instala versões de Node.
+
+As tentativas distinguem o runtime do servidor, da CLI do agente e dos comandos do projeto. Dependências compartilhadas só são reutilizadas quando o lockfile coincide; installs necessários ficam na worktree e respeitam lockfile congelado. O ambiente dev seleciona Node por projeto para install, build e start.
+
+O verificador continua desabilitado. `done` representa implementação concluída e integrada, não aprovação de lint, build ou testes. Não habilite o pipeline até que baseline, relatório baseado em evidência e confirmação de checks em reparos estejam integrados.

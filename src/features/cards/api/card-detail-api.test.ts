@@ -1,13 +1,33 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { DEFAULT_PROMPTS, type MegaBrainSettings } from '../../../../shared/domain/settings'
 import { requestJson } from '@/shared/api/request-json'
-import { saveMegaBrainSettings } from './card-detail-api'
+import { fetchMegaBrainSettings, saveMegaBrainSettings } from './card-detail-api'
 
 vi.mock('@/shared/api/request-json', () => ({ requestJson: vi.fn() }))
 beforeEach(() => vi.resetAllMocks())
 
 const settings = (jevEnabled: boolean) =>
   ({ general: { jevEnabled }, prompts: { ...DEFAULT_PROMPTS } }) as MegaBrainSettings
+
+test('loads legacy backend settings with defaults for the new agents while preserving saved selections', async () => {
+  const legacy = {
+    general: { llmProvider: 'claude' },
+    stages: {
+      'task-planning': { model: 'opus', effort: 'high' },
+      'run-task-checklist': { model: 'sonnet', effort: 'medium', fastMode: true },
+    },
+    prompts: { taskPlanning: 'Planejamento personalizado' },
+  }
+  vi.mocked(requestJson).mockResolvedValue(legacy)
+  const loaded = await fetchMegaBrainSettings()
+  expect(loaded.stages['task-planning'].model).toBe('opus')
+  expect(loaded.stages['task-verification']).toEqual({ model: 'sonnet', effort: 'medium', fastMode: true })
+  expect(loaded.stages['test-environment'].model).toBe('haiku')
+  expect(loaded.stages['smart-diff-review'].model).toBe('default')
+  expect(loaded.prompts.taskPlanning).toBe('Planejamento personalizado')
+  expect(loaded.prompts.taskVerification).toBe(DEFAULT_PROMPTS.taskVerification)
+  expect(legacy.stages).not.toHaveProperty('task-verification')
+})
 
 test.each([true, false])('accepts confirmed Jev setting %s', async (enabled) => {
   const input = settings(enabled)

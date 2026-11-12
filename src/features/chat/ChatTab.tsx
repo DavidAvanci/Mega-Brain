@@ -8,7 +8,7 @@ import { workspaceAction } from '@/features/cards/api/cards-api'
 import { isTauriDesktop } from '@/desktopBootstrap'
 import type { ChatAgentSettings, ChatEntry } from '../../../shared/contracts/chat'
 import { ChatTranscript } from './ChatTranscript'
-import { ChatComposer } from './ChatComposer'
+import { ChatComposer, type ChatImageDraft } from './ChatComposer'
 import { ChatExport } from './ChatExport'
 import { useChatModelSelection } from './ChatModelPicker'
 
@@ -17,6 +17,7 @@ export function ChatTab({ cardId }: { cardId: string }) {
   const [session, setSession] = useState<string | null>(null)
   const [settings, setSettings] = useState<ChatAgentSettings | null>(null)
   const [input, setInput] = useState('')
+  const [images, setImages] = useState<ChatImageDraft[]>([])
   const [knowledgeRefs, setKnowledgeRefs] = useState<KnowledgeRef[]>([])
   const [streaming, setStreaming] = useState(false)
   const [executionRunning, setExecutionRunning] = useState(false)
@@ -53,6 +54,8 @@ export function ChatTab({ cardId }: { cardId: string }) {
 
   useEffect(() => {
     pendingFocus.current = null
+    setImages([])
+    setInput('')
   }, [cardId])
 
   useLayoutEffect(() => {
@@ -95,12 +98,14 @@ export function ChatTab({ cardId }: { cardId: string }) {
 
   const send = async () => {
     const text = input.trim()
-    if (!text || streaming) return
+    if ((!text && !images.length) || streaming) return
+    const sentImages = images
     pendingFocus.current = cardId
     setInput('')
+    setImages([])
     setError(null)
     setStreaming(true)
-    append({ role: 'user', text })
+    append({ role: 'user', text, attachments: sentImages.map(({ file }) => ({ name: file.name, mimeType: file.type })) })
     try {
       await sendChat(
         cardId,
@@ -113,7 +118,14 @@ export function ChatTab({ cardId }: { cardId: string }) {
           }
           if (event.type === 'tool') return append({ role: 'assistant', tool: event.tool })
           if (event.type === 'output') return append({ role: 'assistant', output: event.text })
-          if (event.type === 'done') return event.error ? setError(event.error) : undefined
+          if (event.type === 'done') {
+            if (event.error) {
+              setError(event.error)
+              setInput((current) => current || text)
+              setImages((current) => current.length ? current : sentImages)
+            }
+            return
+          }
           setEntries((prev) => {
             const list = prev ?? []
             const last = list[list.length - 1]
@@ -125,8 +137,15 @@ export function ChatTab({ cardId }: { cardId: string }) {
         },
         knowledgeRefs,
         selection,
+        sentImages.map(({ file, preview }) => ({
+          name: file.name,
+          mimeType: file.type,
+          data: preview.slice(preview.indexOf(',') + 1),
+        })),
       )
     } catch (e) {
+      setInput((current) => current || text)
+      setImages((current) => current.length ? current : sentImages)
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setStreaming(false)
@@ -136,10 +155,6 @@ export function ChatTab({ cardId }: { cardId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-5 py-1">
-        <span className="text-xs text-muted-foreground">Conversa e atividade das execuções</span>
-        <ChatExport cardId={cardId} conversation="Execuções" entries={entries ?? []} />
-      </div>
       {(executionRunning || pendingMessages > 0) && (
         <p className="border-b px-5 py-2 text-[11px] text-muted-foreground" role="status">
           {executionRunning
@@ -149,9 +164,13 @@ export function ChatTab({ cardId }: { cardId: string }) {
         </p>
       )}
       {settings && (
-        <p className="border-b px-5 py-2 text-[11px] text-muted-foreground" aria-label="Configuração do agente">
-          {settings.model} · effort {settings.effort}
-        </p>
+        <div
+          className="flex shrink-0 items-center justify-between gap-2 border-b px-5 py-2 text-[11px] text-muted-foreground"
+          aria-label="Configuração do agente"
+        >
+          <span className="min-w-0 truncate">{settings.model} · effort {settings.effort}</span>
+          <ChatExport cardId={cardId} conversation="Execuções" entries={entries ?? []} />
+        </div>
       )}
       <div
         ref={scroller}
@@ -160,9 +179,9 @@ export function ChatTab({ cardId }: { cardId: string }) {
           const anchor = event.target.closest<HTMLAnchorElement>('a[target="_blank"]')
           if (!anchor) return
           event.preventDefault()
-          void workspaceAction('/api/workspace/browser/open', 'Falha ao abrir o link no navegador', {
+          void Promise.resolve(workspaceAction('/api/workspace/browser/open', 'Falha ao abrir o link no navegador', {
             url: anchor.href,
-          }).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+          })).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
         }}
         onScroll={() => {
           const el = scroller.current
@@ -189,6 +208,8 @@ export function ChatTab({ cardId }: { cardId: string }) {
       <div ref={composer} className="shrink-0 px-5 py-3">
         <ChatComposer
           input={input}
+          images={images}
+          onImagesChange={setImages}
           onInput={setInput}
           onSend={() => void send()}
           onStop={() => void abortChat(cardId)}

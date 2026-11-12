@@ -54,14 +54,13 @@ function Meter({
         >
           <span className="block h-full rounded-full bg-current" style={{ width: `${pct}%` }} />
         </span>
-        <span className="text-foreground">{reset.label}</span>
         <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
-          <span>{available}% disponível</span>
           {reset.dateTime && (
             <time dateTime={reset.dateTime} title={reset.fullDateLabel ?? undefined}>
               {reset.dateLabel}
             </time>
           )}
+          <span>{reset.remainingLabel}</span>
         </span>
       </span>
     </Tip>

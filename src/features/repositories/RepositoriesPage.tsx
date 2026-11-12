@@ -18,9 +18,14 @@ import type {
 } from '../../../shared/domain/repositories'
 import { RepositoryToolbar } from './RepositoryToolbar'
 import type { RepositoryScope } from './RepositoryToolbar'
-import { RepositoryRow } from './RepositoryRow'
 import { RepositorySettingsDialog } from './RepositorySettingsDialog'
-import { matchesRepositoryFilter, repositoryNeedsAttention, type RepositoryFilter } from './repository-view-model'
+import {
+  matchesRepositoryFilter,
+  repositoryNeedsAttention,
+  repositoryPrimaryAction,
+  repositoryStatusLabel,
+  type RepositoryFilter,
+} from './repository-view-model'
 import './repositories.css'
 
 type Preview = { path: string; displayName: string; alias: string; origin?: string; duplicateId?: string }
@@ -37,7 +42,10 @@ export function RepositoriesPage() {
   const initialLoadStarted = useRef(false)
   const [migrations, setMigrations] = useState<Record<string, RepositoryMigrationResult>>({})
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingEnvironment, setEditingEnvironment] = useState<RepositoryEnvironmentKey>('local')
   const [query, setQuery] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [detailTab, setDetailTab] = useState<'overview' | 'environments' | 'variables'>('overview')
   const [filter, setFilter] = useState<RepositoryFilter>('all')
   const [scope, setScope] = useState<RepositoryScope>('all')
   const [addingOpen, setAddingOpen] = useState(false)
@@ -74,6 +82,9 @@ export function RepositoriesPage() {
   ).length
   const activeCount = repositories.filter((repo) => repo.active).length
   const inactiveCount = repositories.length - activeCount
+  const selectedRepository = visible.find((repository) => repository.id === selectedId) ?? visible[0]
+  const selectedStatus = selectedRepository ? statuses[selectedRepository.id] : undefined
+  const selectedMigration = selectedRepository ? migrations[selectedRepository.id] : undefined
   const hasLocalChanges = repositories.some((repo) => statuses[repo.id]?.dirty)
   const setOperation = useCallback(
     (id: string, action: string | null) =>
@@ -215,13 +226,17 @@ export function RepositoriesPage() {
     setBusy(true)
     try {
       for (const item of discovery.repositories) {
-        const existing = repositories.find(repo => repo.path === item.preview.path)
-        await requestJson<Repository>(existing ? `/api/repositories?id=${encodeURIComponent(existing.id)}` : '/api/repositories', 'Falha ao cadastrar workspace', {
-          method: existing ? 'PATCH' : 'POST',
-          body: existing
-            ? { tags: [...new Set([...existing.tags, `workspace:${workspaceAlias}`])] }
-            : { path: item.preview.path, alias: item.alias.trim(), tags: [`workspace:${workspaceAlias}`] },
-        })
+        const existing = repositories.find((repo) => repo.path === item.preview.path)
+        await requestJson<Repository>(
+          existing ? `/api/repositories?id=${encodeURIComponent(existing.id)}` : '/api/repositories',
+          'Falha ao cadastrar workspace',
+          {
+            method: existing ? 'PATCH' : 'POST',
+            body: existing
+              ? { tags: [...new Set([...existing.tags, `workspace:${workspaceAlias}`])] }
+              : { path: item.preview.path, alias: item.alias.trim(), tags: [`workspace:${workspaceAlias}`] },
+          },
+        )
       }
       setDiscovery(null)
       toast.success(`Workspace ${workspaceAlias} cadastrado. Use @${workspaceAlias} nos cards e chats.`)
@@ -243,6 +258,7 @@ export function RepositoriesPage() {
       })
       setPreview(null)
       await load()
+      setEditingEnvironment('local')
       setEditingId(repo.id)
       toast.success(`${repo.displayName} cadastrado`)
     } catch (error) {
@@ -419,6 +435,12 @@ export function RepositoriesPage() {
   }
 
   const openEditor = (id: string) => {
+    setEditingEnvironment('local')
+    setEditingId(id)
+  }
+
+  const openEnvironmentSettings = (id: string, environment: RepositoryEnvironmentKey) => {
+    setEditingEnvironment(environment)
     setEditingId(id)
   }
 
@@ -481,58 +503,20 @@ export function RepositoriesPage() {
     if (selected) void rowActions.current.toggleActive(selected)
   }, [])
   const onRowSettings = useCallback((id: string) => rowActions.current.openEditor(id), [])
-  const onRowOpenEditor = useCallback(
-    (id: string) => {
-      if (!rowActions.current.operations[id]) void rowActions.current.openRepositoryInEditor(id)
-    },
-    [],
-  )
+  const onRowOpenEditor = useCallback((id: string) => {
+    if (!rowActions.current.operations[id]) void rowActions.current.openRepositoryInEditor(id)
+  }, [])
 
   return (
     <main className="repositories-page min-h-0 min-w-0 flex-1 overflow-auto" aria-label="Página Repositórios">
       <div className="repositories-shell">
         <header className="repo-page-header">
           <div className="repo-heading">
-            <h2>Repositórios</h2>
+            <h2>Workspace de repositórios</h2>
             <p>
               {repositories.length} {repositories.length === 1 ? 'repositório' : 'repositórios'} · {attentionCount}{' '}
               {attentionCount === 1 ? 'precisa' : 'precisam'} de atenção
             </p>
-          </div>
-          <div className="repo-header-actions">
-            {!pendingStatuses && !hasLocalChanges && (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={verifyingAll || repositories.length === 0}
-                onClick={() => void verifyAll()}
-              >
-                <HugeiconsIcon icon={Refresh01Icon} strokeWidth={2} />
-                {verifyingAll ? 'Verificando…' : 'Verificar todos'}
-              </Button>
-            )}
-            <Button
-              type="button"
-              onClick={() => setAddingOpen((value) => !value)}
-              aria-expanded={addingOpen}
-              aria-controls="add-repository-panel"
-            >
-              <span aria-hidden="true">+</span>Adicionar
-              <svg
-                className={`repo-chevron-icon ${addingOpen ? 'is-expanded' : ''}`}
-                aria-hidden="true"
-                viewBox="0 0 20 20"
-                fill="none"
-              >
-                <path
-                  d="m5 7.5 5 5 5-5"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </Button>
           </div>
         </header>
 
@@ -648,87 +632,378 @@ export function RepositoriesPage() {
           </section>
         )}
 
-        <section className="repo-catalog" aria-label="Lista de repositórios">
-          <RepositoryToolbar
-            query={query}
-            filter={filter}
-            scope={scope}
-            count={visible.length}
-            total={repositories.length}
-            attentionCount={attentionCount}
-            activeCount={activeCount}
-            inactiveCount={inactiveCount}
-            onQueryChange={setQuery}
-            onFilterChange={setFilter}
-            onScopeChange={setScope}
-          />
-          <div className="repo-column-headings" aria-hidden="true">
-            <span>Repositório</span>
-            <span>Branch</span>
-            <span>Remoto</span>
-            <span>Ações</span>
-          </div>
-          {loading && (
-            <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground" role="status">
-              Carregando catálogo de repositórios…
-            </p>
-          )}
-          {loadError && (
-            <div className="rounded-lg border border-destructive/40 p-5 text-sm" role="alert">
-              <p>Não foi possível carregar o catálogo: {loadError}</p>
+        <section className="repo-workspace" aria-label="Catálogo de repositórios">
+          <aside className="repo-sidebar" aria-label="Lista de repositórios">
+            <div className="repo-sidebar-heading">
+              <h2>Repositórios</h2>
+              <span>{repositories.length}</span>
+              {!pendingStatuses && !hasLocalChanges && (
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="outline"
+                  aria-label="Verificar todos"
+                  title="Verificar todos"
+                  disabled={verifyingAll || repositories.length === 0}
+                  onClick={() => void verifyAll()}
+                >
+                  <HugeiconsIcon icon={Refresh01Icon} strokeWidth={2} />
+                </Button>
+              )}
               <Button
                 type="button"
-                size="sm"
-                variant="outline"
-                className="mt-2"
-                onClick={() => {
-                  setLoading(true)
-                  void load().catch((error: unknown) => {
-                    setLoadError(error instanceof Error ? error.message : String(error))
-                    setLoading(false)
-                  })
-                }}
+                size="icon-sm"
+                aria-label="Adicionar repositório"
+                title="Adicionar repositório"
+                aria-expanded={addingOpen}
+                aria-controls="add-repository-panel"
+                onClick={() => setAddingOpen((value) => !value)}
               >
-                Tentar novamente
+                <span aria-hidden="true">+</span>
               </Button>
             </div>
-          )}
-          {!loading && !loadError && repositories.length === 0 && (
-            <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
-              Nenhum repositório cadastrado. Use “Adicionar repositório” para começar.
-            </p>
-          )}
-          {!loading && !loadError && repositories.length > 0 && visible.length === 0 && pendingStatuses && (
-            <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground" role="status">
-              Verificando estados dos repositórios…
-            </p>
-          )}
-          {!loading && !loadError && repositories.length > 0 && visible.length === 0 && !pendingStatuses && (
-            <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
-              Nenhum repositório corresponde à busca ou ao filtro.
-            </p>
-          )}
-          {visible.length > 0 && (
-            <div className="repo-rows">
-              {visible.map((repo) => (
-                <RepositoryRow
-                  key={repo.id}
-                  repository={repo}
-                  status={statuses[repo.id]}
-                  migration={migrations[repo.id]}
-                  operation={verifyingAll ? 'verify' : operations[repo.id]}
-                  onVerify={onRowVerify}
-                  onPull={onRowPull}
-                  onResolveDirty={onRowResolveDirty}
-                  onSwitchMaster={onRowSwitchMaster}
-                  onMigrate={onRowMigrate}
-                  onToggleActive={onRowToggleActive}
-                  onSettings={onRowSettings}
-                  onOpenEditor={onRowOpenEditor}
-                />
-              ))}
-            </div>
-          )}
+            <RepositoryToolbar
+              query={query}
+              filter={filter}
+              scope={scope}
+              count={visible.length}
+              total={repositories.length}
+              attentionCount={attentionCount}
+              activeCount={activeCount}
+              inactiveCount={inactiveCount}
+              onQueryChange={setQuery}
+              onFilterChange={setFilter}
+              onScopeChange={setScope}
+            />
+            {loading && (
+              <p className="repo-list-message" role="status">
+                Carregando repositórios…
+              </p>
+            )}
+            {loadError && (
+              <div className="repo-list-message" role="alert">
+                <p>Não foi possível carregar: {loadError}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setLoading(true)
+                    void load().catch((error: unknown) => {
+                      setLoadError(error instanceof Error ? error.message : String(error))
+                      setLoading(false)
+                    })
+                  }}
+                >
+                  Tentar novamente
+                </Button>
+              </div>
+            )}
+            {!loading && !loadError && repositories.length === 0 && (
+              <p className="repo-list-message">Nenhum repositório cadastrado. Use “Adicionar” para começar.</p>
+            )}
+            {!loading && !loadError && repositories.length > 0 && visible.length === 0 && (
+              <p className="repo-list-message">Nenhum repositório corresponde à busca ou ao filtro.</p>
+            )}
+            <nav className="repo-list" aria-label="Selecionar repositório">
+              {visible.map((repo) => {
+                const status = statuses[repo.id]
+                const stateLabel = repositoryStatusLabel(status)
+                const stateTone =
+                  status?.state === 'up-to-date' && status.source === 'remote'
+                    ? 'success'
+                    : repositoryNeedsAttention(status)
+                      ? 'attention'
+                      : 'pending'
+                return (
+                  <button
+                    key={repo.id}
+                    type="button"
+                    className={`repo-list-item ${selectedRepository?.id === repo.id ? 'is-selected' : ''} ${repo.active ? '' : 'is-inactive'}`}
+                    aria-pressed={selectedRepository?.id === repo.id}
+                    onClick={() => setSelectedId(repo.id)}
+                  >
+                    <span className="repo-list-copy">
+                      <span className="repo-list-name">{repo.displayName}</span>
+                      <span className="repo-list-branch">{status?.branch ?? repo.alias}</span>
+                    </span>
+                    <span className={`repo-list-state tone-${stateTone}`}>
+                      <i aria-hidden="true" />
+                      {stateLabel}
+                    </span>
+                    {status?.dirty && (
+                      <span className="repo-list-dirty" title="Alterações locais" aria-label="Alterações locais" />
+                    )}
+                  </button>
+                )
+              })}
+            </nav>
+          </aside>
+
+          <div className="repo-detail-pane">
+            {selectedRepository ? (
+              <>
+                <header className="repo-detail-header">
+                  <div className="repo-detail-title">
+                    <h2>{selectedRepository.displayName}</h2>
+                    <p title={selectedRepository.path}>{selectedRepository.path}</p>
+                  </div>
+                  <div className="repo-detail-actions">
+                    <label className="repo-active-control">
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={selectedRepository.active}
+                        onChange={() => onRowToggleActive(selectedRepository.id)}
+                        aria-label={`${selectedRepository.active ? 'Desativar' : 'Ativar'} ${selectedRepository.displayName}`}
+                      />
+                      <span className="repo-toggle" aria-hidden="true" />
+                      {selectedRepository.active ? 'Ativo' : 'Inativo'}
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => onRowOpenEditor(selectedRepository.id)}
+                      disabled={!!operations[selectedRepository.id]}
+                    >
+                      <HugeiconsIcon icon={FolderOpenIcon} strokeWidth={2} />
+                      Abrir na IDE
+                    </Button>
+                  </div>
+                </header>
+
+                <div className="repo-summary" aria-label="Resumo do repositório">
+                  <section className="repo-summary-item">
+                    <span>Branch</span>
+                    <strong>{selectedStatus?.branch ?? (selectedStatus ? 'indisponível' : 'carregando…')}</strong>
+                  </section>
+                  <section
+                    className={`repo-summary-item tone-${selectedStatus?.state === 'up-to-date' && selectedStatus.source === 'remote' ? 'success' : repositoryNeedsAttention(selectedStatus) ? 'attention' : 'pending'}`}
+                  >
+                    <span>
+                      Remoto ·{' '}
+                      {selectedStatus?.remoteCheckedAt
+                        ? new Date(selectedStatus.remoteCheckedAt).toLocaleString()
+                        : 'sem verificação'}
+                    </span>
+                    <strong>{repositoryStatusLabel(selectedStatus)}</strong>
+                  </section>
+                  <section className={`repo-summary-item ${selectedStatus?.dirty ? 'tone-attention' : ''}`}>
+                    <span>Alterações locais</span>
+                    <strong>
+                      {selectedStatus?.dirty
+                        ? 'Checkout com alterações'
+                        : selectedStatus?.available
+                          ? 'Checkout limpo'
+                          : selectedStatus
+                            ? 'Checkout indisponível'
+                            : 'Aguardando status'}
+                    </strong>
+                  </section>
+                </div>
+
+                <nav className="repo-detail-tabs" aria-label="Detalhes do repositório">
+                  {(
+                    [
+                      ['overview', 'Visão geral'],
+                      ['environments', 'Ambientes'],
+                      ['variables', 'Variáveis'],
+                    ] as const
+                  ).map(([tab, label]) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      aria-current={detailTab === tab ? 'page' : undefined}
+                      className={detailTab === tab ? 'is-selected' : ''}
+                      onClick={() => setDetailTab(tab)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </nav>
+
+                <div className="repo-detail-content">
+                  {detailTab === 'overview' && (
+                    <>
+                      <section className="repo-overview-section" aria-label="Informações do checkout">
+                        <dl className="repo-overview-grid">
+                          <dt>Origin</dt>
+                          <dd>{selectedStatus?.origin ?? selectedRepository.githubUrl ?? 'não configurado'}</dd>
+                          <dt>Upstream</dt>
+                          <dd>{selectedStatus?.upstream ?? 'não configurado'}</dd>
+                          <dt>Última verificação</dt>
+                          <dd>
+                            {selectedStatus?.remoteCheckedAt
+                              ? new Date(selectedStatus.remoteCheckedAt).toLocaleString()
+                              : 'remoto ainda não verificado'}
+                          </dd>
+                          <dt>Alias</dt>
+                          <dd>{selectedRepository.alias}</dd>
+                          <dt>Estado</dt>
+                          <dd>
+                            {selectedRepository.active ? 'Ativo' : 'Inativo'} ·{' '}
+                            {selectedStatus?.available
+                              ? selectedStatus.dirty
+                                ? 'com alterações locais'
+                                : 'checkout limpo'
+                              : 'checkout indisponível'}
+                          </dd>
+                          {selectedStatus?.error && (
+                            <>
+                              <dt>Erro</dt>
+                              <dd className="text-destructive">{selectedStatus.error}</dd>
+                            </>
+                          )}
+                        </dl>
+                      </section>
+                      <div className="repo-detail-action-bar">
+                        {selectedStatus?.dirty &&
+                          selectedStatus.state === 'behind' &&
+                          selectedStatus.source === 'local' && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => onRowResolveDirty(selectedRepository.id)}
+                            >
+                              Resolver alterações
+                            </Button>
+                          )}
+                        {repositoryPrimaryAction(selectedStatus) === 'pull' && (
+                          <Button
+                            type="button"
+                            onClick={() => onRowPull(selectedRepository.id)}
+                            disabled={verifyingAll || !!operations[selectedRepository.id] || !!selectedStatus?.dirty}
+                          >
+                            <HugeiconsIcon icon={Refresh01Icon} strokeWidth={2} />
+                            {operations[selectedRepository.id] === 'pull' ? 'Atualizando…' : 'Atualizar checkout'}
+                          </Button>
+                        )}
+                        {(repositoryPrimaryAction(selectedStatus) === 'verify' || !selectedStatus?.remoteCheckedAt) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => onRowVerify(selectedRepository.id)}
+                            disabled={verifyingAll || !!operations[selectedRepository.id]}
+                          >
+                            <HugeiconsIcon icon={Refresh01Icon} strokeWidth={2} />
+                            Verificar remoto
+                          </Button>
+                        )}
+                        {selectedStatus?.available && selectedStatus.branch !== 'master' && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => onRowSwitchMaster(selectedRepository.id)}
+                            disabled={!!operations[selectedRepository.id]}
+                          >
+                            Ir para master
+                          </Button>
+                        )}
+                        <Button type="button" variant="ghost" onClick={() => onRowSettings(selectedRepository.id)}>
+                          Configurações
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                  {detailTab === 'environments' && (
+                    <div className="repo-environment-list">
+                      {(['local', 'staging', 'prod'] as const).map((key) => {
+                        const environment = selectedRepository.environments[key]
+                        const label = key === 'local' ? 'Local' : key === 'staging' ? 'Staging' : 'Prod'
+                        return (
+                          <section
+                            className={`repo-environment-row ${environment.enabled ? '' : 'is-disabled'}`}
+                            key={key}
+                          >
+                            <div className="repo-environment-heading">
+                              <h3>{label}</h3>
+                              <span>{environment.enabled ? 'Habilitado' : 'Desabilitado'}</span>
+                            </div>
+                            <dl>
+                              <dt>{key === 'local' ? 'Script' : 'Branch alvo'}</dt>
+                              <dd>
+                                {key === 'local'
+                                  ? environment.startScript || 'não configurado'
+                                  : environment.targetBranch || 'não configurado'}
+                              </dd>
+                              <dt>{key === 'local' ? 'Porta' : 'URL'}</dt>
+                              <dd>
+                                {key === 'local'
+                                  ? (environment.port ?? 'não configurada')
+                                  : environment.url || 'não configurada'}
+                              </dd>
+                              <dt>Variáveis</dt>
+                              <dd>
+                                {environment.envFile ||
+                                  (key === 'local' ? '.env.local' : key === 'staging' ? '.env.staging' : '.env.prod')}
+                              </dd>
+                            </dl>
+                            <div className="repo-environment-actions">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openEnvironmentSettings(selectedRepository.id, key)}
+                              >
+                                Editar ambiente
+                              </Button>
+                              {environment.migration?.backend && selectedStatus?.migrationReady && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => onRowMigrate(selectedRepository.id, key)}
+                                  disabled={!!operations[selectedRepository.id]}
+                                >
+                                  {operations[selectedRepository.id] === 'migrate'
+                                    ? 'Executando…'
+                                    : `Executar migração ${label}`}
+                                </Button>
+                              )}
+                            </div>
+                            {selectedMigration?.environment === key && selectedMigration.state !== 'idle' && (
+                              <p
+                                className={`repo-migration-result ${selectedMigration.state === 'failure' ? 'text-destructive' : ''}`}
+                                role="status"
+                              >
+                                Migração{' '}
+                                {selectedMigration.state === 'success'
+                                  ? 'concluída'
+                                  : selectedMigration.state === 'failure'
+                                    ? 'falhou'
+                                    : 'em execução'}
+                                {selectedMigration.error ? `: ${selectedMigration.error}` : ''}
+                              </p>
+                            )}
+                          </section>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {detailTab === 'variables' && (
+                    <section className="repo-variables-panel">
+                      <div>
+                        <h3>Variáveis de ambiente</h3>
+                        <p>
+                          Os valores são guardados nos arquivos de ambiente de cada checkout. Abra as configurações para
+                          consultar e editar as variáveis por ambiente.
+                        </p>
+                      </div>
+                      <Button type="button" variant="outline" onClick={() => onRowSettings(selectedRepository.id)}>
+                        Gerenciar variáveis
+                      </Button>
+                    </section>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="repo-detail-empty">
+                {loading
+                  ? 'Carregando catálogo de repositórios…'
+                  : loadError
+                    ? 'O catálogo não está disponível.'
+                    : 'Selecione um repositório para ver os detalhes.'}
+              </div>
+            )}
+          </div>
         </section>
       </div>
 
@@ -741,7 +1016,11 @@ export function RepositoriesPage() {
         {deciding && (
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>{decisionContext === 'master' ? `Ir para master em ${deciding.displayName}` : `Preparar sincronização de ${deciding.displayName}`}</DialogTitle>
+              <DialogTitle>
+                {decisionContext === 'master'
+                  ? `Ir para master em ${deciding.displayName}`
+                  : `Preparar sincronização de ${deciding.displayName}`}
+              </DialogTitle>
               <DialogDescription>
                 {decisionContext === 'master'
                   ? 'A branch atual tem alterações não commitadas. Escolha como tratá-las antes de trocar para master.'
@@ -810,8 +1089,12 @@ export function RepositoriesPage() {
                 }}
               >
                 {switchingId
-                  ? decisionContext === 'master' ? 'Trocando…' : 'Tratando alterações…'
-                  : decisionContext === 'master' ? 'Confirmar e ir para master' : 'Tratar e verificar remoto'}
+                  ? decisionContext === 'master'
+                    ? 'Trocando…'
+                    : 'Tratando alterações…'
+                  : decisionContext === 'master'
+                    ? 'Confirmar e ir para master'
+                    : 'Tratar e verificar remoto'}
               </Button>
             </div>
           </DialogContent>
@@ -819,8 +1102,9 @@ export function RepositoriesPage() {
       </Dialog>
 
       <RepositorySettingsDialog
-        key={editingId ?? 'closed'}
+        key={`${editingId ?? 'closed'}-${editingEnvironment}`}
         repository={editing}
+        initialEnvironment={editingEnvironment}
         onClose={() => setEditingId(null)}
         onSave={(id, environment, values) => update(id, { environments: { [environment]: values } })}
       />

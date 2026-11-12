@@ -1,7 +1,7 @@
 import { validCheckpoint, stageSessionId } from './agent-checkpoint'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import type { AgentInfo } from '../../shared/domain/agents'
+import type { AgentInfo, DefaultBranchDirtyChange } from '../../shared/domain/agents'
 import { agentNarration, parseJsonRecord, readTail, record } from '../agent-log'
 import { readFlow } from './card-folder'
 import { readCard } from './card-record'
@@ -24,6 +24,32 @@ function pidAlive(pid: number): boolean {
 const RESULT_SUBTYPE_ERRORS: Record<string, string> = {
   error_max_turns: 'Limite de turnos atingido',
   error_during_execution: 'Erro durante a execução',
+}
+
+function readDefaultBranchDirty(value: unknown): DefaultBranchDirtyChange[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const changes = value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const item = entry as Record<string, unknown>
+    if (
+      typeof item.repositoryId !== 'string' ||
+      typeof item.repository !== 'string' ||
+      typeof item.branch !== 'string' ||
+      typeof item.worktreePath !== 'string' ||
+      !Array.isArray(item.files)
+    ) return []
+    const files = item.files.flatMap((file) => {
+      if (!file || typeof file !== 'object') return []
+      const candidate = file as Record<string, unknown>
+      return typeof candidate.path === 'string' && typeof candidate.change === 'string'
+        ? [{ path: candidate.path, change: candidate.change }]
+        : []
+    })
+    return files.length
+      ? [{ repositoryId: item.repositoryId, repository: item.repository, branch: item.branch, worktreePath: item.worktreePath, files }]
+      : []
+  })
+  return changes.length ? changes : undefined
 }
 
 export function stageEndedDueToRateLimit(path: string, stage: Stage): boolean {
@@ -65,16 +91,33 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
     pausedAt?: string
     sessionId?: string
     resume?: import('./agent-checkpoint').StageCheckpoint
+    selectingWithJev?: string
+    selectionError?: string
+    model?: string
+    effort?: string
   } = {}
   try {
     meta = JSON.parse(readFileSync(metaFile, 'utf8'))
   } catch {}
   const stage = STAGES.find((candidate) => candidate.name === meta.stage) ?? STAGES[0]
   const info: AgentInfo = {
+    model: meta.model,
+    effort: meta.effort,
     stage: stage.name,
     execution: stage.script ? 'script' : 'agent',
     status: 'rodando',
     startedAt: meta.startedAt,
+  }
+  if (meta.selectingWithJev) {
+    info.status = typeof meta.pid === 'number' && alive(meta.pid) ? 'rodando' : 'morto'
+    info.phase = 'Jev escolhendo modelo e esforço'
+    info.resumable = false
+    return info
+  }
+  if (meta.selectionError) {
+    info.status = 'erro'
+    info.error = meta.selectionError
+    return info
   }
   if (meta.provider === 'claude' || meta.provider === 'codex') info.provider = meta.provider
   if (meta.provider === 'codex') {
@@ -95,10 +138,14 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
         info.activity = undefined
         info.error = undefined
       }
+      if (stage.script && event?.type === 'mega_brain.script_activity')
+        info.activity = typeof event.description === 'string' ? event.description : undefined
       if (typeof event?.session_id === 'string') info.sessionId = event.session_id
       if (event?.type === 'thread.started' && typeof event.thread_id === 'string') info.sessionId = event.thread_id
       if (event?.type === 'result') {
         finished = true
+        const details = record(event.details)
+        info.defaultBranchDirty = readDefaultBranchDirty(details?.defaultBranchDirty)
         if (event.subtype === 'success' && !event.is_error) info.status = 'concluido'
         else {
           info.status = 'erro'
@@ -109,7 +156,7 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
               : subtype
                 ? (RESULT_SUBTYPE_ERRORS[subtype] ?? subtype)
                 : undefined
-          if (detail) info.error = String(detail).trim().replace(/\s+/g, ' ').slice(0, 300)
+          if (detail) info.error = String(detail).trim()
         }
       }
       if (event?.type === 'turn.completed') {
@@ -120,16 +167,21 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
         finished = true
         info.status = 'erro'
         const detail = record(event.error)?.message ?? event.message ?? 'O ChatGPT não concluiu a execução'
-        info.error = String(detail).trim().replace(/\s+/g, ' ').slice(0, 300)
+        info.error = String(detail).trim()
       }
       const narration = agentNarration(event)
       if (narration && !stage.script) info.activity = narration
     }
   }
-  if (info.status === 'concluido' && stage.name === 'task-planning' && readCard(path, basename(path)).status === 'planejando') {
+  if (
+    info.status === 'concluido' &&
+    stage.name === 'task-planning' &&
+    readCard(path, basename(path)).status === 'planejando'
+  ) {
     try {
       const checklist = readTaskChecklist(path)
-      if (!checklist || !activeChecklistItems(checklist).length) throw new Error(`${TASK_CHECKLIST_FILE}: nenhum item executável`)
+      if (!checklist || !activeChecklistItems(checklist).length)
+        throw new Error(`${TASK_CHECKLIST_FILE}: nenhum item executável`)
     } catch (error) {
       info.status = 'erro'
       info.error = error instanceof Error ? error.message : String(error)

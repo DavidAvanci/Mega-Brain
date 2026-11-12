@@ -13,10 +13,16 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { connect } from 'node:net'
-import { dirname, join } from 'node:path'
-import { activeRepositoryPath, assertRegisteredWorktree, repositoryCatalogFile } from '../../repositories/catalog'
+import { delimiter, dirname, join } from 'node:path'
+import {
+  activeRepositories,
+  activeRepositoryPath,
+  assertRegisteredWorktree,
+  repositoryCatalogFile,
+} from '../../repositories/catalog'
 import { readRepositoryEnvironmentVariables } from '../../repositories/environment-files'
-import { installCommand, lockfilesMatch, runScriptCommand, type Command } from '../../../scripts/lib/packageManager.ts'
+import { installCommand, lockfilesMatch, resolvePackageManagerCommand, runScriptCommand, type Command } from '../../../scripts/lib/packageManager.ts'
+import { resolveProjectNode } from '../../../scripts/lib/project-node.ts'
 import type { DevEnvApp, DevEnvInfo } from '../../../shared/domain/agents'
 import type { DevEnvPreview, DevEnvStartOptions } from '../../../shared/domain/dev-environments'
 import { addOptionalFrontends, devEnvPreview, parseDevEnvOptions, selectDevEnvProjects } from './dev-env-options'
@@ -295,26 +301,71 @@ function argv(command: Command): [string, string[]] {
   return [command.cmd, command.args]
 }
 
-function processEnvironment(runner: ProcessRunner): NodeJS.ProcessEnv {
-  if (!process.env.WSL_DISTRO_NAME) return process.env
-  if (wslLoginPath === undefined) {
-    wslLoginPath = null
-    try {
-      const output = String(
-        runner.execFileSync('bash', ['-lic', 'printf "MEGA_BRAIN_PATH=%s\\n" "$PATH"'], {
-          encoding: 'utf8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-        }),
-      )
-      wslLoginPath =
-        output
-          .split('\n')
-          .find((line) => line.startsWith('MEGA_BRAIN_PATH='))
-          ?.slice('MEGA_BRAIN_PATH='.length)
-          .trim() || null
-    } catch {}
+function processEnvironment(runner: ProcessRunner, cwd: string): NodeJS.ProcessEnv {
+  let base: NodeJS.ProcessEnv = process.env
+  if (process.env.WSL_DISTRO_NAME) {
+    if (wslLoginPath === undefined) {
+      wslLoginPath = null
+      try {
+        const output = String(
+          runner.execFileSync('bash', ['-lic', 'printf "MEGA_BRAIN_PATH=%s\\n" "$PATH"'], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+          }),
+        )
+        wslLoginPath =
+          output
+            .split('\n')
+            .find((line) => line.startsWith('MEGA_BRAIN_PATH='))
+            ?.slice('MEGA_BRAIN_PATH='.length)
+            .trim() || null
+      } catch {}
+    }
+    if (wslLoginPath) base = { ...process.env, PATH: wslLoginPath }
   }
-  return wslLoginPath ? { ...process.env, PATH: wslLoginPath } : process.env
+  const repositories = activeRepositories()
+  const commonGitDir = (directory: string): string | undefined => {
+    try {
+      const value = runner.execFileSync(
+        'git',
+        ['-C', directory, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+      )
+      return realpathSync(String(value).trim())
+    } catch {
+      return undefined
+    }
+  }
+  const cwdRealPath = (() => {
+    try {
+      return realpathSync(cwd)
+    } catch {
+      return cwd
+    }
+  })()
+  const cwdCommonGitDir = commonGitDir(cwd)
+  const repo = repositories.find((entry) => {
+    try {
+      if (realpathSync(entry.path) === cwdRealPath) return true
+      return Boolean(cwdCommonGitDir && commonGitDir(entry.path) === cwdCommonGitDir)
+    } catch {
+      return false
+    }
+  })
+  const runtime = resolveProjectNode(cwd, {
+    override: repo?.nodeRuntime?.override,
+    policy: repo?.nodeRuntime?.policy ?? 'strict',
+    allowServerDefault: true,
+    env: base,
+  })
+  if (runtime.status !== 'resolved' || !runtime.runtime?.project)
+    throw new Error(runtime.diagnostic ?? `Não foi possível resolver o Node do projeto em ${cwd}`)
+  const node = runtime.runtime.project
+  return {
+    ...base,
+    PATH: [dirname(node.execPath), base.PATH].filter(Boolean).join(delimiter),
+    MEGA_BRAIN_PROJECT_NODE: node.execPath,
+  }
 }
 
 export function shouldInstallDependencies(dir: string, canonicalDir: string): boolean {
@@ -322,7 +373,27 @@ export function shouldInstallDependencies(dir: string, canonicalDir: string): bo
   if (!existsSync(modules)) return true
   // Only a shared tree depends on the canonical lockfile. Independently
   // installed task dependencies must not be replaced on every environment run.
-  return lstatSync(modules).isSymbolicLink() && !lockfilesMatch(dir, canonicalDir)
+  if (!lstatSync(modules).isSymbolicLink()) return false
+  if (!lockfilesMatch(dir, canonicalDir)) return true
+  const runtimeConfig = activeRepositories().find((entry) => {
+    try {
+      return realpathSync(entry.path) === realpathSync(canonicalDir)
+    } catch {
+      return false
+    }
+  })?.nodeRuntime
+  const options = {
+    override: runtimeConfig?.override,
+    policy: runtimeConfig?.policy ?? 'strict',
+    allowServerDefault: true,
+  }
+  const runtime = resolveProjectNode(dir, options)
+  const canonicalRuntime = resolveProjectNode(canonicalDir, options)
+  return (
+    runtime.status !== 'resolved' ||
+    canonicalRuntime.status !== 'resolved' ||
+    runtime.runtime?.project?.version !== canonicalRuntime.runtime?.project?.version
+  )
 }
 
 export function prepareDependencies(dir: string, canonicalDir: string): boolean {
@@ -345,9 +416,16 @@ function step(
   runner: ProcessRunner,
 ): Promise<void> {
   checkAborted(run)
+  const env = processEnvironment(runner, cwd)
+  let executable: Command
+  try {
+    executable = resolvePackageManagerCommand(cmd, args, env.MEGA_BRAIN_PROJECT_NODE ?? process.execPath, env)
+  } catch (error) {
+    return Promise.reject(error)
+  }
   return new Promise((done, fail) => {
     const fd = openSync(logFile, 'a')
-    const child = runner.spawn(cmd, args, { cwd, stdio: ['ignore', fd, fd], env: processEnvironment(runner) })
+    const child = runner.spawn(executable.cmd, executable.args, { cwd, stdio: ['ignore', fd, fd], env })
     run.child = child
     child.on('error', (error) => {
       closeSync(fd)
@@ -375,11 +453,18 @@ function detach(
   const fd = openSync(logFile, 'a')
   run.logOffset = statSync(logFile).size
   run.childError = undefined
-  const child = runner.spawn(cmd, args, {
+  const environment = { ...processEnvironment(runner, cwd), ...env }
+  const executable = resolvePackageManagerCommand(
+    cmd,
+    args,
+    environment.MEGA_BRAIN_PROJECT_NODE ?? process.execPath,
+    environment,
+  )
+  const child = runner.spawn(executable.cmd, executable.args, {
     cwd,
     detached: true,
     stdio: ['ignore', fd, fd],
-    env: { ...processEnvironment(runner), ...env },
+    env: environment,
   })
   child.on('error', (error) => {
     run.childError = error
@@ -926,5 +1011,25 @@ export function stopDevEnv(cardPath: string): void {
   state.phase = undefined
   state.error = undefined
   state.failure = undefined
+  writeState(cardPath, state)
+}
+
+export function stopDevEnvProject(cardPath: string, repo: string): void {
+  const state = readDevEnv(cardPath)
+  if (!state) throw new Error('Ambiente de desenvolvimento não encontrado')
+  const targets = state.apps.filter((app) => app.repo === repo || app.parentRepo === repo)
+  if (!targets.length) throw new Error(`Projeto não encontrado no ambiente: ${repo}`)
+  for (const app of targets) {
+    if (typeof app.pid === 'number') killTree(app.pid)
+    app.pid = undefined
+    app.status = 'parado'
+  }
+  if (state.apps.some((app) => app.status === 'rodando')) {
+    state.status = 'rodando'
+  } else {
+    state.status = 'parado'
+    state.ownerPid = undefined
+    state.phase = undefined
+  }
   writeState(cardPath, state)
 }

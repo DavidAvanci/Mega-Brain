@@ -5,9 +5,14 @@ export interface ChoiceAnswer {
   confidence: number
   probabilities: Record<string, number>
 }
-export interface JevEvaluation {
+export interface JevChoiceQuestion {
+  type: 'choice'
+  instructions: string
+  criteria: Record<string, string>
+}
+export interface JevEvaluation<Id extends string = QuestionId> {
   modelVersion: string
-  answers: Record<QuestionId, ChoiceAnswer>
+  answers: Record<Id, ChoiceAnswer>
   usage: { input_tokens: number; output_tokens: number }
 }
 export type JevFailureCode = 'invalid_key' | 'rate_limited' | 'timeout' | 'busy' | 'external_error'

@@ -17,6 +17,15 @@ export interface ChecklistItem {
   discardReason?: string
   timeoutMinutes?: number
   maxAttempts?: number
+  repair?: {
+    checkId: string
+    fingerprint: string
+    profileFingerprint: string
+    source: 'verification'
+    wave: number
+    diagnostics?: { file: string; rule: string; message: string }[]
+  }
+  origin?: 'agent' | 'verification-repair'
 }
 
 export interface TaskChecklist {
@@ -89,6 +98,8 @@ export function parseTaskChecklist(input: unknown): TaskChecklist {
         'discardReason',
         'timeoutMinutes',
         'maxAttempts',
+        'repair',
+        'origin',
       ],
       where,
     )
@@ -105,6 +116,35 @@ export function parseTaskChecklist(input: unknown): TaskChecklist {
         throw new Error(`${where}.${key}: esperado inteiro positivo`)
       return limit
     }
+    let repair: ChecklistItem['repair']
+    if (item.repair !== undefined) {
+      const raw = object(item.repair, `${where}.repair`)
+      fields(raw, ['checkId', 'fingerprint', 'profileFingerprint', 'source', 'wave', 'diagnostics'], `${where}.repair`)
+      if (raw.source !== 'verification' || typeof raw.wave !== 'number' || !Number.isInteger(raw.wave) || raw.wave < 1)
+        throw new Error(`${where}.repair: origem ou leva inválida`)
+      const diagnostics = raw.diagnostics === undefined ? undefined : (() => {
+        if (!Array.isArray(raw.diagnostics)) throw new Error(`${where}.repair.diagnostics: esperado um array`)
+        return raw.diagnostics.map((entry, index) => {
+          const diagnostic = object(entry, `${where}.repair.diagnostics[${index}]`)
+          fields(diagnostic, ['file', 'rule', 'message'], `${where}.repair.diagnostics[${index}]`)
+          return {
+            file: string(diagnostic.file, `${where}.repair.diagnostics[${index}].file`),
+            rule: string(diagnostic.rule, `${where}.repair.diagnostics[${index}].rule`),
+            message: string(diagnostic.message, `${where}.repair.diagnostics[${index}].message`),
+          }
+        })
+      })()
+      repair = {
+        checkId: string(raw.checkId, `${where}.repair.checkId`),
+        fingerprint: string(raw.fingerprint, `${where}.repair.fingerprint`),
+        profileFingerprint: string(raw.profileFingerprint, `${where}.repair.profileFingerprint`),
+        source: 'verification',
+        wave: raw.wave,
+        ...(diagnostics ? { diagnostics } : {}),
+      }
+    }
+    if (item.origin !== undefined && item.origin !== 'agent' && item.origin !== 'verification-repair')
+      throw new Error(`${where}.origin: origem inválida`)
     return {
       id,
       title: string(item.title, `${where}.title`),
@@ -122,6 +162,8 @@ export function parseTaskChecklist(input: unknown): TaskChecklist {
         : { discardReason: string(item.discardReason, `${where}.discardReason`) }),
       ...(item.timeoutMinutes === undefined ? {} : { timeoutMinutes: positive('timeoutMinutes') }),
       ...(item.maxAttempts === undefined ? {} : { maxAttempts: positive('maxAttempts') }),
+      ...(repair ? { repair } : {}),
+      ...(item.origin === undefined ? {} : { origin: item.origin as ChecklistItem['origin'] }),
     }
   })
   const byId = new Map<string, ChecklistItem>()

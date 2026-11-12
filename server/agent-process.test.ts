@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { agentCwds, agentProcesses, macAgentProcesses } from './agent-process'
+const hostPlatform = process.platform
 
-test('chat print-mode processes are not mistaken for interactive terminal agents', () => {
+test.skipIf(hostPlatform === 'win32')('chat print-mode processes are not mistaken for interactive terminal agents', () => {
   const root = mkdtempSync(join(tmpdir(), 'mega-brain-agent-process-'))
   const procRoot = join(root, 'proc')
   const card = join(root, 'card')
@@ -16,7 +17,7 @@ test('chat print-mode processes are not mistaken for interactive terminal agents
     const dir = join(procRoot, String(pid))
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'cmdline'), argv.join('\0') + '\0')
-    symlinkSync(cwd, join(dir, 'cwd'))
+    symlinkSync(cwd, join(dir, 'cwd'), 'dir')
   }
   process(100, card, ['/usr/bin/claude', '-p', 'Mensagem do modal'])
   process(101, card, ['/usr/bin/codex', 'exec', '--json', 'Mensagem do modal'])
@@ -61,14 +62,14 @@ test('excludes Mac app-server helpers while retaining exec and resume sessions',
   expect(macAgentProcesses(run)).toHaveLength(2)
 })
 
-test('reads only Codex profile routing from process environments', () => {
+test.skipIf(hostPlatform === 'win32')('reads only Codex profile routing from process environments', () => {
   const root = mkdtempSync(join(tmpdir(), 'mega-brain-process-profile-'))
   const dir = join(root, 'proc', '100')
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'cmdline'), '/opt/codex\0exec\0')
   writeFileSync(
     join(dir, 'environ'),
-    `HOME=${root}\0CODEX_HOME=${root}/.codex-work\0MEGA_BRAIN_CODEX_PROFILE_ID=work\0API_KEY=credential-canary\0`,
+    `HOME=${root}\0CODEX_HOME=${join(root, '.codex-work')}\0MEGA_BRAIN_CODEX_PROFILE_ID=work\0API_KEY=credential-canary\0`,
   )
   symlinkSync(root, join(dir, 'cwd'))
   expect(agentProcesses(join(root, 'proc'))[0]).toMatchObject({

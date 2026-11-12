@@ -3,9 +3,25 @@ import type { DevEnvStartOptions } from './dev-environments'
 
 export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'morto' | 'pausado'
 
+export interface DefaultBranchDirtyFile {
+  path: string
+  change: string
+}
+
+export interface DefaultBranchDirtyChange {
+  repositoryId: string
+  repository: string
+  branch: string
+  worktreePath: string
+  files: DefaultBranchDirtyFile[]
+}
+
 export interface AgentInfo {
+  model?: string
+  effort?: string
   execution?: 'script' | 'agent'
   provider?: AgentProvider
+  displayName?: string
   sessionId?: string
   sessionControlId?: string
   taskId?: string
@@ -17,6 +33,7 @@ export interface AgentInfo {
   activity?: string
   phase?: string
   error?: string
+  defaultBranchDirty?: DefaultBranchDirtyChange[]
   progress?: { done: number; total: number }
   visualState?: IslandVisualState
   question?: string
@@ -38,8 +55,10 @@ export interface CardAgentUsageEntry {
   id: string
   sessionId?: string
   label?: string
+  displayName?: string
   provider?: AgentProvider
   model?: string
+  effort?: string
   startedAt: string
   finishedAt?: string
   durationMs: number
@@ -60,6 +79,7 @@ export interface AgentSession {
   updatedAt: string
   activity?: string
   narration?: string
+  error?: string
   visualState?: IslandVisualState
   question?: string
   codexProfileId?: string

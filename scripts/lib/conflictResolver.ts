@@ -1,5 +1,6 @@
 import { runClaudeItem } from './executor.ts'
 import { currentBranch, git, hasRef } from './git.ts'
+import { megaBrainPrompt } from './prompts.ts'
 
 const AGENT_TIMEOUT_MS = 15 * 60_000
 
@@ -53,9 +54,12 @@ function prompt(repo: string, operation: 'cherry-pick' | 'rebase', base: string,
       ? 'Conclua o cherry-pick com `git cherry-pick --continue`.'
       : 'Conclua o rebase com `git rebase --continue`.'
   return [
+    megaBrainPrompt('conflictResolution'),
     `Resolva o conflito Git no repositório ${repo}. ${action}`,
     'Trabalhe somente nos arquivos que fazem parte do conflito e preserve as duas intenções quando forem compatíveis.',
-    'Inspecione os marcadores de conflito e o histórico antes de editar. Rode a validação mais específica e viável para os arquivos alterados.',
+    'Inspecione os marcadores de conflito e o histórico antes de editar.',
+    'Resolva todos os conflitos da sequência e conclua o cherry-pick ou rebase antes de validar: o que importa é o estado final da branch, então não valide commits intermediários.',
+    'Valide uma única vez, ao final, os arquivos tocados. Só rode um typecheck rápido no meio se a resolução for semântica (schema, API, tipos); listas e arquivos gerados dispensam validação.',
     `${finish} Não use --no-verify, não use git reset/checkout para descartar trabalho, não use git cherry-pick --abort/--skip nem git rebase --abort/--skip.`,
     'Não faça push, não crie PR e não altere arquivos sem relação com o conflito.',
     'Se a resolução exigir uma decisão de produto ou você não conseguir validar, pare sem inventar uma solução e retorne status blocked.',
@@ -76,8 +80,8 @@ export async function resolveCherryPickConflict(
   const result = await runClaudeItem({
     cwd,
     prompt: prompt(repo, 'cherry-pick', 'staging', currentBranch(cwd)),
-    model: process.env.CHECKLIST_MODEL ?? 'sonnet',
-    effort: process.env.CHECKLIST_EFFORT ?? 'medium',
+    model: process.env.CHECKLIST_CONFLICT_MODEL ?? process.env.CHECKLIST_MODEL ?? 'sonnet',
+    effort: process.env.CHECKLIST_CONFLICT_EFFORT ?? process.env.CHECKLIST_EFFORT ?? 'medium',
     tools: 'Bash,Read,Edit,Write',
     timeoutMs: AGENT_TIMEOUT_MS,
   })
@@ -98,8 +102,8 @@ export async function resolveRebaseConflict(cwd: string, repo: string, base: str
   const result = await runClaudeItem({
     cwd,
     prompt: prompt(repo, 'rebase', base, branch),
-    model: process.env.CHECKLIST_MODEL ?? 'sonnet',
-    effort: process.env.CHECKLIST_EFFORT ?? 'medium',
+    model: process.env.CHECKLIST_CONFLICT_MODEL ?? process.env.CHECKLIST_MODEL ?? 'sonnet',
+    effort: process.env.CHECKLIST_CONFLICT_EFFORT ?? process.env.CHECKLIST_EFFORT ?? 'medium',
     tools: 'Bash,Read,Edit,Write',
     timeoutMs: AGENT_TIMEOUT_MS,
   })

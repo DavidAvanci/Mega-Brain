@@ -12,14 +12,16 @@ const labels: Record<RepositoryEnvironmentKey, string> = { local: 'Local', stagi
 
 export function RepositorySettingsDialog({
   repository,
+  initialEnvironment,
   onClose,
   onSave,
 }: {
   repository?: Repository
+  initialEnvironment: RepositoryEnvironmentKey
   onClose: () => void
   onSave: (id: string, environment: RepositoryEnvironmentKey, values: RepositoryEnvironment) => Promise<void>
 }) {
-  const [tab, setTab] = useState<RepositoryEnvironmentKey>('local')
+  const [tab, setTab] = useState<RepositoryEnvironmentKey>(initialEnvironment)
   return (
     <Dialog
       open={!!repository}

@@ -1,12 +1,13 @@
-import { mkdirSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { previewDevEnv, readDevEnv, startDevEnv, stopDevEnv } from '../modules/dev-environments/dev-env'
+import { existsSync, mkdirSync, renameSync } from 'node:fs'
+import { basename, join, resolve } from 'node:path'
+import { previewDevEnv, readDevEnv, startDevEnv, stopDevEnv, stopDevEnvProject } from '../modules/dev-environments/dev-env'
 import { readDevEnvLogs } from '../modules/dev-environments/dev-env-logs'
 import { parseDevEnvOptions } from '../modules/dev-environments/dev-env-options'
 import { createOwnedProcessRunner, nodeProcessRunner, type ProcessOwner, type ProcessRunner } from '../process'
 import { editorExecutable } from '../app-settings'
 import { assertTestWorkspace } from '../test-safety'
 import { createCard } from './card-folder'
+import { readCard, writeCard } from './card-record'
 import { createWorkspacePathResolver } from './path'
 import { deleteCard } from './worktree-lifecycle'
 import { listBoardCards } from './board-list'
@@ -26,6 +27,7 @@ import {
   openPullRequests,
 } from './card-actions'
 import { updateCard } from './card-update'
+import { readStageAgentRecord } from './agent-checkpoint'
 import { availableWorkspaceEditors, readWorkspaceSettings, writeWorkspaceSettings } from './workspace-settings'
 
 export { readCard, readPrs } from './card-record'
@@ -62,8 +64,12 @@ export function createWorkspaceService(
   codexModels?: () => Promise<CodexModelCatalog>,
 ): WorkspaceService {
   const config = completeWorkspaceConfig(inputConfig)
-  const stages = createStageController(config, runner, owner)
-  const diffReview = createSmartDiffReview(config, runner, owner)
+  const stages = createStageController(config, runner, owner, codexModels)
+  const diffReview = createSmartDiffReview(config, runner, owner, (cardPath) => {
+    if (!existsSync(join(cardPath, 'card.json'))) return
+    const card = readCard(cardPath, basename(cardPath))
+    if (card.status === 'revisao-de-codigo') writeCard(cardPath, { ...card, status: 'code-review' })
+  })
   return {
     async handle(path, method, query, body) {
       let root = resolve(config.workspaceDir)
@@ -91,6 +97,7 @@ export function createWorkspaceService(
             agentSessions(),
             diffReview.isRunning,
             diffReview.activity,
+            (cardPath) => diffReview.start(cardPath, true),
           )
         const card = folder(query.get('name'))
         if (path === '/dev-env') return readDevEnv(card.path)
@@ -114,6 +121,7 @@ export function createWorkspaceService(
           agentSessions(),
           diffReview.isRunning,
           diffReview.activity,
+          (cardPath) => diffReview.start(cardPath, true),
         )
       }
       if (method !== 'POST') throw new Error('Método não suportado')
@@ -160,6 +168,10 @@ export function createWorkspaceService(
         stopDevEnv(cardPath)
         return { ok: true }
       }
+      if (path === '/dev-env/stop-project') {
+        stopDevEnvProject(cardPath, String(data.repo ?? ''))
+        return { ok: true }
+      }
       if (path === '/dev-env/open') {
         await openDevEnvironment(cardPath, data.repo, config, runner)
         return { ok: true }
@@ -174,6 +186,10 @@ export function createWorkspaceService(
       }
       if (path === '/stage/resume') {
         stages.resume(cardPath, data.stage)
+        return { ok: true }
+      }
+      if (path === '/stage/retry') {
+        stages.retry(cardPath, data.stage)
         return { ok: true }
       }
       if (path === '/stage/reset') {
@@ -196,10 +212,20 @@ export function createWorkspaceService(
           ),
         }
       if (path === '/update') {
-        updateCard(cardPath, name, data, stages.start)
+        updateCard(cardPath, name, data, stages.start, (path) => diffReview.start(path, true))
         return { ok: true }
       }
+      if (path === '/jira-id') {
+        const jiraKey = String(data.key ?? '').toUpperCase()
+        if (!/^(?!MB-)[A-Z][A-Z0-9]*-\d+$/.test(jiraKey)) throw new Error('Chave Jira inválida')
+        const target = resolve(root, jiraKey)
+        if (target.toLowerCase() !== cardPath.toLowerCase() && existsSync(target))
+          throw new Error(`Já existe um card com o ID ${jiraKey}`)
+        renameSync(cardPath, target)
+        return { ok: true, name: jiraKey }
+      }
       if (path === '/delete') {
+        if (readStageAgentRecord(cardPath)?.selectingWithJev) await stages.stop(cardPath, 'task-planning')
         deleteCard(cardPath, resolve(config.worktreesDir), config.executables.git, runner)
         return { ok: true }
       }

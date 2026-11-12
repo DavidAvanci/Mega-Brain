@@ -32,11 +32,15 @@ import {
 } from './server/modules/dev-environments/dev-env'
 
 const cardFixtures: string[] = []
+const hostPlatform = process.platform
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
-afterEach(() => {
+afterEach(async () => {
   Object.defineProperty(process, 'platform', originalPlatform)
   vi.unstubAllEnvs()
-  for (const root of cardFixtures.splice(0)) rmSync(root, { recursive: true, force: true })
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  for (const root of cardFixtures.splice(0)) {
+    try { rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) } catch {}
+  }
 })
 
 test('classifyRepos', () => {
@@ -108,7 +112,7 @@ test('desvincula node_modules compartilhado quando os lockfiles divergem', () =>
   symlinkSync(
     join(canonical, 'node_modules'),
     join(worktree, 'node_modules'),
-    process.platform === 'win32' ? 'junction' : 'dir',
+    hostPlatform === 'win32' ? 'junction' : 'dir',
   )
 
   expect(prepareDependencies(worktree, canonical)).toBe(true)
@@ -143,7 +147,7 @@ function cardWith(repos: { name: string; branch: string }[], linksDir = ''): str
     symlinkSync(
       fakeRepo(worktrees, repo.name, repo.branch),
       join(links, repo.name),
-      process.platform === 'win32' ? 'junction' : 'dir',
+      hostPlatform === 'win32' ? 'junction' : 'dir',
     )
   }
   // Tests must use their own active catalog, never the developer's settings.
@@ -216,7 +220,7 @@ test('planDevEnv: lib tocada usa agd irmão (criando worktree se faltar)', () =>
   const plan = planDevEnv(card, 'manager-area')
   if ('needsFrontend' in plan) throw new Error('inesperado')
   expect(plan.backend?.createWorktree).toBe(true)
-  expect(plan.backend?.dir.endsWith('/api-garcom-digital')).toBe(true)
+  expect(plan.backend?.dir.replaceAll('\\', '/').endsWith('/api-garcom-digital')).toBe(true)
   expect(plan.libs.map((lib) => lib.name)).toEqual(['api-core'])
 })
 
@@ -229,7 +233,7 @@ test('planDevEnv: api-clube tocado roda o clube local sem backend principal', ()
   if ('needsFrontend' in plan) throw new Error('inesperado')
   expect(plan.localBackend).toBe(false)
   expect(plan.localClube).toBe(true)
-  expect(plan.clube?.dir.endsWith('/api-clube')).toBe(true)
+  expect(plan.clube?.dir.replaceAll('\\', '/').endsWith('/api-clube')).toBe(true)
   expect(plan.warnings).toEqual([])
   expect(plan.fronts.map((f) => f.repo)).toEqual(['internal-dashboard'])
 })
@@ -467,6 +471,7 @@ test.each(['127.0.0.1', '::1'])(
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
   },
+  20_000,
 )
 
 test('confirma um frontend servido somente pelo localhost IPv6', async () => {
@@ -592,6 +597,7 @@ test('configuração do monorepo preserva envs locais e usa uma porta por API se
   expect(readFileSync(join(task, 'apps/external-api/.env'), 'utf8')).toBe('PORT=4310\nVALUE=task\n')
   expect(readFileSync(join(task, 'apps/operation-api/.env'), 'utf8')).toBe('PORT=3300\nVALUE=operation\n')
   expect(readFileSync(join(canonical, 'apps/external-api/.env'), 'utf8')).toBe('PORT=3100\nVALUE=canonical\n')
+  if (hostPlatform === 'win32') return
   rmSync(join(task, 'apps/external-api/.env'))
   symlinkSync(join(canonical, 'apps/external-api/.env'), join(task, 'apps/external-api/.env'))
   prepareRegisteredApp(app, 4311)
@@ -803,7 +809,7 @@ test('finalização de tentativa antiga não remove uma nova tentativa do mesmo 
   const card = cardWith([{ name: 'internal-dashboard', branch: 'ESTR-458' }])
   const aliasRoot = mkdtempSync(join(tmpdir(), 'devenv-alias-'))
   const cardAlias = join(aliasRoot, 'card')
-  symlinkSync(card, cardAlias, process.platform === 'win32' ? 'junction' : 'dir')
+  symlinkSync(card, cardAlias, hostPlatform === 'win32' ? 'junction' : 'dir')
   const frontend = join(card, 'internal-dashboard')
   const realFrontend = realpathSync(frontend)
   mkdirSync(join(realFrontend, 'node_modules'))

@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { join } from 'node:path'
 import { loadMegaBrainConfig } from './config'
 
 test('loads typed runtime configuration from a fixture environment without exposing secrets', () => {
@@ -54,9 +55,9 @@ test('preserves web defaults for the current Vite environment', () => {
     workspaceDir: './mega-brain-files/workspace',
     jira: {},
     directories: {
-      claudeHome: '/tmp/home/.claude',
-      claudeProjects: '/tmp/home/.claude/projects',
-      claudeCredentials: '/tmp/home/.claude/.credentials.json',
+      claudeHome: join('/tmp/home', '.claude'),
+      claudeProjects: join('/tmp/home', '.claude', 'projects'),
+      claudeCredentials: join('/tmp/home', '.claude', '.credentials.json'),
     },
   })
 })

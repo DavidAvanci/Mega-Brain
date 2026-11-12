@@ -44,3 +44,7 @@ Enquanto o binário Linux autocontido não for aprovado, o supervisor consulta
 é Node 18.19.0; ausência, saída inválida e versões inferiores retornam o código
 estável `runtime-unavailable`. O caminho antigo do checkout continua apenas
 como fallback de desenvolvimento até o instalador materializar o runtime.
+
+# Runtime de projetos no WSL
+
+O bundle do servidor permanece compatível com Node 18.19. O runtime de cada repositório é escolhido por invocação, usando versões NVM já instaladas ou um caminho encontrado no PATH. O PATH de login WSL é base dos processos do ambiente dev; o Node do projeto é colocado antes dele. Nenhuma versão é instalada automaticamente.

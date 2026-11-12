@@ -6,7 +6,10 @@ export interface ModelStageSettings {
   fastMode?: boolean
 }
 
-export type BoardSettings = Record<'task-planning' | 'run-task-checklist', ModelStageSettings>
+export type BoardSettings = Record<
+  'task-planning' | 'run-task-checklist' | 'task-verification' | 'test-environment' | 'smart-diff-review' | 'conflict-resolution',
+  ModelStageSettings
+>
 
 export type EditorPreference =
   'cursor' | 'vscode' | 'windsurf' | 'zed' | 'sublime' | 'intellij' | 'webstorm' | 'pycharm' | 'custom'
@@ -63,8 +66,10 @@ export interface MegaBrainSettings {
 export interface PromptSettings {
   taskPlanning: string
   taskItem: string
+  taskVerification: string
   testEnvironment: string
   smartDiffReview: string
+  conflictResolution: string
 }
 
 export { DEFAULT_PROMPTS } from './prompt-defaults'

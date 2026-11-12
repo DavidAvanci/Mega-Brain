@@ -15,7 +15,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-test('logs inexistentes retornam vazio e arquivos externos e links não podem ser lidos', () => {
+test.skipIf(process.platform === 'win32')('logs inexistentes retornam vazio e arquivos externos e links não podem ser lidos', () => {
   const root = card()
   expect(readDevEnvLogs(root)).toEqual({ files: [], file: null, content: '', truncated: false })
   mkdirSync(join(root, '.dev-env'))
@@ -51,7 +51,7 @@ test('limita logs ao final do arquivo, remove ANSI e oculta credenciais', () => 
   expect(redactDevEnvOutput('PORT=3333\nready')).toBe('PORT=3333\nready')
 })
 
-test('recusa diretório de logs redirecionado por symlink', () => {
+test.skipIf(process.platform === 'win32')('recusa diretório de logs redirecionado por symlink', () => {
   const root = card()
   const elsewhere = card()
   symlinkSync(elsewhere, join(root, '.dev-env'))

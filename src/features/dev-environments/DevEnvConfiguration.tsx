@@ -94,7 +94,7 @@ export function DevEnvConfiguration({ cardId, preview, onClose, onStartWithAgent
           </div>
           <div className="divide-y rounded-lg border">
             {projects.map((project) => (
-              <div key={project.repo} className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-start gap-3 p-3">
+              <div key={project.repo} className="grid grid-cols-[minmax(0,1fr)_5.5rem] items-center gap-3 p-3">
                 <div className="min-w-0">
                   <label className="flex min-h-10 cursor-pointer items-center gap-2">
                     <Checkbox
@@ -109,26 +109,8 @@ export function DevEnvConfiguration({ cardId, preview, onClose, onStartWithAgent
                     />
                     <span className="min-w-0 break-words font-medium">{project.repo}</span>
                   </label>
-                  <div className="space-y-1 pl-6 text-xs text-muted-foreground">
-                    <p>
-                      {project.kind === 'backend' ? 'Backend' : 'Frontend'} ·{' '}
-                      {project.source === 'worktree' ? 'Worktree do card' : 'Repositório cadastrado'}
-                    </p>
-                    <p className="break-all font-mono text-[11px]">{project.directory}</p>
-                    <p className="break-all font-mono text-[11px]">{project.command}</p>
-                    <p className="font-mono tabular-nums">localhost:{project.port || '…'}</p>
-                    {project.services && (
-                      <ul className="space-y-1">
-                        {project.services.map((service) => (
-                          <li key={service.name}>
-                            {service.name} · localhost:{service.name === 'external-api' ? project.port : service.port}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
                 </div>
-                <label className="space-y-1 pt-1 text-xs text-muted-foreground">
+                <label className="space-y-1 text-xs text-muted-foreground">
                   <span>Porta</span>
                   <Input
                     type="number"
