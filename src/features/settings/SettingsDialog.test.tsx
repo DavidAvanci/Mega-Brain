@@ -174,7 +174,7 @@ test.each([false, true])('legacy settings open every agent without missing model
     ['Tarefas', 'Execução de tarefas', codex ? 'GPT-6.1 Sol' : 'Fable'],
     ['Verificador', 'Verificador', codex ? 'GPT-6.1 Sol' : 'Fable'],
     ['Ambiente', 'Ambiente de testes', codex ? 'Automático' : 'Haiku'],
-    ['Smart Diff', 'Revisão Smart Diff', 'Automático'],
+    ['Revisor', 'Revisor de código', 'Automático'],
   ]) {
     const tab = [...document.querySelectorAll<HTMLButtonElement>('[aria-label="Prompts de execução"] [role=tab]')].find(
       (button) => button.textContent === label,
@@ -448,13 +448,14 @@ test('search preserves the current panel, clears with Escape and selects the mat
   expect(input.value).toBe('')
   expect(state.close).not.toHaveBeenCalled()
   expect(document.querySelector('section[aria-label="Shell e terminal"]')).toBe(panel)
-  await search('revisao smart diff')
+  await search('revisor de código')
   await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
   expect(document.querySelector('[role=tab][aria-selected=true]')?.textContent).toBe('Prompts e modelos')
   expect(document.querySelector('[aria-label="Prompts de execução"] [role=tab][aria-selected=true]')?.textContent).toBe(
-    'Smart Diff',
+    'Revisor',
   )
   expect(document.querySelector('[data-settings-section="prompt-smartDiffReview"]')?.getAttribute('role')).toBe(
     'tabpanel',
   )
 })
+

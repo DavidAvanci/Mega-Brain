@@ -11,6 +11,8 @@ import type {
 } from '../../shared/domain/repositories'
 import type { ProcessRunner } from '../process'
 import { parseEnvironmentVariables } from './environment-files'
+import { parseDirtyFileSummary } from '../../shared/domain/git-status'
+import type { DefaultBranchDirtyFile } from '../../shared/domain/agents'
 
 const environmentKeys: RepositoryEnvironmentKey[] = ['local', 'staging', 'prod']
 const emptyEnvironment = (): RepositoryEnvironment => ({ enabled: true })
@@ -317,29 +319,83 @@ export class RepositoryRegistry {
     })
   }
 
-  async resolveDirtyChanges(id: unknown, dirtyAction: unknown, commitMessage?: unknown): Promise<RepositoryStatus> {
+  async resolveDirtyChanges(
+    id: unknown,
+    dirtyAction: unknown,
+    commitMessage?: unknown,
+    targetPath?: unknown,
+    expectedBranch?: unknown,
+    expectedFiles?: unknown,
+  ): Promise<RepositoryStatus> {
     if (typeof id !== 'string' || !id) throw new Error('Repositório não encontrado')
     if (dirtyAction !== 'commit' && dirtyAction !== 'stash' && dirtyAction !== 'discard') {
       throw new Error('Ação inválida para alterações locais')
     }
     return this.exclusive(id, async () => {
       const repository = await this.getRepository(id)
-      const dirty = Boolean(await this.git(repository.path, ['status', '--porcelain']))
+      const path = targetPath === undefined ? repository.path : await realpath(String(targetPath))
+      if (targetPath !== undefined) {
+        const [repositoryCommonDir, targetCommonDir, branch] = await Promise.all([
+          this.git(repository.path, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
+          this.git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
+          this.git(path, ['branch', '--show-current']),
+        ])
+        if ((await realpath(repositoryCommonDir)) !== (await realpath(targetCommonDir)))
+          throw new Error('A worktree informada não pertence a este repositório')
+        if (typeof expectedBranch !== 'string' || branch !== expectedBranch)
+          throw new Error('A branch mudou desde que o erro foi exibido; reabra o card para atualizar a lista')
+        const worktrees = await this.git(repository.path, ['worktree', 'list', '--porcelain'])
+        const registered = await Promise.all(worktrees.split(/\n\s*\n/).map(async (entry) => {
+          const worktreePath = entry.split('\n').find((line) => line.startsWith('worktree '))?.slice('worktree '.length)
+          return worktreePath && (await realpath(worktreePath).catch(() => worktreePath)) === path &&
+            entry.split('\n').includes(`branch refs/heads/${expectedBranch}`)
+        }))
+        if (!registered.some(Boolean)) throw new Error('A worktree ou a branch mudou desde que o erro foi exibido')
+      }
+      const status = await this.gitRaw(path, ['status', '--porcelain=v1', '--untracked-files=all', '-z'])
+      if (Array.isArray(expectedFiles)) {
+        const currentFiles = parseDirtyFileSummary(status)
+        const expected = expectedFiles.filter(
+          (file): file is DefaultBranchDirtyFile =>
+            Boolean(file) && typeof file === 'object' &&
+            typeof (file as Record<string, unknown>).path === 'string' &&
+            typeof (file as Record<string, unknown>).change === 'string',
+        )
+        if (currentFiles.length && JSON.stringify(currentFiles) !== JSON.stringify(expected))
+          throw new Error('As alterações locais mudaram desde que o erro foi exibido; reabra o card para atualizar a lista')
+      }
+      const dirty = Boolean(status)
       if (dirty) {
         if (dirtyAction === 'commit') {
           if (typeof commitMessage !== 'string' || !commitMessage.trim())
             throw new Error('Informe a mensagem do commit')
-          await this.git(repository.path, ['add', '--all'])
-          await this.git(repository.path, ['commit', '-m', commitMessage.trim()], 60_000)
+          if (targetPath !== undefined) {
+            await this.git(
+              path,
+              ['stash', 'push', '--include-untracked', '-m', 'Mega Brain: antes de atualizar e commitar a branch default'],
+              30_000,
+            )
+            try {
+              await this.git(path, ['fetch', 'origin'], 30_000)
+              await this.git(path, ['merge', '--ff-only', `refs/remotes/origin/${String(expectedBranch)}`], 60_000)
+              await this.git(path, ['stash', 'pop'], 30_000)
+            } catch (error) {
+              throw new Error(
+                `As alterações foram preservadas no stash, mas não foi possível reaplicá-las e atualizar a branch: ${message(error)}`,
+              )
+            }
+          }
+          await this.git(path, ['add', '--all'])
+          await this.git(path, ['commit', '-m', commitMessage.trim()], 60_000)
         } else if (dirtyAction === 'stash') {
           await this.git(
-            repository.path,
+            path,
             ['stash', 'push', '--include-untracked', '-m', 'Mega Brain: antes de sincronizar remoto'],
             30_000,
           )
         } else {
-          await this.git(repository.path, ['reset', '--hard', 'HEAD'])
-          await this.git(repository.path, ['clean', '-fd'])
+          await this.git(path, ['reset', '--hard', 'HEAD'])
+          await this.git(path, ['clean', '-fd'])
         }
       }
       return this.status(id)
@@ -469,7 +525,11 @@ export class RepositoryRegistry {
     return this.run(cwd, 'git', args, timeout)
   }
 
-  private run(cwd: string, command: string, args: string[], timeout: number): Promise<string> {
+  private gitRaw(cwd: string, args: string[], timeout = 5000): Promise<string> {
+    return this.run(cwd, 'git', args, timeout, false)
+  }
+
+  private run(cwd: string, command: string, args: string[], timeout: number, trimOutput = true): Promise<string> {
     return new Promise((resolve, reject) => {
       this.runner.execFile(
         command,
@@ -477,7 +537,7 @@ export class RepositoryRegistry {
         { cwd, timeout, encoding: 'utf8', maxBuffer: 1024 * 1024 },
         (error, stdout, stderr) => {
           if (error) reject(new Error(stderr.trim() || error.message))
-          else resolve(stdout.trim())
+          else resolve(trimOutput ? stdout.trim() : stdout)
         },
       )
     })

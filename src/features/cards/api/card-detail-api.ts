@@ -3,7 +3,7 @@ import { ApiError, apiClient } from '@/shared/api/api-client'
 import { requestJson } from '@/shared/api/request-json'
 import type { EditorDiscovery, MegaBrainSettings } from '../../../../shared/domain/settings'
 import { withSettingsDefaults } from '@/settings-state'
-import type { ChatAgentSettings, ChatEntry, ChatEvent, ChatModelSelection } from '../../../../shared/contracts/chat'
+import type { ChatAgentSettings, ChatEntry, ChatEvent, ChatImageInput, ChatModelSelection } from '../../../../shared/contracts/chat'
 import type { AgentInfo, CardAgentUsage, CardAgentUsageEntry } from '../../../../shared/domain/agents'
 import type { TaskChecklist } from '../../../../shared/domain/task-checklist'
 
@@ -152,11 +152,12 @@ export async function sendChat(
   onEvent: (event: ChatEvent) => void,
   knowledgeRefs: KnowledgeRef[] = [],
   selection?: ChatModelSelection,
+  images: ChatImageInput[] = [],
 ): Promise<void> {
   try {
     await apiClient().sse('/api/chat/send', {
       method: 'POST',
-      body: JSON.stringify({ name, text, knowledgeRefs, selection }),
+      body: JSON.stringify({ name, text, knowledgeRefs, selection, images }),
       headers: { 'Content-Type': 'application/json' },
       onEvent: (event) => onEvent(event as ChatEvent),
     })

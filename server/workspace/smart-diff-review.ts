@@ -112,7 +112,12 @@ export function reviewPrompt(
   ].join('\n')
 }
 
-export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRunner, owner?: ProcessOwner) {
+export function createSmartDiffReview(
+  config: MegaBrainConfig,
+  runner: ProcessRunner,
+  owner?: ProcessOwner,
+  onComplete?: (cardPath: string) => void,
+) {
   const states = new Map<string, DiffState>()
   const errors = new BoundedCache<string, DiffState>(100)
 
@@ -237,6 +242,7 @@ export function createSmartDiffReview(config: MegaBrainConfig, runner: ProcessRu
     const temporary = join(cardPath, 'diff.json.tmp')
     writeFileSync(temporary, `${JSON.stringify(document, null, 2)}\n`)
     renameSync(temporary, join(cardPath, 'diff.json'))
+    onComplete?.(cardPath)
     // The completed document is already persisted. Do not retain all its patches.
     states.delete(cardPath)
   }

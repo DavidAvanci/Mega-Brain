@@ -1,7 +1,7 @@
 import { validCheckpoint, stageSessionId } from './agent-checkpoint'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import type { AgentInfo } from '../../shared/domain/agents'
+import type { AgentInfo, DefaultBranchDirtyChange } from '../../shared/domain/agents'
 import { agentNarration, parseJsonRecord, readTail, record } from '../agent-log'
 import { readFlow } from './card-folder'
 import { readCard } from './card-record'
@@ -24,6 +24,32 @@ function pidAlive(pid: number): boolean {
 const RESULT_SUBTYPE_ERRORS: Record<string, string> = {
   error_max_turns: 'Limite de turnos atingido',
   error_during_execution: 'Erro durante a execução',
+}
+
+function readDefaultBranchDirty(value: unknown): DefaultBranchDirtyChange[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const changes = value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const item = entry as Record<string, unknown>
+    if (
+      typeof item.repositoryId !== 'string' ||
+      typeof item.repository !== 'string' ||
+      typeof item.branch !== 'string' ||
+      typeof item.worktreePath !== 'string' ||
+      !Array.isArray(item.files)
+    ) return []
+    const files = item.files.flatMap((file) => {
+      if (!file || typeof file !== 'object') return []
+      const candidate = file as Record<string, unknown>
+      return typeof candidate.path === 'string' && typeof candidate.change === 'string'
+        ? [{ path: candidate.path, change: candidate.change }]
+        : []
+    })
+    return files.length
+      ? [{ repositoryId: item.repositoryId, repository: item.repository, branch: item.branch, worktreePath: item.worktreePath, files }]
+      : []
+  })
+  return changes.length ? changes : undefined
 }
 
 export function stageEndedDueToRateLimit(path: string, stage: Stage): boolean {
@@ -118,6 +144,8 @@ export function readAgent(path: string, alive: (pid: number) => boolean = pidAli
       if (event?.type === 'thread.started' && typeof event.thread_id === 'string') info.sessionId = event.thread_id
       if (event?.type === 'result') {
         finished = true
+        const details = record(event.details)
+        info.defaultBranchDirty = readDefaultBranchDirty(details?.defaultBranchDirty)
         if (event.subtype === 'success' && !event.is_error) info.status = 'concluido'
         else {
           info.status = 'erro'

@@ -78,7 +78,16 @@ export function ChatTranscript({ entries, busy = false }: { entries: ChatEntry[]
               key={block.index}
               className="ml-auto max-w-[85%] rounded-xl bg-muted px-4 py-3 text-sm whitespace-pre-wrap break-words"
             >
-              <p>{entry.text}</p>
+              {entry.text && <p>{entry.text}</p>}
+              {entry.attachments && entry.attachments.length > 0 && (
+                <div className={`flex flex-wrap gap-1.5 ${entry.text ? 'mt-2' : ''}`} aria-label="Imagens anexadas">
+                  {entry.attachments.map((attachment, attachmentIndex) => (
+                    <span key={`${attachment.name}-${attachmentIndex}`} className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-background/70 px-2 py-1 text-[11px] text-muted-foreground">
+                      <span className="truncate">{attachment.name}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
               {entry.queued && (
                 <p className="mt-2 text-[11px] text-muted-foreground">
                   Pendente · será entregue na próxima chamada do agente

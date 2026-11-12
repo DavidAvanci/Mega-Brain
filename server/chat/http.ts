@@ -35,7 +35,7 @@ export const chatAbortHttp = (service: ChatService): ApiHandler =>
 export const chatSendHttp =
   (service: ChatService): SseHandler<ChatEvent> =>
   async (r) => {
-    const body = r.body as { name?: unknown; text?: unknown; knowledgeRefs?: unknown; selection?: unknown } | undefined
+    const body = r.body as { name?: unknown; text?: unknown; knowledgeRefs?: unknown; selection?: unknown; images?: unknown } | undefined
     return {
       status: 200,
       headers: SSE_HEADERS,
@@ -50,6 +50,7 @@ export const chatSendHttp =
             emit,
             knowledgeRefs(body?.knowledgeRefs),
             body?.selection,
+            body?.images,
           )
         } catch (error) {
           emit({ type: 'done', error: error instanceof Error ? error.message : String(error) })

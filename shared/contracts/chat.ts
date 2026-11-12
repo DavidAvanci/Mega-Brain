@@ -5,6 +5,13 @@ export interface ChatEntry {
   output?: string
   source?: string
   queued?: boolean
+  attachments?: { name: string; mimeType: string; path?: string }[]
+}
+
+export interface ChatImageInput {
+  name: string
+  mimeType: string
+  data: string
 }
 
 export interface ChatAgentSettings {

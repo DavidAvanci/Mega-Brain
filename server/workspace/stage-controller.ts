@@ -25,6 +25,7 @@ type StageControllerConfig = Pick<MegaBrainConfig, 'executables' | 'worktreesDir
 
 export interface StageController {
   start(path: string, stage: Stage, card: CardData, model?: string): void
+  retry(path: string, requestedStage: unknown): void
   stop(cardPath: string, requestedStage: unknown): Promise<void>
   pause(cardPath: string, requestedStage: unknown): Promise<void>
   resume(cardPath: string, requestedStage: unknown): void
@@ -226,6 +227,23 @@ export function createStageController(
     })
   }
 
+  const retry = (cardPath: string, requestedStage: unknown) => {
+    if (pausing.has(cardPath) || runningStages.has(cardPath) || selecting.has(cardPath))
+      throw new Error('A execução ainda está encerrando')
+    const agent = readAgent(cardPath)
+    const stage = STAGES.find((candidate) => candidate.name === requestedStage)
+    const card = readCard(cardPath, basename(cardPath))
+    if (
+      !stage ||
+      stage.name !== 'run-task-checklist' ||
+      agent?.stage !== stage.name ||
+      agent.status !== 'erro' ||
+      !agent.defaultBranchDirty?.length
+    ) throw new Error('Não há uma atualização da branch default aguardando resolução')
+    if (card.status !== stage.status) throw new Error('O card mudou de etapa; restaure a etapa original antes de tentar novamente')
+    start(cardPath, stage, card)
+  }
+
   const stop = async (cardPath: string, requestedStage: unknown) => {
     if (pausing.has(cardPath)) throw new Error('A pausa ainda está em andamento')
     const stageName = String(requestedStage ?? '')
@@ -280,5 +298,5 @@ export function createStageController(
     rmSync(join(cardPath, AGENT_FILE), { force: true })
   }
 
-  return { start, stop, pause, resume, clear }
+  return { start, stop, pause, resume, retry, clear }
 }

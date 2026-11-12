@@ -215,9 +215,11 @@ export function createProductionRouteTable(options: ProductionRouteOptions): Pro
     ['POST', '/api/workspace/dev-env/agent'],
     ['POST', '/api/workspace/stage/pause'],
     ['POST', '/api/workspace/stage/resume'],
+    ['POST', '/api/workspace/stage/retry'],
     ['POST', '/api/workspace/stage/reset'],
     ['POST', '/api/workspace/update'],
     ['POST', '/api/workspace/delete'],
+    ['POST', '/api/workspace/jira-id'],
   ] as const)
     add(method, path, workspace)
   const triage = cardTriageHttp(createCardTriageService(config, { logger: stderrJsonlLogger(process.stderr) }))

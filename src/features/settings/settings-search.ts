@@ -174,8 +174,8 @@ const ENTRIES: SettingsSearchEntry[] = [
   {
     target: 'prompt-smartDiffReview',
     tab: 'models',
-    title: 'Revisão Smart Diff: prompt, modelo e esforço',
-    description: 'Instruções para revisar as alterações de código.',
+    title: 'Revisor de código: prompt, modelo e esforço',
+    description: 'Instruções para identificar riscos e regressões nas alterações.',
     keywords: 'prompts modelos esforço effort claude codex review agente',
   },
   {

@@ -50,6 +50,7 @@ import { Badge } from '@/components/ui/badge'
 import { PrChip, StageResetButton } from './CardView'
 import { isTauriDesktop } from '@/desktopBootstrap'
 import { Markdown } from '@/Markdown'
+import { toast } from 'sonner'
 import { countTasks, type TaskCounts } from '../../../../shared/domain/task-checklist'
 import { TaskChecklist } from './TaskChecklist'
 import { relativeTime } from '@/relativeTime'
@@ -68,7 +69,6 @@ import {
   type PrState,
 } from '../../../../shared/domain/cards'
 
-const DiffTab = lazy(() => import('./DiffTab').then((module) => ({ default: module.DiffTab })))
 const DevEnvTab = lazy(() =>
   import('@/features/dev-environments/DevEnvTab').then((module) => ({ default: module.DevEnvTab })),
 )
@@ -81,7 +81,6 @@ const FILE_TABS = [
 const DEFAULT_TAB: Partial<Record<Card['status'], string>> = {
   'revisao-de-plano': 'PLAN.md',
   desenvolvendo: 'TASK-CHECKLIST.json',
-  'code-review': 'diff',
   staging: 'links',
   'aguardando-deploy': 'links',
 }
@@ -553,7 +552,7 @@ export function CardModal({
   const [activeTab, setActiveTab] = useState(
     initialTab === 'environment-configure'
       ? 'environments'
-      : initialTab && initialTab !== 'chat'
+      : initialTab && initialTab !== 'chat' && initialTab !== 'diff'
         ? initialTab
         : (DEFAULT_TAB[card.status] ?? 'description'),
   )
@@ -621,7 +620,16 @@ export function CardModal({
     setJiraConversionPending(true)
     setJiraConversionError(null)
     try {
-      await convertCardToJira(card)
+      const result = await convertCardToJira(card)
+      if (!result.sprintAdded || result.statusWarning) {
+        toast.warning(
+          [
+            `A issue ${result.key} foi criada e vinculada ao card.`,
+            result.statusWarning ? `Aviso sobre o status: ${result.statusWarning}` : '',
+            !result.sprintAdded ? `Ela não entrou em ${result.sprintName}. ${result.sprintWarning ?? ''}` : '',
+          ].filter(Boolean).join(' '),
+        )
+      }
     } catch (cause) {
       setJiraConversionError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -752,9 +760,6 @@ export function CardModal({
                     </TabsTrigger>
                   )
                 })}
-                <TabsTrigger value="diff" className="flex-none px-2.5">
-                  Diff
-                </TabsTrigger>
                 <TabsTrigger value="environments" className="flex-none px-2.5">
                   Ambientes
                   {card.devEnv?.status === 'erro' && (
@@ -876,13 +881,6 @@ export function CardModal({
                   </TabsContent>
                 )
               })}
-              <TabsContent value="diff" className="min-h-0 overflow-hidden">
-                {activeTab === 'diff' && (
-                  <Suspense fallback={<LoadingLines />}>
-                    <DiffTab cardId={card.id} />
-                  </Suspense>
-                )}
-              </TabsContent>
               <TabsContent value="environments" keepMounted className="min-h-0 overflow-hidden px-5 py-4">
                 <Suspense fallback={<p className="text-muted-foreground">Carregando ambientes…</p>}>
                   <DevEnvTab

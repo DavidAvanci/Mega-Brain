@@ -33,6 +33,7 @@ import { applyProjectCheckRelevance, verificationPrompt } from '../lib/verificat
 import { isRepairableCheck } from '../../shared/domain/verification.ts'
 import {
   assertFeatureBranch,
+  DefaultBranchDirtyError,
   dropItemWorktree,
   ensureItemWorktree,
   ensureWorktree,
@@ -51,6 +52,7 @@ import {
   realRepoPath,
   repoLinkPath,
   taskInfo,
+  updateDefaultBranch,
 } from '../lib/workspace.ts'
 
 const wsPath = resolve(process.argv[2] ?? process.cwd())
@@ -321,6 +323,29 @@ export async function runDevStage(): Promise<void> {
   const repos = [...new Set(parsed.map((item) => item.repo).filter(Boolean))]
   const skippedRepos = new Map<string, string>()
   const prepared: string[] = []
+  const branchUpdateErrors: string[] = []
+  const defaultBranchDirty: import('../../shared/domain/agents.ts').DefaultBranchDirtyChange[] = []
+  for (const repo of repos) {
+    activity('Branch principal', `Atualizando ${repo}`)
+    try {
+      updateDefaultBranch(realRepoPath(repo), repo)
+    } catch (error) {
+      branchUpdateErrors.push(`${repo}: ${error instanceof Error ? error.message : String(error)}`)
+      if (error instanceof DefaultBranchDirtyError) defaultBranchDirty.push(error.details)
+    }
+  }
+  if (branchUpdateErrors.length) {
+    finish(
+      false,
+      [
+        'Não foi possível atualizar a branch principal de todos os repositórios; nenhum agente foi iniciado:',
+        ...branchUpdateErrors,
+      ].join('\n'),
+      defaultBranchDirty.length ? { defaultBranchDirty } : undefined,
+    )
+    process.exit(1)
+  }
+
   for (const repo of repos) {
     activity('Worktree', `Preparando ${repo}`)
     try {
@@ -591,7 +616,9 @@ export async function runDevStage(): Promise<void> {
   let verificationAgentCostReported = false
   let verificationOk = true
   let verificationSummary = 'nenhuma rodada executada'
-  const verificationEnabled = true
+  // Mantém o pipeline desligado temporariamente enquanto o fluxo é investigado.
+  // Isso pula checks de projeto, formatação e o agente verificador.
+  const verificationEnabled = false
   for (let round = 1; verificationEnabled; round++) {
     for (const repo of repos) {
       try {

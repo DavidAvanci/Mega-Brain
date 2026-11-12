@@ -37,6 +37,7 @@ export function listBoardCards(
   sessions: readonly AgentSession[] = [],
   isSmartDiffRunning: (path: string) => boolean = () => false,
   smartDiffActivity: (path: string) => AgentInfo | undefined = () => undefined,
+  onReviewEntry: (path: string) => void = () => undefined,
 ) {
   mkdirSync(root, { recursive: true })
   const activeSessionsByCard = new Map<string, AgentSession[]>()
@@ -81,6 +82,7 @@ export function listBoardCards(
         agent = readAgent(path)
       }
       const advanced = advanceStage(path, card, agent, startStage)
+      if (advanced.status === 'revisao-de-codigo' && card.status !== advanced.status) onReviewEntry(path)
       if (advanced !== card) agent = readAgent(path)
       const activeSessions = agent?.status === 'pausado' ? [] : (activeSessionsByCard.get(entry.name) ?? [])
         .filter((session) => session.id !== diffActivity?.sessionId)

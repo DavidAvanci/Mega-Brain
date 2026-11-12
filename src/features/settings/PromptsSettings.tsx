@@ -42,9 +42,9 @@ export const PROMPT_FIELDS: {
   {
     key: 'smartDiffReview',
     stage: 'smart-diff-review',
-    label: 'Smart Diff',
-    title: 'Revisão Smart Diff',
-    help: 'Instruções usadas ao gerar uma revisão Smart Diff.',
+    label: 'Revisor',
+    title: 'Revisor de código',
+    help: 'Analisa as alterações, prioriza achados e registra correções e riscos.',
   },
   {
     key: 'conflictResolution',

@@ -43,6 +43,12 @@ export const STATUS_META: Record<Status, StatusMeta> = {
     iconColor: 'text-[var(--status-4)]',
     highlight: 'bg-[var(--status-4)]',
   },
+  'revisao-de-codigo': {
+    icon: EyeIcon,
+    accent: 'border-t-[var(--status-5)]',
+    iconColor: 'text-[var(--status-5)]',
+    highlight: 'bg-[var(--status-5)]',
+  },
   'code-review': {
     icon: GitPullRequestIcon,
     accent: 'border-t-[var(--status-6)]',
@@ -71,6 +77,6 @@ export const STATUS_META: Record<Status, StatusMeta> = {
 
 export const STATUS_GROUPS: { label: string; statuses: Status[] }[] = [
   { label: 'Plano', statuses: ['a-fazer', 'planejando', 'revisao-de-plano'] },
-  { label: 'Execução', statuses: ['desenvolvendo', 'code-review'] },
+  { label: 'Execução', statuses: ['desenvolvendo', 'revisao-de-codigo', 'code-review'] },
   { label: 'Entrega', statuses: ['staging', 'aguardando-deploy', 'producao'] },
 ]

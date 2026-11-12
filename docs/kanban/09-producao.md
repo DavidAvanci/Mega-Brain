@@ -2,13 +2,13 @@
 
 ## Ao entrar na etapa
 
-1. O status é salvo. Não há script ou agente automático associado à entrada em Produção, nem deploy disparado por essa movimentação. Se a mudança foi feita na interface e o card tem chave Jira válida, a interface tenta mudar o chamado para `EM PRODUÇÃO`.
+1. O status é salvo. Não há script ou agente automático associado à entrada em Produção, nem deploy disparado por essa movimentação. Se a mudança foi feita na interface e o card tem chave Jira válida, a interface tenta mudar o chamado para `PRODUÇÃO`.
 2. O card permanece visível por aproximadamente **24 horas desde a última modificação de `card.json`**. Ao listar o quadro após esse prazo, o servidor interrompe o ambiente dev, remove as worktrees gerenciadas e apaga a pasta do card. Portanto, a limpeza ocorre na leitura do quadro, não exatamente no instante em que o prazo vence.
 3. PRs registrados e ambientes dev ainda ativos podem continuar visíveis durante esse período. A exclusão pode falhar se uma worktree não puder ser removida; nesse caso, a listagem registra o erro em vez de ocultar silenciosamente o card.
 
 ## Contrato técnico
 
-**Entrada:** uma movimentação manual envia `POST /api/workspace/update` com `{ name: CARD_ID, status: 'producao' }`. `updateCard` reescreve `CARD_DIR/card.json`. `stageFor('producao')` retorna `undefined`: não há `spawn`, comando de deploy, prompt, log ou agente novo. Para uma chave Jira válida, a interface tenta `POST /api/jira/transition` com `EM PRODUÇÃO` depois de atualizar o card.
+**Entrada:** uma movimentação manual envia `POST /api/workspace/update` com `{ name: CARD_ID, status: 'producao' }`. `updateCard` reescreve `CARD_DIR/card.json`. `stageFor('producao')` retorna `undefined`: não há `spawn`, comando de deploy, prompt, log ou agente novo. Para uma chave Jira válida, a interface tenta `POST /api/jira/transition` com `PRODUÇÃO` depois de atualizar o card.
 
 **Prazo e gatilho de exclusão:** cada `GET /api/workspace` chama `listBoardCards`. Para um card em Produção, `expiredInProduction` compara `Date.now()` com o `mtime` de `CARD_DIR/card.json`; o limiar é `24 * 60 * 60 * 1000` ms. A contagem usa a última gravação do arquivo, inclusive uma edição posterior, e não uma data fixa de entrada. O frontend consulta a listagem a cada cinco segundos enquanto o quadro está ativo.
 

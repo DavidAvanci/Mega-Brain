@@ -19,7 +19,8 @@ import {
   activeRepositoryPath,
   assertRegisteredWorktree,
 } from '../../server/repositories/catalog.ts'
-import { currentBranch, defaultBranch, git, hasRef } from './git.ts'
+import { changedFileSummary, currentBranch, defaultBranch, git, hasRef } from './git.ts'
+import type { DefaultBranchDirtyChange } from '../../shared/domain/agents.ts'
 import { installCommand, lockfilesMatch, resolvePackageManagerCommand } from './packageManager.ts'
 import { readPlan } from './plan.ts'
 import { diagnoseProjectEnvironment } from './project-environment.ts'
@@ -171,6 +172,56 @@ export function assertFeatureBranch(cwd: string, repo: string): void {
   if (branch === 'HEAD' || branch === defaultBranch(cwd)) {
     throw new Error(`${repo}: ${cwd} está em ${branch}, não numa feature branch`)
   }
+}
+
+export class DefaultBranchDirtyError extends Error {
+  constructor(readonly details: DefaultBranchDirtyChange) {
+    super(`${details.repository}: ${details.branch} está com alterações locais`)
+  }
+}
+
+/** Fast-forward the local default branch to its freshly fetched upstream before development starts. */
+export function updateDefaultBranch(real: string, repo: string): void {
+  git(real, 'fetch', 'origin')
+  const branch = defaultBranch(real)
+  const localRef = `refs/heads/${branch}`
+  const remoteRef = `refs/remotes/origin/${branch}`
+  const remoteHash = git(real, 'rev-parse', '--verify', remoteRef)
+  if (!hasRef(real, localRef)) {
+    git(real, 'branch', branch, remoteRef)
+    return
+  }
+  const localHash = git(real, 'rev-parse', '--verify', localRef)
+  if (localHash === remoteHash) return
+  try {
+    git(real, 'merge-base', '--is-ancestor', remoteHash, localHash)
+    return
+  } catch {
+    // The local default branch can be ahead after the user chose to commit
+    // the changes that originally blocked the update.
+  }
+  try {
+    git(real, 'merge-base', '--is-ancestor', localHash, remoteHash)
+  } catch {
+    throw new Error(`${repo}: ${branch} divergiu de origin/${branch}; reconcilie a branch antes de iniciar Desenvolvendo`)
+  }
+
+  const checkedOut = git(real, 'worktree', 'list', '--porcelain')
+    .split('\n\n')
+    .find((entry) => entry.split('\n').includes(`branch ${localRef}`))
+  if (checkedOut) {
+    const path = checkedOut.split('\n').find((line) => line.startsWith('worktree '))?.slice('worktree '.length)
+    if (!path) throw new Error(`${repo}: não foi possível localizar a worktree de ${branch}`)
+    const files = changedFileSummary(path)
+    if (files.length) {
+      const repository = activeRepositories().find((entry) => entry.alias.toLowerCase() === repo.toLowerCase())
+      if (!repository) throw new Error(`${repo}: repositório não encontrado no catálogo ativo`)
+      throw new DefaultBranchDirtyError({ repositoryId: repository.id, repository: repo, branch, worktreePath: path, files })
+    }
+    git(path, 'merge', '--ff-only', remoteRef)
+    return
+  }
+  git(real, 'update-ref', localRef, remoteHash, localHash)
 }
 
 // As dependências e a configuração local pertencem ao checkout original (master).

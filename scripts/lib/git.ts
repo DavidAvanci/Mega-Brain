@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { parseDirtyFileSummary } from '../../shared/domain/git-status.ts'
 import { nodeProcessRunner, type ProcessRunner } from '../../server/process.ts'
 
 export class CmdError extends Error {
@@ -54,6 +55,10 @@ export function changedFiles(cwd: string): string[] {
     if (entries[i][0] === 'R' || entries[i][0] === 'C') i++
   }
   return paths
+}
+
+export function changedFileSummary(cwd: string): { path: string; change: string }[] {
+  return parseDirtyFileSummary(runRaw(cwd, 'git', ['status', '--porcelain=v1', '--untracked-files=all', '-z']))
 }
 
 export function existingPrUrl(cwd: string, head: string, base: string): string | null {

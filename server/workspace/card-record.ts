@@ -94,10 +94,16 @@ export function readCard(folderPath: string, name: string): CardData {
       data = JSON.parse(readFileSync(file, 'utf8'))
     } catch {}
   }
+  let description = typeof data.description === 'string' ? data.description : ''
+  try {
+    description = readFileSync(join(folderPath, 'description.md'), 'utf8').replace(/\r?\n$/, '')
+  } catch {
+    /* Older cards keep their description in card.json. */
+  }
   return {
     title: typeof data.title === 'string' && data.title ? data.title : name,
     knowledgeRefs: knowledgeRefs(data.knowledgeRefs),
-    description: typeof data.description === 'string' ? data.description : '',
+    description,
     status:
       data.status === 'auto-testing'
         ? 'code-review'
@@ -113,5 +119,7 @@ export function readCard(folderPath: string, name: string): CardData {
 }
 
 export function writeCard(folderPath: string, card: CardData): void {
-  writeFileSync(join(folderPath, 'card.json'), `${JSON.stringify(card, null, 2)}\n`)
+  const { description, ...metadata } = card
+  writeFileSync(join(folderPath, 'card.json'), `${JSON.stringify(metadata, null, 2)}\n`)
+  writeFileSync(join(folderPath, 'description.md'), `${description}\n`)
 }

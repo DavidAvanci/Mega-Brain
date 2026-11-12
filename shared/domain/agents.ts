@@ -3,6 +3,19 @@ import type { DevEnvStartOptions } from './dev-environments'
 
 export type AgentStatus = 'rodando' | 'aguardando' | 'concluido' | 'erro' | 'morto' | 'pausado'
 
+export interface DefaultBranchDirtyFile {
+  path: string
+  change: string
+}
+
+export interface DefaultBranchDirtyChange {
+  repositoryId: string
+  repository: string
+  branch: string
+  worktreePath: string
+  files: DefaultBranchDirtyFile[]
+}
+
 export interface AgentInfo {
   model?: string
   effort?: string
@@ -20,6 +33,7 @@ export interface AgentInfo {
   activity?: string
   phase?: string
   error?: string
+  defaultBranchDirty?: DefaultBranchDirtyChange[]
   progress?: { done: number; total: number }
   visualState?: IslandVisualState
   question?: string

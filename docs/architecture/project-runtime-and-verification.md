@@ -18,7 +18,7 @@ Builds e servidores do ambiente dev resolvem runtime para cada diretório de pro
 
 `verification-profile.json` representa comandos descobertos a partir de scripts do repositório e configuração relevante. Seu fingerprint inclui configuração, lockfile, gerenciador e runtime. `VerificationReport` usa estados `passed`, `failed`, `skipped`, `environment` e `inconclusive`; apenas falhas classificadas como código, com arquivos atribuídos, podem gerar reparo.
 
-O pipeline de verificação está habilitado no scheduler (`verificationEnabled = true`). Ele roda após a integração das tarefas, com baseline, checks seguros por arquivo, reparos limitados e formatação configurada. Um item `done` significa implementação integrada pelo scheduler; não significa que lint, build ou testes foram executados. O resumo registra os resultados da rodada.
+O pipeline de verificação está temporariamente desabilitado no scheduler (`verificationEnabled = false`). Enquanto desligado, não há baseline, checks de projeto, reparos automáticos, formatação nem agente verificador. Um item `done` significa implementação integrada pelo scheduler; não significa que lint, build ou testes foram executados.
 
 ## Baseline, reparos e resultados
 
@@ -30,6 +30,6 @@ Cada execução de check gera telemetria JSONL sem stdout/stderr, junto com rela
 
 ## Estado e ativação futura
 
-O pipeline, incluindo baseline, reparos, formatação e confirmação pré-commit, está habilitado no scheduler (`verificationEnabled = true`). Um item `done` significa implementação integrada pelo scheduler; não significa que lint, build ou testes foram executados. O resumo registra os resultados da rodada.
+O pipeline, incluindo baseline, checks, reparos e formatação, está temporariamente desligado no scheduler (`verificationEnabled = false`). Reativá-lo exige corrigir e revisar o fluxo de verificação. Runtime por projeto e dependências isoladas continuam ativos para os executores.
 
-Para rollback, desligue o gate do pipeline; preserve relatórios, perfis, tentativas, tarefas e commits já feitos. Runtime por projeto e dependências isoladas podem continuar ativos separadamente.
+Para reativar, ligue o gate do pipeline somente após corrigir e revisar o fluxo. Runtime por projeto e dependências isoladas continuam ativos independentemente da verificação.

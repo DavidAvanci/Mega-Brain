@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Markdown } from '@/Markdown'
 import { openTerminal } from './features/cards/model/card-commands'
 import { Tip } from './Tip'
+import { DefaultBranchDirtyDialog } from './features/cards/ui/DefaultBranchDirtyDialog'
 import type { AgentInfo, AgentStatus } from '../shared/domain/agents'
 import type { Card } from '../shared/domain/cards'
 
@@ -301,6 +302,9 @@ export function AgentBadge({
               <DialogTitle>Erro do agente {name}</DialogTitle>
               <DialogDescription>Card {cardId}</DialogDescription>
             </DialogHeader>
+            {agent.defaultBranchDirty?.length ? (
+              <DefaultBranchDirtyDialog key={`${cardId}-${agent.defaultBranchDirty.map((entry) => entry.repositoryId).join('-')}`} cardId={cardId} changes={agent.defaultBranchDirty} />
+            ) : null}
             {structuredError ? (
               <div className="min-h-0 flex-1 space-y-4 overflow-auto pr-1 select-text">
                 <section className="rounded-md border bg-muted/40 p-3">

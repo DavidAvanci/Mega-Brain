@@ -126,14 +126,14 @@ export async function syncJiraCards(): Promise<number> {
   return missing.length
 }
 
-export async function convertCardToJira(card: Card): Promise<string> {
-  const issue = await createJiraIssue(card.title, card.description)
+export async function convertCardToJira(card: Card): Promise<Awaited<ReturnType<typeof createJiraIssue>>> {
+  const issue = await createJiraIssue(card.title, card.description, card.status)
   await workspaceAction('/api/workspace/jira-id', 'Issue criada, mas não foi possível atualizar o ID local', {
     name: card.id,
     key: issue.key,
   })
   await refresh()
-  return issue.key
+  return issue
 }
 
 export async function deleteCard(name: string): Promise<void> {
@@ -221,6 +221,10 @@ export const pauseCardAgents = (name: string, stage: string) =>
   action('/api/workspace/stage/pause', 'Falha ao pausar os agentes', { name, stage }, true)
 export const resumeCardAgents = (name: string, stage: string) =>
   action('/api/workspace/stage/resume', 'Falha ao retomar os agentes', { name, stage }, true)
+export async function retryCardStage(name: string, stage: string): Promise<void> {
+  await workspaceAction('/api/workspace/stage/retry', 'Falha ao tentar novamente a etapa', { name, stage })
+  await refresh()
+}
 export const resetAutomaticStage = (name: string, stage: string) =>
   action('/api/workspace/stage/reset', 'Falha ao interromper e limpar a etapa', { name, stage }, true)
 export const stopCardAgent = (id: string) => action('/api/agents/stop', 'Falha ao interromper o agente', { id }, true)

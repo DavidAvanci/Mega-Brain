@@ -11,6 +11,7 @@ export function updateCard(
   cardName: string,
   data: Record<string, unknown>,
   startStage: CardStageStarter,
+  onReviewEntry?: (path: string) => void,
 ): void {
   const previous = readCard(cardPath, cardName)
   const next = {
@@ -26,4 +27,5 @@ export function updateCard(
   writeCard(cardPath, next)
   const stage = stageFor(next.status)
   if (stage && next.status !== previous.status) startStage(cardPath, stage, next)
+  if (next.status === 'revisao-de-codigo' && previous.status !== next.status) onReviewEntry?.(cardPath)
 }
