@@ -27,24 +27,24 @@ export interface CardDetail {
   usageBreakdown: CardAgentUsageEntry[]
 }
 
-export interface SmartDiffFile {
-  path: string
-  patch: string
-  explanation: { before?: string; after?: string; tests?: string }
-}
-
-export interface SmartDiffReview {
-  schemaVersion: 2
-  readingGuide?: string
-  sections: { title: string; summary: string; files: SmartDiffFile[] }[]
-  noise: { path: string; reason: string; source: string }[]
-  warnings?: string[]
-}
-
 export interface CardDiffDocument {
   schemaVersion: 1
   generatedAt: string
-  repositories: { name: string; review: SmartDiffReview; explanation?: string }[]
+  repositories: {
+    name: string
+    review: {
+      schemaVersion: 2
+      findings: {
+        severity: string
+        title: string
+        file: string
+        line: number
+        evidence: string
+        impact: string
+        recommendation: string
+      }[]
+    }
+  }[]
 }
 
 export interface DiffState {

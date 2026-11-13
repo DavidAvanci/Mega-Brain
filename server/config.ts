@@ -185,8 +185,8 @@ export function loadMegaBrainConfig(options: LoadMegaBrainConfigOptions = {}): M
           key,
           typeof savedPrompts[key] === 'string'
             ? savedPrompts[key]
-            : key === 'smartDiffReview' && typeof saved.smartDiffReviewPrompt === 'string'
-              ? saved.smartDiffReviewPrompt
+            : key === 'codeReview' && typeof (savedPrompts as Record<string, unknown>).smartDiffReview === 'string'
+              ? (savedPrompts as Record<string, string>).smartDiffReview
               : value,
         ]),
       ) as PromptSettings,

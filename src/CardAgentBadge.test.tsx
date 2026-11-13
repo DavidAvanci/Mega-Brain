@@ -46,14 +46,14 @@ test.each(['run-task-checklist', 'stage-task', 'master-pr-task'])(
   },
 )
 
-test.each(['claude', 'codex'] as const)('Smart Diff shows %s narration instead of the generic phase', (provider) => {
+test.each(['claude', 'codex'] as const)('code review shows %s narration instead of the generic phase', (provider) => {
   const badge = renderToStaticMarkup(
     <AgentBadge
       cardId="card"
       iconOnly
       interactive={false}
       agent={{
-        stage: 'smart-diff-review',
+        stage: 'code-review',
         provider,
         execution: 'agent',
         status: 'rodando',

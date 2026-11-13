@@ -63,7 +63,7 @@ No caso Claude, a exigência de saída é transmitida por `--json-schema` com `s
 │ Título [sempre]                                          │
 │ Agentes dos itens + interrupção individual [se ativos]  │
 │ Progresso global + % + interromper todos [se ativo]     │
-│ Smart Diff em execução [se ativo]                       │
+│ Agentes em execução [se houver]                               │
 │ ──────────────────────────────────────────────────────── │
 │ Abrir pasta/editor · tempo relativo [sempre]            │
 │                                      PRs [se houver]      │

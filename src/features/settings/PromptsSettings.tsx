@@ -40,8 +40,8 @@ export const PROMPT_FIELDS: {
     help: 'Instruções do agente aberto para preparar o ambiente local.',
   },
   {
-    key: 'smartDiffReview',
-    stage: 'smart-diff-review',
+    key: 'codeReview',
+    stage: 'code-review',
     label: 'Revisor',
     title: 'Revisor de código',
     help: 'Analisa as alterações, prioriza achados e registra correções e riscos.',

@@ -38,16 +38,16 @@ Os arquivos abaixo são cópias UTF-8 **sem paráfrase** dos valores em `shared/
 
 - [Planejamento: `taskPlanning`](prompts/task-planning-default.txt)
 - [Item de desenvolvimento: `taskItem`](prompts/task-item-default.txt)
-- [Revisor de código, acionado manualmente: `smartDiffReview`](prompts/reviewer-default.txt)
+- [Revisor de código: `codeReview`](prompts/reviewer-default.txt)
 - [Agente de ambiente dev, acionado manualmente: `testEnvironment`](prompts/test-environment-default.txt)
 
-O prompt de revisão é configurado em Smart Diff e roda automaticamente ao entrar em Auto review. As ações manuais de executar novamente o Revisor e iniciar ambiente dev estão detalhadas em [Code Review](06-code-review.md); a entrada em Code Review não executa essas ações.
+O prompt e o modelo do Revisor são configurados nas opções de agentes. O agente roda automaticamente ao entrar em Auto review; entrar em Code Review não inicia outra revisão.
 
 ## Dependência de skills do Claude
 
 O núcleo do Kanban e as etapas Planejando e Desenvolvendo não carregam um `SKILL.md` do Claude. Quando o provedor dos itens é Claude, o executor desativa MCPs externos (`--strict-mcp-config --mcp-config '{"mcpServers":{}}'`) e passa um conjunto explícito de ferramentas à CLI.
 
-O prompt padrão de Smart Diff usa o marcador `<script-de-revisao>`, substituído pelo backend pelo script incluído em `server/workspace/smart-diff-review-cli.mjs`. O marcador antigo de prompts personalizados continua aceito por compatibilidade. A geração requer a ferramenta externa `smart-diff` em `SMART_DIFF_DIR` ou `~/smart-diff`. O prompt `taskItem` também menciona `CLAUDE.md` como regra de estilo, mas o Mega Brain não abre esse arquivo por conta própria.
+O agente Revisor lê diretamente o diff Git e os arquivos relevantes de cada repositório, sem depender de uma ferramenta externa de análise de diff. O prompt `taskItem` também menciona `CLAUDE.md` como regra de estilo, mas o Mega Brain não abre esse arquivo por conta própria.
 
 ## Fontes principais
 

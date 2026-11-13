@@ -25,7 +25,7 @@ Nenhum. Criar ou mover um card para `a-fazer` não chama `runStageAgent` nem `ru
 │ ID/pasta [sempre]      ⚠ [se atenção]  ▂▃▅ [sempre]    │
 │ Título [sempre]                                          │
 │ Agente + progresso [se agente rodando]                  │
-│ Smart Diff em execução [se ativo]                       │
+│ Agentes em execução [se houver]                               │
 │ ──────────────────────────────────────────────────────── │
 │ Abrir pasta/editor · tempo relativo [sempre]            │
 │                                      PRs [se houver]      │

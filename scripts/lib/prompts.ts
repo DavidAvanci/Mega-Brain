@@ -6,10 +6,9 @@ export function megaBrainPrompt(key: keyof PromptSettings): string {
   if (file) {
     try {
       const saved = JSON.parse(readFileSync(file, 'utf8')) as {
-        prompts?: Partial<PromptSettings>
-        smartDiffReviewPrompt?: string
+        prompts?: Partial<PromptSettings> & { smartDiffReview?: string }
       }
-      const value = key === 'smartDiffReview' ? saved.prompts?.[key] ?? saved.smartDiffReviewPrompt : saved.prompts?.[key]
+      const value = key === 'codeReview' ? saved.prompts?.codeReview ?? saved.prompts?.smartDiffReview : saved.prompts?.[key]
       if (typeof value === 'string' && value.trim()) return value.trim()
     } catch {}
   }

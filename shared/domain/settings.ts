@@ -7,7 +7,7 @@ export interface ModelStageSettings {
 }
 
 export type BoardSettings = Record<
-  'task-planning' | 'run-task-checklist' | 'task-verification' | 'test-environment' | 'smart-diff-review' | 'conflict-resolution',
+  'task-planning' | 'run-task-checklist' | 'task-verification' | 'test-environment' | 'code-review' | 'conflict-resolution',
   ModelStageSettings
 >
 
@@ -68,7 +68,7 @@ export interface PromptSettings {
   taskItem: string
   taskVerification: string
   testEnvironment: string
-  smartDiffReview: string
+  codeReview: string
   conflictResolution: string
 }
 

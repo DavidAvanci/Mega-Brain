@@ -51,7 +51,7 @@ test('stage settings combine persisted values with safe defaults', () => {
     'run-task-checklist': { model: 'fable', effort: 'low', fastMode: false },
     'task-verification': { model: 'fable', effort: 'low', fastMode: false },
     'test-environment': { model: 'haiku', effort: 'low', fastMode: false },
-    'smart-diff-review': { model: 'default', effort: 'low', fastMode: false },
+    'code-review': { model: 'default', effort: 'low', fastMode: false },
     'conflict-resolution': { model: 'sonnet', effort: 'medium', fastMode: false },
   })
 })

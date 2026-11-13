@@ -26,7 +26,7 @@ const KINDS: Record<string, { name: string; icon: IconSvgElement }> = {
   'run-task-checklist': { name: 'dev', icon: RoboticIcon },
   'stage-task': { name: 'staging', icon: RoboticIcon },
   'master-pr-task': { name: 'master', icon: RoboticIcon },
-  'smart-diff-review': { name: 'Smart Diff', icon: RoboticIcon },
+  'code-review': { name: 'Revisor', icon: RoboticIcon },
 }
 
 const AUTONOMOUS = { name: 'autônomo', icon: AiBrain01Icon }

@@ -172,7 +172,7 @@ const ENTRIES: SettingsSearchEntry[] = [
     keywords: 'prompts modelos esforço effort claude codex agente',
   },
   {
-    target: 'prompt-smartDiffReview',
+    target: 'prompt-codeReview',
     tab: 'models',
     title: 'Revisor de código: prompt, modelo e esforço',
     description: 'Instruções para identificar riscos e regressões nas alterações.',

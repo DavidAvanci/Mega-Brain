@@ -65,8 +65,6 @@ export interface Card {
   lastStage?: string
   jiraStatus?: string
   agents?: AgentInfo[]
-  smartDiffRunning?: boolean
-  smartDiffActivity?: AgentInfo
   devEnv?: DevEnvInfo
   prs?: PrLinks
   prStates?: Record<string, PrState>

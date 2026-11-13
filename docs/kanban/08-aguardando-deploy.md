@@ -46,7 +46,7 @@ Ao terminar, responda somente com JSON válido no formato {"status":"done|failed
 │ Título [sempre]                                          │
 │ Agente master + %/barra [se rodando e há progresso]     │
 │ Outros agentes rodando [se houver]                       │
-│ Smart Diff em execução [se ativo]                       │
+│ Agentes em execução [se houver]                               │
 │ ──────────────────────────────────────────────────────── │
 │ Abrir pasta/editor · tempo relativo [sempre]            │
 │                    stg n/N [se PRs staging registrados]  │

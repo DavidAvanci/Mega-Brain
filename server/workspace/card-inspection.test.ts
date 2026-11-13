@@ -32,7 +32,7 @@ test.each(['claude', 'codex'] as const)('the board exposes only %s narration for
     status: 'rodando',
     cardId: 'card',
     cwd: card,
-    title: 'Smart Diff',
+    title: 'Revisão de código',
     startedAt: '',
     updatedAt: '',
     activity: 'Bash: cd /tmp; grep segredo',

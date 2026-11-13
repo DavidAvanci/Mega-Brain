@@ -15,7 +15,7 @@ import { openEditor } from './launchers'
 import { openDirectory } from './open-directory'
 import { createStageController } from './stage-controller'
 import { inspectCard, inspectCardDiff } from './card-inspection'
-import { createSmartDiffReview } from './smart-diff-review'
+import { createCodeReview } from './code-review'
 import type { AgentSession } from '../../shared/domain/agents'
 import type { CodexModelCatalog } from '../../shared/domain/codex-models'
 import { completeWorkspaceConfig, type WorkspaceConfigInput } from './workspace-config'
@@ -65,7 +65,7 @@ export function createWorkspaceService(
 ): WorkspaceService {
   const config = completeWorkspaceConfig(inputConfig)
   const stages = createStageController(config, runner, owner, codexModels)
-  const diffReview = createSmartDiffReview(config, runner, owner, (cardPath) => {
+  const codeReview = createCodeReview(config, runner, owner, (cardPath) => {
     if (!existsSync(join(cardPath, 'card.json'))) return
     const card = readCard(cardPath, basename(cardPath))
     if (card.status === 'revisao-de-codigo') writeCard(cardPath, { ...card, status: 'code-review' })
@@ -95,9 +95,8 @@ export function createWorkspaceService(
             runner,
             stages.start,
             agentSessions(),
-            diffReview.isRunning,
-            diffReview.activity,
-            (cardPath) => diffReview.start(cardPath, true),
+            codeReview.activity,
+            (cardPath) => codeReview.start(cardPath, true),
           )
         const card = folder(query.get('name'))
         if (path === '/dev-env') return readDevEnv(card.path)
@@ -110,7 +109,7 @@ export function createWorkspaceService(
             query.get('section') ?? undefined,
             query.get('file'),
           )
-        if (path === '/diff') return diffReview.read(card.path)
+        if (path === '/diff') return codeReview.read(card.path)
         if (path === '/diff/standard') return inspectCardDiff(card.path, config.executables.git, runner)
         return listBoardCards(
           root,
@@ -119,9 +118,8 @@ export function createWorkspaceService(
           runner,
           stages.start,
           agentSessions(),
-          diffReview.isRunning,
-          diffReview.activity,
-          (cardPath) => diffReview.start(cardPath, true),
+          codeReview.activity,
+          (cardPath) => codeReview.start(cardPath, true),
         )
       }
       if (method !== 'POST') throw new Error('Método não suportado')
@@ -153,7 +151,7 @@ export function createWorkspaceService(
       if (path === '/') return createCard(root, data)
       const card = folder(data.name)
       const { name, path: cardPath } = card
-      if (path === '/diff') return diffReview.start(cardPath, data.regenerate === true)
+      if (path === '/diff') return codeReview.start(cardPath, data.regenerate === true)
       if (path === '/terminal') {
         await openAgentTerminal(cardPath, config, runner)
         return { ok: true }
@@ -212,7 +210,7 @@ export function createWorkspaceService(
           ),
         }
       if (path === '/update') {
-        updateCard(cardPath, name, data, stages.start, (path) => diffReview.start(path, true))
+        updateCard(cardPath, name, data, stages.start, (path) => codeReview.start(path, true))
         return { ok: true }
       }
       if (path === '/jira-id') {
