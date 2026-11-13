@@ -35,8 +35,7 @@ export function listBoardCards(
   runner: ProcessRunner,
   startStage: BoardStageStarter,
   sessions: readonly AgentSession[] = [],
-  isSmartDiffRunning: (path: string) => boolean = () => false,
-  smartDiffActivity: (path: string) => AgentInfo | undefined = () => undefined,
+  codeReviewActivity: (path: string) => AgentInfo | undefined = () => undefined,
   onReviewEntry: (path: string) => void = () => undefined,
 ) {
   mkdirSync(root, { recursive: true })
@@ -51,7 +50,7 @@ export function listBoardCards(
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
     .flatMap((entry) => {
       const path = join(root, entry.name)
-      const diffActivity = smartDiffActivity(path)
+      const reviewActivity = codeReviewActivity(path)
       const card = readCard(path, entry.name)
       if (expiredInProduction(path, card)) {
         deleteCard(path, worktreesRoot, git, runner)
@@ -85,7 +84,6 @@ export function listBoardCards(
       if (advanced.status === 'revisao-de-codigo' && card.status !== advanced.status) onReviewEntry(path)
       if (advanced !== card) agent = readAgent(path)
       const activeSessions = agent?.status === 'pausado' ? [] : (activeSessionsByCard.get(entry.name) ?? [])
-        .filter((session) => session.id !== diffActivity?.sessionId)
       const stageSession =
         agent?.status === 'rodando' && agent.stage !== 'run-task-checklist'
           ? activeSessions.find((session) => session.id === agent.sessionId || session.cwd === realpathSync(path))
@@ -116,6 +114,14 @@ export function listBoardCards(
           error: session.error,
         })
       }
+      if (
+        reviewActivity &&
+        (!reviewActivity.sessionId || !agents.some((info) => info.sessionControlId === reviewActivity.sessionId))
+      )
+        agents.push({
+          ...reviewActivity,
+          ...(reviewActivity.sessionId ? { sessionControlId: reviewActivity.sessionId } : {}),
+        })
       const prUrls = Object.values(advanced.prs?.staging ?? {}).concat(Object.values(advanced.prs?.master ?? {}))
       const taskCounts: Partial<Record<typeof TASK_CHECKLIST_FILE, TaskCounts>> = {}
       let checklistError: string | undefined
@@ -136,8 +142,6 @@ export function listBoardCards(
         updatedAt,
         agents,
         lastStage: agent?.stage,
-        smartDiffRunning: isSmartDiffRunning(path),
-        ...(diffActivity ? { smartDiffActivity: diffActivity } : {}),
         taskCounts,
         ...(checklistError ? { checklistError } : {}),
         repoCount: repoNames.length,

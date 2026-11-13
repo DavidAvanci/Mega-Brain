@@ -25,7 +25,7 @@ Nenhum. A entrada em Produção e a limpeza após 24 horas usam chamadas do back
 │ ID/pasta [sempre]      ⚠ [se atenção]  ▂▃▅ [sempre]    │
 │ Título [sempre]                                          │
 │ Agentes rodando + progresso [se houver]                  │
-│ Smart Diff em execução [se ativo]                       │
+│ Agentes em execução [se houver]                               │
 │ ──────────────────────────────────────────────────────── │
 │ Abrir pasta/editor · tempo relativo [sempre]            │
 │                    stg n/N [se PRs staging registrados]  │

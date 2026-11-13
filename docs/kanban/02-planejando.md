@@ -66,7 +66,7 @@ O planejamento só é considerado concluído quando a checklist contém ao menos
 │ Título [sempre]                                          │
 │ Fase do agente [se rodando, sem %/barra]                │
 │ Outros agentes rodando [se houver]                       │
-│ Smart Diff em execução [se ativo]                       │
+│ Agentes em execução [se houver]                               │
 │ ──────────────────────────────────────────────────────── │
 │ Abrir pasta/editor · tempo relativo [sempre]            │
 │                                      PRs [se houver]      │

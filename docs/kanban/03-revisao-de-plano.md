@@ -25,7 +25,7 @@ Nenhum ao entrar em Revisão de plano. `stageFor('revisao-de-plano')` não defin
 │ ID/pasta [sempre]      ⚠ [se atenção]  ▂▃▅ [sempre]    │
 │ Título [sempre]                                          │
 │ Agentes rodando + progresso [se houver]                  │
-│ Smart Diff em execução [se ativo]                       │
+│ Agentes em execução [se houver]                               │
 │ ──────────────────────────────────────────────────────── │
 │ Abrir pasta/editor · tempo relativo [sempre]            │
 │                                      PRs [se houver]      │

@@ -23,7 +23,6 @@ import { relativeTime } from '@/relativeTime'
 import { attentionReason } from '@/boardFilters'
 import { AgentBadge, ScriptRunningIndicator, StartingExecutorsIndicator, activeAgents, agentName, isFormattingCardFiles, isStartingExecutors } from '@/CardAgentBadge'
 import { FlowIndicator } from './FlowIndicator'
-import { SmartDiffIndicator } from './SmartDiffIndicator'
 export { AgentBadge, activeAgents, agentName } from '@/CardAgentBadge'
 
 export function StageResetButton({
@@ -363,7 +362,7 @@ export function CardBody({
           Agentes pausados · progresso salvo
         </div>
       )}
-      {(agents.length > 0 || card.smartDiffRunning || developmentStageAgent || startingExecutors || formattingCardFiles) && (
+      {(agents.length > 0 || developmentStageAgent || startingExecutors || formattingCardFiles) && (
         <div className="mt-2 flex flex-col gap-1.5">
           {formattingCardFiles && <ScriptRunningIndicator text="Formatando arquivos..." />}
           {startingExecutors && <StartingExecutorsIndicator />}
@@ -382,7 +381,6 @@ export function CardBody({
               onPendingChange={setStoppingAllDevelopmentAgents}
             />
           )}
-          {card.smartDiffRunning && <SmartDiffIndicator cardId={card.id} activity={card.smartDiffActivity} />}
         </div>
       )}
       <div className="mt-2.5 flex items-center gap-1.5 border-t pt-2 text-[10px] text-muted-foreground">

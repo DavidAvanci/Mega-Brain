@@ -27,7 +27,7 @@ const settings: MegaBrainSettings = {
     'task-planning': { model: 'fable', effort: 'low' },
     'run-task-checklist': { model: 'fable', effort: 'medium' },
   },
-  prompts: { ...DEFAULT_PROMPTS, smartDiffReview: 'instruções de revisão' },
+  prompts: { ...DEFAULT_PROMPTS, codeReview: 'instruções de revisão' },
 }
 
 test('resets stage models only when the LLM provider changes', () => {
@@ -79,7 +79,7 @@ test('Codex stage defaults preserve roles and respect a restricted account catal
     'run-task-checklist': { model: 'gpt-6.1-sol', effort: 'medium', fastMode: false },
     'task-verification': { model: 'gpt-6.1-sol', effort: 'medium', fastMode: false },
     'test-environment': { model: 'default', effort: 'medium', fastMode: false },
-    'smart-diff-review': { model: 'default', effort: 'medium', fastMode: false },
+    'code-review': { model: 'default', effort: 'medium', fastMode: false },
     'conflict-resolution': { model: 'gpt-6.1-sol', effort: 'medium', fastMode: false },
   })
   expect(switched.prompts).toEqual(settings.prompts)

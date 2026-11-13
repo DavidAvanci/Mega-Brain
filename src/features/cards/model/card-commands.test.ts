@@ -125,33 +125,3 @@ test('accepts subsequent automatic backend transitions after saving', async () =
   await refresh()
   expect(cardsState().cards[0].status).toBe('desenvolvendo')
 })
-
-test.each(['running', 'ready', 'error'] as const)(
-  'preserves newer Smart Diff status %s when an older board request completes',
-  async (status) => {
-    const { refresh, syncCardSmartDiff, cardsState } = await setup()
-    const oldList = deferred<WorkspaceFolder[]>()
-    const oldActivity = {
-      stage: 'smart-diff-review',
-      execution: 'script' as const,
-      status: 'rodando' as const,
-      phase: 'Identificando repositórios do card',
-    }
-    syncCardSmartDiff('MB-1', { status: 'running', activity: oldActivity })
-    api.list.mockReturnValueOnce(oldList.promise)
-    const oldRefresh = refresh()
-    const latestActivity = { ...oldActivity, phase: 'Rodando a ferramenta Smart Diff em api' }
-    syncCardSmartDiff('MB-1', { status, activity: latestActivity })
-    oldList.resolve([{ ...folder, smartDiffRunning: true, smartDiffActivity: oldActivity }])
-    await oldRefresh
-    expect(cardsState().cards[0]).toMatchObject({
-      smartDiffRunning: status === 'running',
-      smartDiffActivity: status === 'running' ? latestActivity : undefined,
-    })
-
-    // A subsequent board request can still advance the state after the modal closes.
-    api.list.mockResolvedValue([{ ...folder, smartDiffRunning: false }])
-    await refresh()
-    expect(cardsState().cards[0].smartDiffRunning).toBe(false)
-  },
-)

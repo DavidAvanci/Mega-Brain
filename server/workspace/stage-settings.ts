@@ -28,7 +28,13 @@ export function readStageSettings(
   const entries = configured && typeof configured === 'object' ? (configured as Record<string, unknown>) : {}
   return Object.fromEntries(
     Object.entries(defaultStageSettings(provider, catalog)).map(([name, defaults]) => {
-      const value = entries[name] ?? (name === 'task-verification' ? entries['run-task-checklist'] : undefined)
+      const value =
+        entries[name] ??
+        (name === 'task-verification'
+          ? entries['run-task-checklist']
+          : name === 'code-review'
+            ? entries['smart-diff-review']
+            : undefined)
       if (!value || typeof value !== 'object') return [name, defaults]
       const { model, effort, fastMode } = value as { model?: unknown; effort?: unknown; fastMode?: unknown }
       const savedModel = typeof model === 'string' && model.trim() ? model.trim() : defaults.model

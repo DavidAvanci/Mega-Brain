@@ -3,7 +3,6 @@ import { CardChatPanel, type EnvironmentChatRequest } from './CardChatPanel'
 import { CardKnowledgeAttachments } from '@/features/knowledge/CardKnowledgeAttachments'
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { SmartDiffIndicator } from './SmartDiffIndicator'
 import {
   ArrowLeft01Icon,
   Cancel01Icon,
@@ -730,7 +729,6 @@ export function CardModal({
               {developmentProgressAgent && (
                 <AgentStatusRow agent={developmentProgressAgent} cardId={card.id} development />
               )}
-              {card.smartDiffRunning && <SmartDiffIndicator cardId={card.id} activity={card.smartDiffActivity} />}
               <ActionBar card={card} onDeleted={onClose} />
               {error && <p className="text-xs text-destructive">{error}</p>}
               {jiraConversionError && <p className="text-xs text-destructive">{jiraConversionError}</p>}

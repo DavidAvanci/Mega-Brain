@@ -23,7 +23,7 @@ test('loads legacy backend settings with defaults for the new agents while prese
   expect(loaded.stages['task-planning'].model).toBe('opus')
   expect(loaded.stages['task-verification']).toEqual({ model: 'sonnet', effort: 'medium', fastMode: true })
   expect(loaded.stages['test-environment'].model).toBe('haiku')
-  expect(loaded.stages['smart-diff-review'].model).toBe('default')
+  expect(loaded.stages['code-review'].model).toBe('default')
   expect(loaded.prompts.taskPlanning).toBe('Planejamento personalizado')
   expect(loaded.prompts.taskVerification).toBe(DEFAULT_PROMPTS.taskVerification)
   expect(legacy.stages).not.toHaveProperty('task-verification')

@@ -454,7 +454,7 @@ test('search preserves the current panel, clears with Escape and selects the mat
   expect(document.querySelector('[aria-label="Prompts de execução"] [role=tab][aria-selected=true]')?.textContent).toBe(
     'Revisor',
   )
-  expect(document.querySelector('[data-settings-section="prompt-smartDiffReview"]')?.getAttribute('role')).toBe(
+  expect(document.querySelector('[data-settings-section="prompt-codeReview"]')?.getAttribute('role')).toBe(
     'tabpanel',
   )
 })

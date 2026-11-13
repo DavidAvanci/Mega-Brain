@@ -112,7 +112,7 @@ export function defaultStageSettings(provider: LlmProvider, catalog = FALLBACK_C
       'run-task-checklist': { model: 'fable', effort: 'low', fastMode: false },
       'task-verification': { model: 'fable', effort: 'low', fastMode: false },
       'test-environment': { model: 'haiku', effort: 'low', fastMode: false },
-      'smart-diff-review': { model: 'default', effort: 'low', fastMode: false },
+      'code-review': { model: 'default', effort: 'low', fastMode: false },
       'conflict-resolution': { model: 'sonnet', effort: 'medium', fastMode: false },
     }
   const sol = catalog.models.some((entry) => entry.id === 'gpt-6.1-sol') ? 'gpt-6.1-sol' : 'default'
@@ -126,7 +126,7 @@ export function defaultStageSettings(provider: LlmProvider, catalog = FALLBACK_C
     'run-task-checklist': stage(sol, 'medium'),
     'task-verification': stage(sol, 'medium'),
     'test-environment': stage('default', 'medium'),
-    'smart-diff-review': stage('default', 'medium'),
+    'code-review': stage('default', 'medium'),
     'conflict-resolution': stage(sol, 'medium'),
   }
 }
